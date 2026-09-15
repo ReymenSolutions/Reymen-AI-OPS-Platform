@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { generateWebhookSecret } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
 import { assertPlanCapacity } from "@/lib/plan-limits";
+import { assertModuleEnabled } from "@/lib/modules";
 import type { Prisma } from "@prisma/client";
 
 const installSchema = z.object({
@@ -20,6 +21,12 @@ export async function installTemplate(data: z.infer<typeof installSchema>) {
 
   const { templateId, config } = installSchema.parse(data);
   const orgId = session.user.organizationId;
+
+  // Installing a template always creates an Automation record (see below) —
+  // it must not itself grant commercial access to a module the org hasn't
+  // contracted, so it requires AUTOMATIONS to already be enabled rather than
+  // enabling it implicitly.
+  await assertModuleEnabled(orgId, "AUTOMATIONS");
 
   const template = await prisma.automationTemplate.findUnique({
     where: { id: templateId, isPublished: true },

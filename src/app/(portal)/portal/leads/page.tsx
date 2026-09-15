@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getServerT } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
+import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { CreateLeadDialog } from "@/components/portal/CreateLeadDialog";
@@ -59,6 +60,7 @@ export default async function PortalLeadsPage({
 }) {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  await requireModule(session.user.organizationId, "CRM");
 
   const { q, status: statusParam, page: pageParam } = await searchParams;
   const page = Math.max(1, Number(pageParam) || 1);

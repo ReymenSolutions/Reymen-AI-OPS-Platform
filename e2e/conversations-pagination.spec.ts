@@ -26,6 +26,12 @@ test.describe("conversations list pagination and message thread load-older", () 
     });
     orgId = org.id;
 
+    // New orgs start with zero modules enabled (see OrganizationModule) —
+    // grant AI_WHATSAPP so this org can actually reach /portal/conversations.
+    await prisma.organizationModule.create({
+      data: { organizationId: org.id, module: "AI_WHATSAPP", status: "ACTIVE", source: "SUBSCRIBED" },
+    });
+
     const passwordHash = await bcrypt.hash(TEST_PASSWORD, 12);
     await prisma.user.create({
       data: { email: TEST_EMAIL, name: "E2E Conv Pagination", role: "OWNER", organizationId: org.id, passwordHash },
@@ -58,6 +64,7 @@ test.describe("conversations list pagination and message thread load-older", () 
   test.afterAll(async () => {
     await prisma.message.deleteMany({ where: { conversation: { organizationId: orgId } } });
     await prisma.conversation.deleteMany({ where: { organizationId: orgId } });
+    await prisma.organizationModule.deleteMany({ where: { organizationId: orgId } });
     await prisma.user.deleteMany({ where: { email: TEST_EMAIL } });
     await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
   });

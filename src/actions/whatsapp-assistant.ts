@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { assertModuleEnabled } from "@/lib/modules";
 
 const upsertSchema = z.object({
   name: z.string().min(1),
@@ -19,6 +20,8 @@ export async function upsertWhatsAppAssistant(
 ) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
+
+  await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
   const parsed = upsertSchema.parse(data);
 
@@ -42,6 +45,8 @@ export async function upsertWhatsAppAssistant(
 export async function toggleAssistant(isActive: boolean) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
+
+  await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
   await prisma.whatsAppAssistant.upsert({
     where: { organizationId: session.user.organizationId },

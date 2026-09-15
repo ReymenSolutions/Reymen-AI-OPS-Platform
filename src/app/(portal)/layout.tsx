@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getEnabledModules } from "@/lib/modules";
 import { PortalSidebar } from "@/components/portal/PortalSidebar";
 import { TopBar } from "@/components/shared/TopBar";
 
@@ -23,10 +24,11 @@ export default async function PortalLayout({ children }: { children: React.React
 
   if (!currentUser?.organization?.isActive) return redirect("/login");
   const org = currentUser.organization;
+  const enabledModules = await getEnabledModules(org.id);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      <PortalSidebar orgName={org.name} orgLogoUrl={org.logoUrl} />
+      <PortalSidebar orgName={org.name} orgLogoUrl={org.logoUrl} enabledModules={enabledModules} />
       <div className="flex flex-1 flex-col min-h-0">
         <TopBar />
         <main className="flex-1 overflow-y-auto p-6">

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Bot } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ export default async function ConversationDetailPage({
   const { id } = await params;
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
   const conv = await getConversation(id, session.user.organizationId);
   if (!conv) notFound();

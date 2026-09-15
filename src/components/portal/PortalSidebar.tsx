@@ -9,6 +9,7 @@ import {
   Layers, Upload, Loader2,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
+import type { PlatformModule } from "@prisma/client";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/context/preferences";
 import { updateOrgLogo } from "@/actions/profile";
@@ -78,14 +79,16 @@ function useNavItems() {
   };
 }
 
-const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType }[] = [
+// `module: undefined` means the section isn't gated by any commercial module
+// (always shown regardless of what the org has contracted).
+const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule }[] = [
   { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard },
-  { href: "/portal/leads", key: "leads", icon: Users },
-  { href: "/portal/automations", key: "automations", icon: Zap },
-  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot },
-  { href: "/portal/conversations", key: "conversations", icon: MessageSquare },
-  { href: "/portal/knowledge-base", key: "knowledgeBase", icon: BookOpen },
-  { href: "/portal/prompts", key: "prompts", icon: SlidersHorizontal },
+  { href: "/portal/leads", key: "leads", icon: Users, module: "CRM" },
+  { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS" },
+  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, module: "AI_WHATSAPP" },
+  { href: "/portal/conversations", key: "conversations", icon: MessageSquare, module: "AI_WHATSAPP" },
+  { href: "/portal/knowledge-base", key: "knowledgeBase", icon: BookOpen, module: "AI_WHATSAPP" },
+  { href: "/portal/prompts", key: "prompts", icon: SlidersHorizontal, module: "AI_WHATSAPP" },
   { href: "/portal/appointments", key: "appointments", icon: Calendar },
   { href: "/portal/reports", key: "reports", icon: BarChart3 },
   { href: "/portal/templates", key: "templates", icon: Layers },
@@ -96,12 +99,14 @@ const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon
 interface PortalSidebarProps {
   orgName: string;
   orgLogoUrl?: string | null;
+  enabledModules: PlatformModule[];
 }
 
-export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl }: PortalSidebarProps) {
+export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModules }: PortalSidebarProps) {
   const pathname = usePathname();
   const { t, lang } = usePreferences();
   const labels = useNavItems();
+  const visibleNavItems = NAV_ITEMS.filter((item) => !item.module || enabledModules.includes(item.module));
 
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState(initialLogoUrl ?? "");
@@ -180,7 +185,7 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl }: PortalSid
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname.startsWith(item.href);
             return (

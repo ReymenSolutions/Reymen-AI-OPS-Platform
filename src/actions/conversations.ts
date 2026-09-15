@@ -5,10 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { notifyAdmins } from "@/lib/admin-notifications";
 import { escalationAlertEmail } from "@/lib/email-templates";
+import { assertModuleEnabled } from "@/lib/modules";
 
 export async function escalateConversation(conversationId: string) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
+
+  await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.user.organizationId },
@@ -38,6 +41,8 @@ const MESSAGE_PAGE_SIZE = 50;
 export async function getOlderMessages(conversationId: string, beforeMessageId: string) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
+
+  await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.user.organizationId },
@@ -71,6 +76,8 @@ export async function getOlderMessages(conversationId: string, beforeMessageId: 
 export async function resolveConversation(conversationId: string) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
+
+  await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.user.organizationId },

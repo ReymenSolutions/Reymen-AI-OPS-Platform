@@ -10,6 +10,8 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ChangePlanDialog } from "@/components/admin/ChangePlanDialog";
 import { ToggleClientStatusButton } from "@/components/admin/ToggleClientStatusButton";
 import { OrgWebhookInfoDialog } from "@/components/admin/OrgWebhookInfoDialog";
+import { OrganizationModulesPanel } from "@/components/admin/OrganizationModulesPanel";
+import { getOrganizationModules } from "@/actions/admin/modules";
 import { formatDate } from "@/lib/utils";
 
 async function getClientDetail(clientId: string) {
@@ -41,7 +43,11 @@ async function getClientDetail(clientId: string) {
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
-  const [t, client] = await Promise.all([getServerT(), getClientDetail(clientId)]);
+  const [t, client, moduleEntitlements] = await Promise.all([
+    getServerT(),
+    getClientDetail(clientId),
+    getOrganizationModules(clientId),
+  ]);
   if (!client) notFound();
 
   return (
@@ -180,6 +186,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
             )}
           </CardContent>
         </Card>
+
+        <OrganizationModulesPanel orgId={client.id} modules={moduleEntitlements} />
 
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">

@@ -26,6 +26,12 @@ test.describe("leads pagination and server-side search", () => {
     });
     orgId = org.id;
 
+    // New orgs start with zero modules enabled (see OrganizationModule) —
+    // grant CRM so this org can actually reach /portal/leads.
+    await prisma.organizationModule.create({
+      data: { organizationId: org.id, module: "CRM", status: "ACTIVE", source: "SUBSCRIBED" },
+    });
+
     const passwordHash = await bcrypt.hash(TEST_PASSWORD, 12);
     await prisma.user.create({
       data: { email: TEST_EMAIL, name: "E2E Leads Pagination", role: "OWNER", organizationId: org.id, passwordHash },
@@ -44,6 +50,7 @@ test.describe("leads pagination and server-side search", () => {
 
   test.afterAll(async () => {
     await prisma.lead.deleteMany({ where: { organizationId: orgId } });
+    await prisma.organizationModule.deleteMany({ where: { organizationId: orgId } });
     await prisma.user.deleteMany({ where: { email: TEST_EMAIL } });
     await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
   });

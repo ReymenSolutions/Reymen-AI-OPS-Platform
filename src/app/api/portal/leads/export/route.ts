@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasModule } from "@/lib/modules";
 
 // Prefixes values that could be interpreted as a formula (=, +, -, @, or a
 // leading tab/CR) with a single quote so Excel/Sheets always render CSV
@@ -24,6 +25,10 @@ export async function GET() {
   const session = await auth();
   if (!session?.user.organizationId) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  if (!(await hasModule(session.user.organizationId, "CRM"))) {
+    return NextResponse.json({ error: "Módulo CRM no habilitado" }, { status: 403 });
   }
 
   const leads = await prisma.lead.findMany({

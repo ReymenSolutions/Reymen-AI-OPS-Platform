@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { BookOpen } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ async function getArticles(orgId: string) {
 export default async function KnowledgeBasePage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
   const articles = await getArticles(session.user.organizationId);
   const activeCount = articles.filter((a) => a.isActive).length;

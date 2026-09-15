@@ -37,6 +37,7 @@ model Organization {
   knowledgeBase         KnowledgeBase[]
   prompts               Prompt[]
   templateInstallations TemplateInstallation[]
+  modules               OrganizationModule[]
 
   @@index([slug])
 }
@@ -501,6 +502,53 @@ enum InstallationStatus {
   ACTIVE
   FAILED
   UNINSTALLED
+}
+
+// ─── PLATFORM MODULES (commercial entitlements) ──────────────────────
+// Distinct from RBAC (src/lib/permissions.ts, what a user may do) and from
+// feature flags (gradual rollout of experimental functionality within an
+// already-enabled module). A module here answers "does this organization's
+// account have access to this line of business at all" — CRM, the AI/
+// WhatsApp assistant, and Automations are the only modules with real
+// functionality today; NFC_QR and MARKETING_ADS are reserved for future
+// modules (see docs/DOCUMENTACION_TECNICA.md) and have no schema/UI of
+// their own yet.
+
+enum PlatformModule {
+  CRM
+  AI_WHATSAPP
+  AUTOMATIONS
+  NFC_QR // reserved — no schema/UI yet, integration point for a separate future repo
+  MARKETING_ADS // reserved — no schema/UI yet, future module
+}
+
+enum ModuleStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum ModuleSource {
+  SUBSCRIBED // tied to a paid plan (billing wiring not implemented yet)
+  ADMIN_GRANTED // enabled manually by a Reymen admin (trial, courtesy, etc.)
+}
+
+model OrganizationModule {
+  id             String         @id @default(cuid())
+  organizationId String
+  module         PlatformModule
+  status         ModuleStatus   @default(ACTIVE)
+  source         ModuleSource   @default(SUBSCRIBED)
+  enabledAt      DateTime       @default(now())
+  suspendedAt    DateTime?
+  cancelledAt    DateTime?
+  notes          String?        @db.Text // why it was granted/suspended — admin-only visibility
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, module])
+  @@index([organizationId])
 }
 
 // ─── RATE LIMITING ──────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Zap, Activity, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -34,6 +35,7 @@ export default async function AutomationDetailPage({
 }) {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  await requireModule(session.user.organizationId, "AUTOMATIONS");
 
   const { id } = await params;
   const automation = await getAutomationDetail(id, session.user.organizationId);

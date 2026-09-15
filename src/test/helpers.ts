@@ -2,11 +2,25 @@ import { prisma } from "@/lib/prisma";
 import { generateSlug, generateWebhookSecret } from "@/lib/utils";
 import type { UserRole } from "@prisma/client";
 
+/** Grants CRM + AI_WHATSAPP + AUTOMATIONS — mirrors the backfill every pre-existing org received when modules were introduced, so tests exercise the "already has access" case by default. */
+export async function grantCoreModules(orgId: string) {
+  await prisma.organizationModule.createMany({
+    data: (["CRM", "AI_WHATSAPP", "AUTOMATIONS"] as const).map((module) => ({
+      organizationId: orgId,
+      module,
+      status: "ACTIVE" as const,
+      source: "SUBSCRIBED" as const,
+    })),
+  });
+}
+
 export async function createTestOrg(namePrefix: string) {
   const name = `${namePrefix} ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  return prisma.organization.create({
+  const org = await prisma.organization.create({
     data: { name, slug: generateSlug(name), n8nWebhookSecret: generateWebhookSecret() },
   });
+  await grantCoreModules(org.id);
+  return org;
 }
 
 export async function createTestUser(orgId: string | null, role: UserRole, emailPrefix: string) {
@@ -48,6 +62,7 @@ export async function cleanupOrg(orgId: string) {
   await prisma.webhookEvent.deleteMany({ where: { organizationId: orgId } });
   await prisma.metric.deleteMany({ where: { organizationId: orgId } });
   await prisma.auditLog.deleteMany({ where: { organizationId: orgId } });
+  await prisma.organizationModule.deleteMany({ where: { organizationId: orgId } });
   await prisma.user.deleteMany({ where: { organizationId: orgId } });
   await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
 }

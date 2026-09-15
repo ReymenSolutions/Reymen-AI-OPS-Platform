@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Bot, Phone, MessageSquare, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireModule } from "@/lib/modules";
 import { getServerT } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,7 @@ async function getWhatsAppData(orgId: string) {
 export default async function WhatsAppCenterPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
   const [t, { assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount }] =
     await Promise.all([

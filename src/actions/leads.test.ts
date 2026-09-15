@@ -114,4 +114,23 @@ describe("leads actions", () => {
 
     await cleanupOrg(orgC.id);
   });
+
+  it("blocks creating a lead when the org's CRM module is suspended, even for a role that has leads:create", async () => {
+    const orgD = await createTestOrg("Leads Module Suspended Org");
+    await prisma.organizationModule.update({
+      where: { organizationId_module: { organizationId: orgD.id, module: "CRM" } },
+      data: { status: "SUSPENDED" },
+    });
+    const userD = await createTestUser(orgD.id, "OWNER", "leads-owner-d");
+    authMock.mockResolvedValue(fakeSession({ id: userD.id, role: "OWNER", organizationId: orgD.id }));
+
+    const fd = new FormData();
+    fd.set("name", "Should Not Be Created");
+    await expect(createLead(fd)).rejects.toThrow(/módulo/i);
+
+    const count = await prisma.lead.count({ where: { organizationId: orgD.id } });
+    expect(count).toBe(0);
+
+    await cleanupOrg(orgD.id);
+  });
 });

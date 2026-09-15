@@ -89,4 +89,18 @@ describe("templates actions", () => {
 
     await cleanupOrg(limitedOrg.id);
   });
+
+  it("blocks installing a template when the org's AUTOMATIONS module isn't enabled", async () => {
+    const noModuleOrg = await createTestOrg("Templates No Module Org");
+    await prisma.organizationModule.update({
+      where: { organizationId_module: { organizationId: noModuleOrg.id, module: "AUTOMATIONS" } },
+      data: { status: "CANCELLED" },
+    });
+    const noModuleOwner = await createTestUser(noModuleOrg.id, "OWNER", "no-module-owner");
+    authMock.mockResolvedValue(fakeSession({ id: noModuleOwner.id, role: "OWNER", organizationId: noModuleOrg.id }));
+
+    await expect(installTemplate({ templateId: template.id })).rejects.toThrow(/módulo/i);
+
+    await cleanupOrg(noModuleOrg.id);
+  });
 });

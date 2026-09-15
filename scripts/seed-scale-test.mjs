@@ -31,6 +31,14 @@ async function main() {
   });
   console.log("org:", org.id);
 
+  for (const module of ["CRM", "AI_WHATSAPP", "AUTOMATIONS"]) {
+    await prisma.organizationModule.upsert({
+      where: { organizationId_module: { organizationId: org.id, module } },
+      update: {},
+      create: { organizationId: org.id, module, status: "ACTIVE", source: "SUBSCRIBED" },
+    });
+  }
+
   const passwordHash = await bcrypt.hash(SCALE_TEST_PASSWORD, 12);
   await prisma.user.upsert({
     where: { email: "scale@test.local" },

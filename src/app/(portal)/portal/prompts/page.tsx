@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { SlidersHorizontal, CheckCircle2 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +49,7 @@ async function getPrompts(orgId: string) {
 export default async function PromptsPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
   const prompts = await getPrompts(session.user.organizationId);
   const activeCount = prompts.filter((p) => p.isActive).length;
