@@ -428,6 +428,11 @@ function EditAutomationDialog({
     { value: "whatsapp", label: "WhatsApp" },
     { value: "custom", label: t.adminTypeCustom },
   ];
+  // Automations installed from a template can carry a type/category (e.g. "retention")
+  // outside this fixed list — keep it selectable so the dropdown doesn't show blank.
+  if (!automationTypes.some((type) => type.value === automation.type)) {
+    automationTypes.push({ value: automation.type, label: automation.type });
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

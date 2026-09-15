@@ -1,4 +1,12 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
+
+/** Constant-time string comparison — never use `===` on secrets. */
+export function secretsMatch(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 export function verifyWebhookSignature(
   payload: string,
@@ -10,14 +18,7 @@ export function verifyWebhookSignature(
     .digest("hex");
   const expectedHeader = `sha256=${expected}`;
 
-  if (signature.length !== expectedHeader.length) return false;
-
-  // Constant-time comparison to prevent timing attacks
-  let result = 0;
-  for (let i = 0; i < signature.length; i++) {
-    result |= signature.charCodeAt(i) ^ expectedHeader.charCodeAt(i);
-  }
-  return result === 0;
+  return secretsMatch(signature, expectedHeader);
 }
 
 export function createWebhookSignature(payload: string, secret: string): string {
@@ -37,7 +38,7 @@ export function isWebhookAuthorized(
 ): boolean {
   if (verifyWebhookSignature(rawBody, hmacSignature, knownSecret)) return true;
 
-  if (process.env.NODE_ENV !== "production" && plainSecret === knownSecret && knownSecret !== "") {
+  if (process.env.NODE_ENV !== "production" && knownSecret !== "" && secretsMatch(plainSecret, knownSecret)) {
     return true;
   }
 

@@ -13,6 +13,7 @@ function buildActionLabels(t: Strings): Record<string, { label: string; variant:
   return {
     "client.create":       { label: t.adminActionClientCreate,       variant: "success" },
     "client.plan_change":  { label: t.adminActionPlanChange,         variant: "info" },
+    "client.status_change": { label: t.adminActionClientStatusChange, variant: "warning" },
     "team.invite":         { label: t.adminActionTeamInvite,         variant: "success" },
     "team.remove":         { label: t.adminActionTeamRemove,         variant: "warning" },
     "template.install":    { label: t.adminActionTemplateInstall,    variant: "success" },

@@ -2,9 +2,18 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+// Prefixes values that could be interpreted as a formula (=, +, -, @, or a
+// leading tab/CR) with a single quote so Excel/Sheets always render CSV
+// exports as plain text — otherwise a lead name like "=cmd|'/c calc'!A1"
+// (e.g. submitted through the public webhook) could execute on open.
+const FORMULA_INJECTION_PREFIX = /^[=+\-@\t\r]/;
+
 function escapeCsv(value: string | null | undefined): string {
   if (value == null) return "";
-  const str = String(value);
+  let str = String(value);
+  if (FORMULA_INJECTION_PREFIX.test(str)) {
+    str = `'${str}`;
+  }
   if (str.includes(",") || str.includes('"') || str.includes("\n")) {
     return `"${str.replace(/"/g, '""')}"`;
   }

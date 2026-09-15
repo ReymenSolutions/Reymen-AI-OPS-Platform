@@ -1,22 +1,32 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Bot, User, Settings } from "lucide-react";
+import { ArrowLeft, Bot } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConversationActions } from "@/components/portal/ConversationActions";
+import { MessageThread } from "@/components/portal/MessageThread";
 import { formatDateTime } from "@/lib/utils";
 
+const MESSAGE_PAGE_SIZE = 50;
+
 async function getConversation(id: string, orgId: string) {
-  return prisma.conversation.findFirst({
+  const conv = await prisma.conversation.findFirst({
     where: { id, organizationId: orgId },
     include: {
-      messages: { orderBy: { createdAt: "asc" } },
+      messages: { orderBy: { createdAt: "desc" }, take: MESSAGE_PAGE_SIZE },
+      _count: { select: { messages: true } },
     },
   });
+  if (!conv) return null;
+
+  return {
+    ...conv,
+    messages: conv.messages.reverse(),
+    hasMoreMessages: conv._count.messages > MESSAGE_PAGE_SIZE,
+  };
 }
 
 export default async function ConversationDetailPage({
@@ -44,7 +54,7 @@ export default async function ConversationDetailPage({
 
       <PageHeader
         title={conv.contactName ?? conv.contactPhone ?? "Conversación"}
-        description={`${conv.channel} · ${conv.messages.length} mensajes`}
+        description={`${conv.channel} · ${conv._count.messages} mensajes`}
         actions={<ConversationActions conversationId={conv.id} status={conv.status} />}
       />
 
@@ -70,64 +80,12 @@ export default async function ConversationDetailPage({
       </div>
 
       {/* Message thread */}
-      <Card>
-        <CardContent className="p-0">
-          {conv.messages.length === 0 ? (
-            <div className="py-16 text-center text-sm text-slate-400">
-              Sin mensajes en esta conversación
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-50">
-              {conv.messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex gap-3 p-4 ${
-                    msg.role === "USER" ? "bg-white" : msg.role === "ASSISTANT" ? "bg-slate-50" : "bg-amber-50"
-                  }`}
-                >
-                  {/* Avatar */}
-                  <div
-                    className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                      msg.role === "USER"
-                        ? "bg-slate-200 text-slate-700"
-                        : msg.role === "ASSISTANT"
-                        ? "bg-brand-100 text-brand-700"
-                        : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {msg.role === "USER" ? (
-                      <User className="h-4 w-4" />
-                    ) : msg.role === "ASSISTANT" ? (
-                      <Bot className="h-4 w-4" />
-                    ) : (
-                      <Settings className="h-4 w-4" />
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-medium text-slate-700">
-                        {msg.role === "USER"
-                          ? conv.contactName ?? "Usuario"
-                          : msg.role === "ASSISTANT"
-                          ? "Asistente AI"
-                          : "Sistema"}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {formatDateTime(msg.createdAt)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-900 whitespace-pre-wrap leading-relaxed">
-                      {msg.content}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <MessageThread
+        conversationId={conv.id}
+        contactName={conv.contactName}
+        initialMessages={conv.messages}
+        hasMoreInitially={conv.hasMoreMessages}
+      />
     </div>
   );
 }

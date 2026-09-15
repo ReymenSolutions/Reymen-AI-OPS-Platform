@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { assertPlanCapacity } from "@/lib/plan-limits";
 import type { LeadStatus } from "@prisma/client";
 
 const createLeadSchema = z.object({
@@ -22,12 +23,14 @@ export async function createLead(formData: FormData) {
   const parsed = createLeadSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email") || undefined,
-    phone: formData.get("phone"),
+    phone: formData.get("phone") || undefined,
     source: formData.get("source") || "manual",
-    notes: formData.get("notes"),
+    notes: formData.get("notes") || undefined,
   });
 
   if (!parsed.success) throw new Error("Datos inválidos");
+
+  await assertPlanCapacity(session.user.organizationId, "leads");
 
   const lead = await prisma.lead.create({
     data: {

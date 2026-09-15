@@ -4,6 +4,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { TwoFactorSettings } from "@/components/admin/TwoFactorSettings";
 
 async function getSystemStats() {
   const [totalOrgs, totalUsers, totalLeads, totalAutomations, totalTemplates, activeInstallations] = await Promise.all([
@@ -19,6 +20,11 @@ async function getSystemStats() {
 
 export default async function AdminSettingsPage() {
   const [session, t, stats] = await Promise.all([auth(), getServerT(), getSystemStats()]);
+
+  const totpEnabled = session?.user.id
+    ? (await prisma.user.findUnique({ where: { id: session.user.id }, select: { totpEnabled: true } }))
+        ?.totpEnabled ?? false
+    : false;
 
   const systemStatRows = [
     { label: t.adminActiveOrgs, value: stats.totalOrgs },
@@ -66,6 +72,13 @@ export default async function AdminSettingsPage() {
         </Card>
 
         <Card className="lg:col-span-2">
+          <CardHeader><CardTitle>Autenticación en dos pasos</CardTitle></CardHeader>
+          <CardContent>
+            <TwoFactorSettings initialEnabled={totpEnabled} />
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
           <CardHeader><CardTitle>{t.adminRequiredEnvVars}</CardTitle></CardHeader>
           <CardContent>
             <div className="rounded-lg bg-slate-950 p-4 font-mono text-xs text-slate-300 space-y-1">
@@ -74,8 +87,7 @@ export default async function AdminSettingsPage() {
                 "AUTH_SECRET",
                 "N8N_BASE_URL",
                 "N8N_WEBHOOK_SECRET",
-                "WEBHOOK_SECRET",
-                "KNOWLEDGE_BASE_API_KEY",
+                "CRON_SECRET",
               ].map((key) => (
                 <div key={key} className="flex items-center gap-3">
                   <span className="text-brand-400">{key}</span>

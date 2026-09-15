@@ -7,48 +7,49 @@ const ENDPOINTS = [
   {
     method: "POST",
     path: "/api/webhooks/n8n/leads",
-    description: "Crea un nuevo lead desde n8n. Requiere firma HMAC-SHA256 en el header X-Webhook-Signature.",
+    description: "Crea un nuevo lead desde n8n. Requiere x-reymen-orgid y una firma HMAC-SHA256 del body (header x-reymen-signature) usando el secreto propio de esa organización.",
     body: JSON.stringify(
-      { organizationId: "org_xxx", name: "Juan García", email: "juan@email.com", phone: "+52 55 1234 5678", source: "whatsapp", notes: "Interesado en consulta general" },
+      { name: "Juan García", email: "juan@email.com", phone: "+52 55 1234 5678", source: "whatsapp", notes: "Interesado en consulta general" },
       null, 2
     ),
   },
   {
     method: "POST",
     path: "/api/webhooks/n8n/automations",
-    description: "Registra un evento de ejecución de automatización. Status: SUCCESS | FAILED | PENDING.",
+    description: "Registra un evento de ejecución de automatización. Requiere firma HMAC con el secreto propio de esa automatización (no el de la organización). Status: SUCCESS | FAILED | PENDING.",
     body: JSON.stringify(
-      { automationId: "auto_xxx", organizationId: "org_xxx", type: "lead_captured", status: "SUCCESS", duration: 843, errorMessage: null },
+      { automationId: "auto_xxx", type: "lead_captured", status: "SUCCESS", duration: 843, errorMessage: null },
       null, 2
     ),
   },
   {
     method: "POST",
     path: "/api/webhooks/n8n/conversations",
-    description: "Crea o continúa una conversación de WhatsApp. Si el contactPhone ya existe con status OPEN, agrega el mensaje a esa conversación.",
+    description: "Crea o continúa una conversación de WhatsApp. Si el contactPhone ya existe con status OPEN, agrega el mensaje a esa conversación. Misma autenticación que /leads.",
     body: JSON.stringify(
-      { organizationId: "org_xxx", contactPhone: "+52 55 1234 5678", contactName: "María López", message: "Hola, quisiera una cita", role: "USER", channel: "whatsapp" },
+      { contactPhone: "+52 55 1234 5678", contactName: "María López", message: "Hola, quisiera una cita", role: "USER", channel: "whatsapp" },
       null, 2
     ),
   },
   {
     method: "POST",
     path: "/api/webhooks/n8n/scoring",
-    description: "Actualiza el score de un lead con el resultado del scoring de IA. Score entre 0 y 100.",
+    description: "Actualiza el score de un lead con el resultado del scoring de IA. Score entre 0 y 100. Misma autenticación que /leads.",
     body: JSON.stringify(
-      { organizationId: "org_xxx", leadId: "lead_xxx", score: 87, reason: "Empresa grande, presupuesto confirmado, decisor." },
+      { leadId: "lead_xxx", score: 87, reason: "Empresa grande, presupuesto confirmado, decisor." },
       null, 2
     ),
   },
   {
     method: "GET",
     path: "/api/v1/knowledge-base",
-    description: "Retorna artículos de la base de conocimiento. Autenticación: header X-Api-Key. Parámetros: ?q=búsqueda&category=categoria.",
+    description: "Retorna artículos de la base de conocimiento. Autenticación: header X-Api-Key con el secreto propio de la organización. Parámetros: ?orgId=xxx&q=búsqueda&category=categoria.",
     body: null,
   },
 ];
 
-const AUTH_HEADER = `X-Webhook-Signature: sha256=<hmac_sha256(secret, body)>
+const AUTH_HEADER = `X-Reymen-OrgId: <organization id>
+X-Reymen-Signature: sha256=<hmac_sha256(org_secret, body)>
 Content-Type: application/json`;
 
 export default function ApiDocsPage() {
@@ -69,17 +70,24 @@ export default function ApiDocsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-slate-600">
-            Todos los webhooks de n8n deben incluir una firma HMAC-SHA256 del body en el header{" "}
-            <code className="rounded bg-slate-100 px-1 font-mono text-xs">X-Webhook-Signature</code>.
-            El secret se obtiene de la variable de entorno{" "}
-            <code className="rounded bg-slate-100 px-1 font-mono text-xs">WEBHOOK_SECRET</code>.
+            Los webhooks de leads, conversaciones, scoring y la API de knowledge base se autentican con el{" "}
+            <strong>secreto propio de cada organización</strong> (nunca uno compartido) — obtenlo desde{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">Clientes → [cliente] → Credenciales n8n</code>{" "}
+            en este panel. Incluye una firma HMAC-SHA256 del body en el header{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">x-reymen-signature</code>, junto con{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">x-reymen-orgid</code>.
           </p>
           <pre className="rounded-lg bg-slate-950 p-4 text-xs text-slate-300 overflow-x-auto">
             <code>{AUTH_HEADER}</code>
           </pre>
           <p className="text-sm text-slate-600">
             Para la API de Knowledge Base, usa el header{" "}
-            <code className="rounded bg-slate-100 px-1 font-mono text-xs">X-Api-Key: {"<KNOWLEDGE_BASE_API_KEY>"}</code>.
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">X-Api-Key: {"<secreto de la organización>"}</code>{" "}
+            junto con <code className="rounded bg-slate-100 px-1 font-mono text-xs">?orgId=</code>.
+          </p>
+          <p className="text-sm text-slate-600">
+            <strong>/api/webhooks/n8n/automations</strong> es distinto: se autentica con el secreto propio de cada
+            automatización (visible en su diálogo &quot;Webhook Info&quot; en Automatizaciones), no con el de la organización.
           </p>
         </CardContent>
       </Card>

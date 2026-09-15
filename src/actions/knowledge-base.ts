@@ -16,10 +16,12 @@ export async function createArticle(data: z.infer<typeof articleSchema>) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
 
+  const parsed = articleSchema.parse(data);
+
   await prisma.knowledgeBase.create({
     data: {
-      ...data,
-      tags: data.tags ?? [],
+      ...parsed,
+      tags: parsed.tags ?? [],
       organizationId: session.user.organizationId,
     },
   });
@@ -35,6 +37,8 @@ export async function updateArticle(
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
 
+  const parsed = articleSchema.parse(data);
+
   const article = await prisma.knowledgeBase.findFirst({
     where: { id, organizationId: session.user.organizationId },
   });
@@ -42,7 +46,7 @@ export async function updateArticle(
 
   await prisma.knowledgeBase.update({
     where: { id },
-    data: { ...data, tags: data.tags ?? [] },
+    data: { ...parsed, tags: parsed.tags ?? [] },
   });
 
   revalidatePath("/portal/knowledge-base");

@@ -32,7 +32,16 @@ async function getTemplateMarketplace(orgId: string) {
     prisma.automationTemplate.findMany({
       where: { isPublished: true },
       orderBy: [{ industry: "asc" }, { name: "asc" }],
-      include: {
+      // Explicit select — the marketplace grid never shows longDescription
+      // (a Text column, only used on the template detail page), no reason
+      // to pull it for every published template on every org's page load.
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        industry: true,
+        category: true,
+        iconEmoji: true,
         versions: { where: { isLatest: true }, take: 1, select: { version: true } },
         _count: { select: { installations: { where: { status: "ACTIVE" } } } },
       },

@@ -14,7 +14,7 @@ import { AssistantToggle } from "@/components/portal/AssistantToggle";
 import { formatDate } from "@/lib/utils";
 
 async function getWhatsAppData(orgId: string) {
-  const [assistant, activeConvs, escalatedConvs, totalConvs] = await Promise.all([
+  const [assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount] = await Promise.all([
     prisma.whatsAppAssistant.findUnique({ where: { organizationId: orgId } }),
     prisma.conversation.findMany({
       where: { organizationId: orgId, status: "OPEN", channel: "whatsapp" },
@@ -24,11 +24,8 @@ async function getWhatsAppData(orgId: string) {
     }),
     prisma.conversation.count({ where: { organizationId: orgId, status: "ESCALATED" } }),
     prisma.conversation.count({ where: { organizationId: orgId, channel: "whatsapp" } }),
+    prisma.conversation.count({ where: { organizationId: orgId, status: "RESOLVED", aiHandled: true } }),
   ]);
-
-  const resolvedCount = await prisma.conversation.count({
-    where: { organizationId: orgId, status: "RESOLVED", aiHandled: true },
-  });
 
   return { assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount };
 }

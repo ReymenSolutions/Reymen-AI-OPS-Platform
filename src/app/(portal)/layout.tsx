@@ -11,12 +11,18 @@ export default async function PortalLayout({ children }: { children: React.React
   const orgId = session.user.organizationId;
   if (!orgId) return redirect("/login");
 
-  const org = await prisma.organization.findUnique({
-    where: { id: orgId, isActive: true },
-    select: { id: true, name: true, logoUrl: true },
+  // Re-validated on every request (not just at login) so deactivating a
+  // team member or suspending their organization takes effect immediately,
+  // rather than only blocking their next sign-in.
+  const currentUser = await prisma.user.findUnique({
+    where: { id: session.user.id, isActive: true },
+    select: {
+      organization: { select: { id: true, name: true, logoUrl: true, isActive: true } },
+    },
   });
 
-  if (!org) return redirect("/login");
+  if (!currentUser?.organization?.isActive) return redirect("/login");
+  const org = currentUser.organization;
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">

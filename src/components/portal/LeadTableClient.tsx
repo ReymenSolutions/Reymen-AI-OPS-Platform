@@ -1,23 +1,57 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LeadScoreBadge } from "@/components/shared/LeadScoreBadge";
 import { Badge } from "@/components/ui/badge";
 import { LeadActions } from "@/components/portal/LeadActions";
+import { Pagination } from "@/components/shared/Pagination";
 import { formatDate } from "@/lib/utils";
 import { usePreferences } from "@/context/preferences";
 import type { Lead, LeadStatus } from "@prisma/client";
 
 interface LeadTableClientProps {
   leads: Lead[];
+  total: number;
+  page: number;
+  pageSize: number;
+  query: string;
+  status: LeadStatus | "ALL";
 }
 
-export function LeadTableClient({ leads }: LeadTableClientProps) {
+// Search/filter/page state all live in the URL and drive a server refetch —
+// necessary so search actually covers every lead in the org, not just
+// whatever page happens to be loaded client-side.
+export function LeadTableClient({ leads, total, page, pageSize, query, status }: LeadTableClientProps) {
   const { t } = usePreferences();
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<LeadStatus | "ALL">("ALL");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [inputValue, setInputValue] = useState(query);
+  const [, startTransition] = useTransition();
+
+  // Debounce the search box before pushing a URL update (and re-fetching server-side).
+  useEffect(() => {
+    if (inputValue === query) return;
+    const timer = setTimeout(() => {
+      updateParams({ q: inputValue || undefined, page: undefined });
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputValue]);
+
+  function updateParams(next: Record<string, string | undefined>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(next)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    startTransition(() => {
+      router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+    });
+  }
 
   const statusOptions: { value: LeadStatus | "ALL"; label: string }[] = [
     { value: "ALL", label: t.filterAll },
@@ -29,19 +63,6 @@ export function LeadTableClient({ leads }: LeadTableClientProps) {
     { value: "LOST", label: t.filterLost },
   ];
 
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return leads.filter((l) => {
-      const matchesQuery =
-        !q ||
-        l.name.toLowerCase().includes(q) ||
-        (l.email ?? "").toLowerCase().includes(q) ||
-        (l.phone ?? "").includes(q);
-      const matchesStatus = statusFilter === "ALL" || l.status === statusFilter;
-      return matchesQuery && matchesStatus;
-    });
-  }, [leads, query, statusFilter]);
-
   return (
     <div>
       {/* Search + filter */}
@@ -51,13 +72,13 @@ export function LeadTableClient({ leads }: LeadTableClientProps) {
           <input
             type="text"
             placeholder={t.searchLeads}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
             className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-8 text-sm focus:border-brand-500 focus:outline-none text-slate-900"
           />
-          {query && (
+          {inputValue && (
             <button
-              onClick={() => setQuery("")}
+              onClick={() => setInputValue("")}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
             >
               <X className="h-3.5 w-3.5" />
@@ -68,9 +89,9 @@ export function LeadTableClient({ leads }: LeadTableClientProps) {
           {statusOptions.map((opt) => (
             <button
               key={opt.value}
-              onClick={() => setStatusFilter(opt.value)}
+              onClick={() => updateParams({ status: opt.value === "ALL" ? undefined : opt.value, page: undefined })}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                statusFilter === opt.value
+                status === opt.value
                   ? "bg-brand-600 text-white"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
@@ -81,7 +102,7 @@ export function LeadTableClient({ leads }: LeadTableClientProps) {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {leads.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-200 py-10 text-center">
           <p className="text-sm text-slate-400">{t.noLeadsFiltered}</p>
         </div>
@@ -100,7 +121,7 @@ export function LeadTableClient({ leads }: LeadTableClientProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((lead) => (
+              {leads.map((lead) => (
                 <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
                     <p className="font-medium text-slate-900">{lead.name}</p>
@@ -131,9 +152,12 @@ export function LeadTableClient({ leads }: LeadTableClientProps) {
               ))}
             </tbody>
           </table>
-          <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">
-            {filtered.length} {t.ofLeads} {leads.length} {t.leads}
-          </div>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={(p) => updateParams({ page: p > 1 ? String(p) : undefined })}
+          />
         </div>
       )}
     </div>

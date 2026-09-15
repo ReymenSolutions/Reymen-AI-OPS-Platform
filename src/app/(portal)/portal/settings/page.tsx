@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button";
 import { InviteUserForm } from "@/components/portal/InviteUserForm";
 import { RemoveUserButton } from "@/components/portal/RemoveUserButton";
 import { EditUserDialog } from "@/components/portal/EditUserDialog";
+import { BillingActions } from "@/components/portal/BillingActions";
 import { formatDate } from "@/lib/utils";
 import { can } from "@/lib/permissions";
 import { PLAN_LIMITS } from "@/lib/permissions";
+import { isStripeConfigured } from "@/lib/stripe";
 import type { UserRole } from "@prisma/client";
 
 export default async function PortalSettingsPage() {
@@ -35,7 +37,11 @@ export default async function PortalSettingsPage() {
   if (!org) return redirect("/login");
 
   const canManageTeam = can(session.user.role as UserRole, "team:manage");
+  const canManageBilling = can(session.user.role as UserRole, "settings:manage");
   const plan = PLAN_LIMITS[org.plan] ?? PLAN_LIMITS.starter;
+  const stripeEnabled = isStripeConfigured();
+  const hasActiveSubscription =
+    org.stripeSubscriptionStatus === "active" || org.stripeSubscriptionStatus === "trialing";
 
   return (
     <div>
@@ -80,12 +86,16 @@ export default async function PortalSettingsPage() {
                 </div>
               ))}
             </div>
-            <div className="rounded-lg bg-brand-50 border border-brand-100 p-3">
-              <p className="text-xs text-brand-700">{t.capacityMessage}</p>
-              <a href="/portal/requests" className="mt-1.5 inline-block text-xs font-medium text-brand-600 hover:underline">
-                {t.openRequest}
-              </a>
-            </div>
+            {stripeEnabled && canManageBilling ? (
+              <BillingActions hasActiveSubscription={hasActiveSubscription} />
+            ) : (
+              <div className="rounded-lg bg-brand-50 border border-brand-100 p-3">
+                <p className="text-xs text-brand-700">{t.capacityMessage}</p>
+                <a href="/portal/requests" className="mt-1.5 inline-block text-xs font-medium text-brand-600 hover:underline">
+                  {t.openRequest}
+                </a>
+              </div>
+            )}
           </CardContent>
         </Card>
 

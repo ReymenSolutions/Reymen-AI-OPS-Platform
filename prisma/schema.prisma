@@ -10,24 +10,28 @@ datasource db {
 // ─── TENANT ──────────────────────────────────────────────────────
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  industry  String?
-  logoUrl   String?
-  isActive  Boolean  @default(true)
-  plan      String   @default("starter")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                       String   @id @default(cuid())
+  name                     String
+  slug                     String   @unique
+  industry                 String?
+  logoUrl                  String?
+  isActive                 Boolean  @default(true)
+  plan                     String   @default("starter")
+  stripeCustomerId         String?  @unique
+  stripeSubscriptionId     String?  @unique
+  stripeSubscriptionStatus String?
+  n8nWebhookSecret         String   @unique
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
-  users             User[]
-  leads             Lead[]
-  automations       Automation[]
-  conversations     Conversation[]
-  appointments      Appointment[]
-  requests          Request[]
-  metrics           Metric[]
-  auditLogs         AuditLog[]
+  users                 User[]
+  leads                 Lead[]
+  automations           Automation[]
+  conversations         Conversation[]
+  appointments          Appointment[]
+  requests              Request[]
+  metrics               Metric[]
+  auditLogs             AuditLog[]
   webhookEvents         WebhookEvent[]
   whatsappAssistant     WhatsAppAssistant?
   knowledgeBase         KnowledgeBase[]
@@ -40,18 +44,21 @@ model Organization {
 // ─── USERS & AUTH ─────────────────────────────────────────────────
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
-  name           String?
-  image          String?
-  passwordHash   String?
-  role           UserRole @default(CLIENT)
-  organizationId String?
-  isActive       Boolean  @default(true)
-  theme          String?  @default("light")
-  language       String?  @default("es")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  name                 String?
+  image                String?
+  passwordHash         String?
+  role                 UserRole @default(CLIENT)
+  organizationId       String?
+  isActive             Boolean  @default(true)
+  theme                String?  @default("light")
+  language             String?  @default("es")
+  totpSecret           String? // base32 TOTP secret; set once enrollment begins
+  totpEnabled          Boolean  @default(false)
+  totpBackupCodeHashes String[] @default([]) // bcrypt hashes, single-use, cleared/regenerated on re-enroll
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   organization Organization? @relation(fields: [organizationId], references: [id])
   accounts     Account[]
@@ -157,7 +164,7 @@ model Automation {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  organization Organization    @relation(fields: [organizationId], references: [id])
+  organization Organization      @relation(fields: [organizationId], references: [id])
   events       AutomationEvent[]
 
   @@index([organizationId])
@@ -366,7 +373,7 @@ model WhatsAppAssistant {
   id             String   @id @default(cuid())
   organizationId String   @unique
   name           String   @default("Asistente AI")
-  greeting       String   @db.Text @default("¡Hola! Soy el asistente virtual. ¿En qué puedo ayudarte?")
+  greeting       String   @default("¡Hola! Soy el asistente virtual. ¿En qué puedo ayudarte?") @db.Text
   personality    String?  @db.Text
   capabilities   String[]
   isActive       Boolean  @default(true)
@@ -428,19 +435,19 @@ enum PromptType {
 // ─── TEMPLATE ENGINE ──────────────────────────────────────────────
 
 model AutomationTemplate {
-  id             String   @id @default(cuid())
-  name           String
-  description    String   @db.Text
-  longDescription String? @db.Text
-  industry       String   // clinic, real_estate, gym, legal, workshop, ecommerce
-  category       String   // lead_capture, appointments, follow_up, crm, retention
-  tags           String[]
-  iconEmoji      String   @default("⚡")
-  isPublished    Boolean  @default(false)
-  currentVersion String?  // latest semver e.g. "1.0.0"
-  createdBy      String?  // userId
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  description     String   @db.Text
+  longDescription String?  @db.Text
+  industry        String // clinic, real_estate, gym, legal, workshop, ecommerce
+  category        String // lead_capture, appointments, follow_up, crm, retention
+  tags            String[]
+  iconEmoji       String   @default("⚡")
+  isPublished     Boolean  @default(false)
+  currentVersion  String? // latest semver e.g. "1.0.0"
+  createdBy       String? // userId
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   versions      TemplateVersion[]
   installations TemplateInstallation[]
@@ -452,15 +459,15 @@ model AutomationTemplate {
 model TemplateVersion {
   id              String   @id @default(cuid())
   templateId      String
-  version         String   // "1.0.0"
+  version         String // "1.0.0"
   changelog       String?  @db.Text
-  n8nWorkflowJson Json     // full n8n workflow export JSON
-  n8nWorkflowId   String?  // ID of deployed workflow in n8n instance
-  defaultConfig   Json?    // default variable values for this version
+  n8nWorkflowJson Json // full n8n workflow export JSON
+  n8nWorkflowId   String? // ID of deployed workflow in n8n instance
+  defaultConfig   Json? // default variable values for this version
   isLatest        Boolean  @default(true)
   createdAt       DateTime @default(now())
 
-  template      AutomationTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template      AutomationTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
   installations TemplateInstallation[]
 
   @@unique([templateId, version])
@@ -473,9 +480,9 @@ model TemplateInstallation {
   organizationId String
   templateId     String
   versionId      String
-  automationId   String?            // FK to Automation created on install
+  automationId   String? // FK to Automation created on install
   status         InstallationStatus @default(PENDING)
-  config         Json?              // org-specific config overrides
+  config         Json? // org-specific config overrides
   installedAt    DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -494,4 +501,16 @@ enum InstallationStatus {
   ACTIVE
   FAILED
   UNINSTALLED
+}
+
+// ─── RATE LIMITING ──────────────────────────────────────────────────
+// DB-backed sliding window so limits hold across serverless instances
+// without needing Redis. One row per attempt; see src/lib/rate-limit.ts.
+
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String // e.g. "login:email:user@example.com", "login:ip:1.2.3.4", "webhook:automationId"
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
 }

@@ -1015,16 +1015,45 @@ Updates the AI score and reason for a Lead.
 
 ## 8. Webhook Security
 
+### Per-organization secrets, not a shared global one
+
+Earlier revisions of this platform authenticated every inbound n8n webhook against a
+single global `WEBHOOK_SECRET`/`N8N_WEBHOOK_SECRET` env var shared across **all**
+organizations. That was a cross-tenant forgery risk: any org's n8n workflow (or
+anyone who obtained the one shared value) could forge webhook calls claiming to be
+any other organization by simply passing a different `orgId`. This was fixed in the
+security review — inbound authentication is now **per-organization**:
+
+- `Organization.n8nWebhookSecret` — a unique, randomly generated secret column,
+  backfilled for existing orgs by migration `20260915040000_add_org_webhook_secret`
+  and generated automatically for every new org (`createClient` action).
+- Rotatable at any time from `/admin/clients/[clientId]` via the webhook info
+  dialog (`src/components/admin/OrgWebhookInfoDialog.tsx` → `rotateOrgWebhookSecret`
+  action) — rotating immediately invalidates the old value.
+- `N8N_WEBHOOK_SECRET` (the env var) is now used **only** for outbound signatures —
+  platform → n8n calls in `src/lib/n8n.ts`. It plays no role in verifying inbound
+  webhooks anymore.
+
 ### HMAC-SHA256 Verification
 
-All webhook endpoints (both inbound from n8n and outbound signatures) use HMAC-SHA256 signing via `src/lib/webhook-validator.ts`.
+Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring}`) use
+HMAC-SHA256 signing via `src/lib/webhook-validator.ts`, verified against the
+**target organization's own** `n8nWebhookSecret`:
 
 ```typescript
-// Verifying an inbound webhook
+// route.ts: look up the org's own secret, then verify against it
+const org = orgId
+  ? await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true, n8nWebhookSecret: true } })
+  : null;
+
+const authorized = org && isWebhookAuthorized(rawBody, hmacSignature, plainSecret, org.n8nWebhookSecret);
+```
+
+```typescript
 export function verifyWebhookSignature(
   payload: string,    // raw request body as string
   signature: string,  // value of X-Reymen-Signature header
-  secret: string      // N8N_WEBHOOK_SECRET from env
+  secret: string       // that org's n8nWebhookSecret, looked up by orgId
 ): boolean
 ```
 
@@ -1037,18 +1066,22 @@ HMAC-SHA256(key=secret, message=rawBody) → hex → "sha256=" + hex
 
 ### Constant-Time Comparison
 
-The verification uses a constant-time comparison to prevent **timing attacks**:
+Verification uses `crypto.timingSafeEqual` (via the `secretsMatch()` helper in
+`webhook-validator.ts`) to prevent **timing attacks**, replacing an earlier
+hand-rolled XOR-accumulator comparison:
 
 ```typescript
-// Bitwise OR accumulator — if any byte differs, result > 0
-let result = 0;
-for (let i = 0; i < signature.length; i++) {
-  result |= signature.charCodeAt(i) ^ expectedHeader.charCodeAt(i);
+export function secretsMatch(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
-return result === 0;
 ```
 
-A length check (`signature.length !== expectedHeader.length`) short-circuits before the loop to avoid leaking length information via timing.
+The length check short-circuits before the constant-time comparison to avoid
+leaking length information via timing; `Buffer` lengths, not string character
+counts, are compared to stay correct for multi-byte content.
 
 ### Raw Body Requirement
 
@@ -1066,8 +1099,14 @@ If you use `req.json()` first, the body stream is consumed and the raw bytes may
 
 The `/api/v1/knowledge-base` endpoint supports two authentication methods:
 
-1. **API key** (`x-api-key` header = `N8N_WEBHOOK_SECRET`): for n8n internal calls. The `orgId` must be passed as `?orgId=xxx` query parameter.
-2. **Session** (NextAuth JWT cookie): for portal browser access. The `orgId` is extracted from `session.user.organizationId`.
+1. **API key** (`x-api-key` header): checked with `secretsMatch()` against the
+   **target organization's own** `n8nWebhookSecret` — not a global env var. The
+   `orgId` must be passed as `?orgId=xxx` query parameter, and the key must match
+   that specific org's secret; a key valid for one org is rejected for any other.
+2. **Session** (NextAuth JWT cookie): for portal browser access, used when no
+   `x-api-key` header is present. The `orgId` is extracted from
+   `session.user.organizationId`, so a logged-in user can only ever reach their
+   own org's knowledge base regardless of query params.
 
 ---
 
@@ -1526,24 +1565,72 @@ Note that `logAudit` is marked `"use server"` and is always called from within a
 
 ## 13. Environment Variables
 
-### Complete Table
+> Updated after the security review and per-organization webhook secret migration
+> (see [§8 Webhook Security](#8-webhook-security)). The old global `WEBHOOK_SECRET`
+> and `KNOWLEDGE_BASE_API_KEY` variables described in earlier drafts of this document
+> **no longer exist** — inbound webhook/API-key auth is now validated per-organization
+> against `Organization.n8nWebhookSecret` in the database (rotatable from the admin
+> client detail page), not a shared env var. Treat this section, not any cached
+> copy, as the source of truth.
 
-| Variable | Required | Description | Example |
-|----------|----------|-------------|---------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string | `postgresql://postgres:password@localhost:5432/reymen_ops` |
-| `AUTH_SECRET` | Yes | NextAuth JWT signing secret (min 32 chars) | `openssl rand -base64 32` output |
-| `N8N_BASE_URL` | Yes | Internal URL of the n8n instance | `http://n8n:5678` (Docker) or `http://localhost:5678` (local) |
-| `N8N_WEBHOOK_SECRET` | Yes | Shared HMAC secret for platform↔n8n communication | 64-char hex string |
-| `WEBHOOK_SECRET` | No | Alternative webhook secret (legacy/reserve) | 64-char hex string |
-| `KNOWLEDGE_BASE_API_KEY` | No | API key for n8n to call the Knowledge Base endpoint. Defaults to `N8N_WEBHOOK_SECRET` | same as N8N_WEBHOOK_SECRET |
-| `NEXTAUTH_URL` | Production only | Full URL of the deployed app | `https://app.reymen.io` |
+### Core — the app will not start or will be actively insecure without these
 
-### Notes
+| Variable | Required | What breaks without it |
+|----------|----------|-------------------------|
+| `DATABASE_URL` | Yes | App cannot start; Prisma has no database to connect to. |
+| `AUTH_SECRET` (`NEXTAUTH_SECRET` also accepted, for back-compat with older Auth.js configs) | Yes | Session/JWT signing has no key. Auth.js refuses to start in production without one; in dev it falls back to an insecure generated value and logs a warning — never rely on that fallback in production. Generate with `openssl rand -base64 32`. |
+| `N8N_BASE_URL` | Yes | Platform → n8n calls (triggering automations) have nowhere to go. Use the Docker service name in containerized environments (`http://n8n:5678`), not `localhost`. |
+| `N8N_WEBHOOK_SECRET` | Yes | Used only for **outbound** HMAC signatures on platform → n8n calls (`src/lib/n8n.ts`). n8n must be configured with the same value to verify them. This is unrelated to the per-organization secret used for **inbound** n8n → platform webhooks — see below. |
+| `NEXT_PUBLIC_APP_URL` | Yes | Baked into emails (password reset links, notifications) and absolute links. Wrong value silently produces broken links, not an error. |
 
-- `AUTH_SECRET` must be a cryptographically secure random string. Generate with: `openssl rand -base64 32`.
-- `N8N_WEBHOOK_SECRET` is used both for **outbound** signatures (platform → n8n) and **inbound** verification (n8n → platform). Both sides must use the same value.
-- `N8N_BASE_URL` should use the Docker service name in containerized environments (`http://n8n:5678`), not `localhost`.
-- `NEXTAUTH_URL` is required in production for OAuth redirects to work correctly. In development, NextAuth infers it from the request.
+### Auth / reverse proxy
+
+| Variable | Required | What breaks without it |
+|----------|----------|-------------------------|
+| `AUTH_TRUST_HOST` | Production only, and only when the app sits behind a reverse proxy or load balancer (Nginx, an ALB, etc.) | Without it, `next start` in production rejects every request with `UntrustedHost: Host must be trusted`, because Auth.js refuses to trust the incoming `Host` header by default. **Only set `AUTH_TRUST_HOST=true` when that proxy is trusted to set an accurate `Host`/`X-Forwarded-Host`** — enabling it on an app directly reachable from the internet (no proxy in front) lets a client spoof its own Host header. |
+| `NEXTAUTH_URL` | Production only | Without it, some Auth.js redirect/callback URLs can be inferred incorrectly. In development this is inferred from the request and can be omitted. |
+
+### Per-organization webhook secret (replaces the old global `WEBHOOK_SECRET`)
+
+Inbound n8n → platform webhooks (`/api/webhooks/n8n/{leads,conversations,scoring}`) and the
+`/api/v1/knowledge-base` API-key route are authenticated per-organization against
+`Organization.n8nWebhookSecret`, a unique value stored in the database and generated
+automatically when a client organization is created. **There is no env var to configure
+for this** — it's managed entirely from `/admin/clients/[clientId]` (view/rotate dialog).
+If an organization's secret is compromised, rotate it there; the old value stops working
+immediately.
+
+### Optional — feature stays cleanly disabled/hidden without these, nothing crashes
+
+| Variable | Gates | What happens without it |
+|----------|-------|--------------------------|
+| `RESEND_API_KEY` / `EMAIL_FROM` | Transactional email (password reset, notifications) | Without `RESEND_API_KEY`, emails are logged to the console instead of sent — password reset and notification flows still "succeed" but no email arrives. Set both before relying on email in production. |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_PROFESSIONAL` / `STRIPE_PRICE_ENTERPRISE` | Billing (upgrade/manage-billing UI, Stripe webhook route) | Without `STRIPE_SECRET_KEY`, the upgrade/manage-billing UI stays hidden. `STRIPE_WEBHOOK_SECRET` gates `/api/webhooks/stripe`; without it that route rejects incoming Stripe events. |
+| `SENTRY_DSN` (server) / `NEXT_PUBLIC_SENTRY_DSN` (client) | Error tracking | Without these, `sentry.server.config.ts` / `sentry.edge.config.ts` / `instrumentation-client.ts` initialize Sentry with no DSN, so error capture is a no-op — errors are only visible in server logs, not in Sentry. Not knowing about this in production means silently losing visibility into crashes. |
+| `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Source map upload at build time | Build-time only, unrelated to runtime error capture. Without them, Sentry still receives errors (if `SENTRY_DSN` is set) but stack traces point at minified code instead of original source. |
+| `NEXT_PUBLIC_APP_NAME` | Branding text | Falls back to a hardcoded default app name. |
+
+### Required for a specific endpoint (fails closed, not silently disabled)
+
+| Variable | Required for | What breaks without it |
+|----------|---------------|--------------------------|
+| `CRON_SECRET` | `POST /api/cron/retry-webhooks` (scheduled webhook retry) | The route returns `401 Unauthorized` with `"CRON_SECRET not configured"` if unset — **it fails closed, not open**. Whatever scheduler calls this endpoint (cron on the VPS, a platform's scheduled-job feature) must send it as a bearer token/header matching this value. Without it configured, the webhook retry mechanism silently never runs. |
+
+### Deployment checklist
+
+Before going to production, confirm:
+
+- [ ] `DATABASE_URL` points at the production database, not a local/dev one.
+- [ ] `AUTH_SECRET` is a freshly generated value (`openssl rand -base64 32`), not reused from a dev `.env`.
+- [ ] `AUTH_TRUST_HOST=true` is set **if and only if** a trusted reverse proxy/load balancer sits in front of the app; confirm the proxy strips/overwrites any client-supplied `X-Forwarded-Host` before it reaches the app.
+- [ ] `N8N_BASE_URL` uses the internal/container network address n8n is actually reachable at from the app's runtime environment.
+- [ ] `N8N_WEBHOOK_SECRET` matches what's configured on the n8n side for outbound signature verification.
+- [ ] `NEXT_PUBLIC_APP_URL` is the real public URL (affects every link in every email sent).
+- [ ] `RESEND_API_KEY` is set if email delivery is expected to actually work (otherwise emails silently just log to console).
+- [ ] `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set if you want production errors to show up anywhere other than server logs.
+- [ ] `CRON_SECRET` is set and the scheduler calling `/api/cron/retry-webhooks` is configured with the matching value — otherwise failed webhook deliveries never retry.
+- [ ] Stripe vars are set together (all four) if billing is meant to be live; a partially-configured set (e.g. `STRIPE_SECRET_KEY` without `STRIPE_WEBHOOK_SECRET`) can accept payments UI-side while silently failing to process the webhook that confirms them.
+- [ ] Each client organization's `n8nWebhookSecret` (auto-generated on creation) has been shared with whoever configures that org's n8n workflows — there's no shared/global fallback anymore.
 
 ---
 

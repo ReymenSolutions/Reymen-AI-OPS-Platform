@@ -1,23 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { secretsMatch } from "@/lib/webhook-validator";
 
 // Internal n8n query: GET /api/v1/knowledge-base?orgId=xxx&category=faq
-// Secured by x-api-key matching N8N_WEBHOOK_SECRET for n8n callers,
-// or by NextAuth session for browser callers.
+// Secured by X-Api-Key matching THAT organization's own n8nWebhookSecret
+// (never a shared secret — knowing another org's id is not enough to read
+// its knowledge base), or by NextAuth session for browser callers.
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const apiKey = req.headers.get("x-api-key");
-  const isInternalCaller = apiKey === process.env.N8N_WEBHOOK_SECRET;
 
   let orgId: string;
 
-  if (isInternalCaller) {
+  if (apiKey) {
     const paramOrgId = searchParams.get("orgId");
     if (!paramOrgId) {
       return NextResponse.json({ error: "orgId required" }, { status: 400 });
     }
-    orgId = paramOrgId;
+
+    const org = await prisma.organization.findUnique({
+      where: { id: paramOrgId },
+      select: { id: true, n8nWebhookSecret: true },
+    });
+
+    if (!org || !secretsMatch(apiKey, org.n8nWebhookSecret)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    orgId = org.id;
   } else {
     const session = await auth();
     if (!session?.user.organizationId) {

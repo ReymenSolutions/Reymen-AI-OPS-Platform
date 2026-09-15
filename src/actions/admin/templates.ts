@@ -50,9 +50,11 @@ export async function updateTemplate(
   const session = await auth();
   if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
 
+  const parsed = templateSchema.partial().parse(data);
+
   await prisma.automationTemplate.update({
     where: { id: templateId },
-    data: { ...data, tags: data.tags ?? undefined },
+    data: { ...parsed, tags: parsed.tags ?? undefined },
   });
 
   revalidatePath("/admin/templates");

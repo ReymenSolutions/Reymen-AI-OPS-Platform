@@ -37,6 +37,7 @@ async function main() {
       slug: "clinica-san-rafael",
       industry: "clinic",
       plan: "starter",
+      n8nWebhookSecret: generateWebhookSecret(),
       users: {
         create: {
           name: "Dr. Carlos Ramírez",
@@ -61,6 +62,7 @@ async function main() {
       industry: "workshop",
       plan: "starter",
       isActive: true,
+      n8nWebhookSecret: generateWebhookSecret(),
       users: {
         create: {
           name: "Ricardo Wolf",

@@ -13,6 +13,13 @@ export async function triggerN8nWorkflow(
   webhookPath: string,
   payload: N8nTriggerPayload
 ): Promise<{ success: boolean; error?: string }> {
+  // webhookPath ends up in the request URL — restrict it to a safe path
+  // segment so a caller can't smuggle "../" or an absolute/protocol-relative
+  // URL into it and redirect the request off N8N_BASE_URL.
+  if (!/^[a-zA-Z0-9_-]+$/.test(webhookPath)) {
+    return { success: false, error: "Invalid webhookPath" };
+  }
+
   const body = JSON.stringify(payload);
   const signature = createWebhookSignature(body, N8N_WEBHOOK_SECRET);
 

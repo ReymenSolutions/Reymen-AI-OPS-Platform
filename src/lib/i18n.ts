@@ -96,6 +96,8 @@ export const strings = {
     statusSuccess: "Exitoso",
     statusFailed: "Fallido",
     statusRetrying: "Reintentando",
+    statusProcessing: "Procesando",
+    statusProcessed: "Procesado",
 
     // ── Dashboard ────────────────────────────────────────────
     welcomeBack: "Bienvenido de vuelta",
@@ -128,6 +130,11 @@ export const strings = {
     colDate: "Fecha",
     noLeadsFiltered: "No se encontraron leads con esos filtros",
     ofLeads: "de",
+    paginationPrev: "Anterior",
+    paginationNext: "Siguiente",
+    paginationPage: "Página",
+    paginationOf: "de",
+    paginationResults: "resultados",
 
     // ── Automations ──────────────────────────────────────────
     automationsConfigured: "automatizaciones configuradas",
@@ -229,6 +236,22 @@ export const strings = {
     adminNavEscalations: "Escalaciones",
     adminNavMetrics: "Métricas",
     adminNavAudit: "Auditoría",
+    adminNavWebhooks: "Webhooks",
+
+    // ── Admin webhooks ────────────────────────────────────────
+    adminWebhooksTitle: "Eventos de Webhook",
+    adminWebhooksDesc: "eventos registrados",
+    adminWebhooksRetryAll: "Reintentar todos los fallidos",
+    adminWebhooksRetry: "Reintentar",
+    adminWebhooksRetrying: "Reintentando...",
+    adminWebhooksNoEvents: "Sin eventos de webhook",
+    adminWebhooksNoEventsDesc: "Los eventos entrantes de n8n aparecerán aquí.",
+    adminWebhooksAttempts: "intentos",
+    adminWebhooksMaxAttemptsReached: "Máximo de intentos alcanzado",
+    adminWebhooksRetrySuccess: "Evento reprocesado con éxito",
+    adminWebhooksRetryFailed: "El reintento falló nuevamente",
+    adminWebhooksFilterAll: "Todos",
+    adminWebhooksFilterFailed: "Fallidos",
 
     // ── Admin dashboard ───────────────────────────────────────
     adminActiveClients: "Clientes activos",
@@ -259,6 +282,11 @@ export const strings = {
     adminNoRequestsShort: "Sin solicitudes",
     adminInstalledTemplates: "Templates instalados",
     adminNoTemplates: "Sin templates instalados",
+    adminSuspendClient: "Suspender cliente",
+    adminReactivateClient: "Reactivar cliente",
+    adminSuspendClientConfirm: "¿Suspender este cliente? Sus usuarios no podrán acceder a la plataforma hasta que se reactive.",
+    adminClientSuspended: "Cliente suspendido",
+    adminClientReactivated: "Cliente reactivado",
 
     // ── Admin requests ────────────────────────────────────────
     adminOpenPlural: "abiertas",
@@ -294,6 +322,7 @@ export const strings = {
     adminFilterAll: "Todos",
     adminActionClientCreate: "Cliente creado",
     adminActionPlanChange: "Plan cambiado",
+    adminActionClientStatusChange: "Estado del cliente cambiado",
     adminActionTeamInvite: "Usuario invitado",
     adminActionTeamRemove: "Usuario removido",
     adminActionTemplateInstall: "Template instalado",
@@ -374,6 +403,12 @@ export const strings = {
     adminWebhookRotated: "Secreto regenerado. Actualiza tu workflow en n8n.",
     adminWebhookRotateError: "Error al regenerar el secreto",
     adminWebhookRotateBtn: "Rotar",
+    adminOrgWebhookBtn: "Credenciales n8n",
+    adminOrgWebhookTitle: "Credenciales de integración n8n",
+    adminOrgWebhookDesc: "Este secreto autentica todos los webhooks de leads, conversaciones y scoring de esta organización. Es único por organización: nadie más puede usarlo para escribir datos aquí.",
+    adminOrgWebhookOrgIdLabel: "x-reymen-orgid",
+    adminOrgWebhookSecretLabel: "x-reymen-secret",
+    adminOrgWebhookEndpointsLabel: "Endpoints que usan este secreto",
     adminCompleteFields: "Completa los campos requeridos",
     adminCreateError: "Error al crear",
     adminUpdateError: "Error al actualizar",
@@ -551,6 +586,8 @@ export const strings = {
     statusSuccess: "Successful",
     statusFailed: "Failed",
     statusRetrying: "Retrying",
+    statusProcessing: "Processing",
+    statusProcessed: "Processed",
 
     // ── Dashboard ────────────────────────────────────────────
     welcomeBack: "Welcome back",
@@ -583,6 +620,11 @@ export const strings = {
     colDate: "Date",
     noLeadsFiltered: "No leads found with those filters",
     ofLeads: "of",
+    paginationPrev: "Previous",
+    paginationNext: "Next",
+    paginationPage: "Page",
+    paginationOf: "of",
+    paginationResults: "results",
 
     // ── Automations ──────────────────────────────────────────
     automationsConfigured: "automations configured",
@@ -683,6 +725,22 @@ export const strings = {
     adminNavEscalations: "Escalations",
     adminNavMetrics: "Metrics",
     adminNavAudit: "Audit",
+    adminNavWebhooks: "Webhooks",
+
+    // ── Admin webhooks ────────────────────────────────────────
+    adminWebhooksTitle: "Webhook Events",
+    adminWebhooksDesc: "events recorded",
+    adminWebhooksRetryAll: "Retry all failed",
+    adminWebhooksRetry: "Retry",
+    adminWebhooksRetrying: "Retrying...",
+    adminWebhooksNoEvents: "No webhook events",
+    adminWebhooksNoEventsDesc: "Incoming n8n events will appear here.",
+    adminWebhooksAttempts: "attempts",
+    adminWebhooksMaxAttemptsReached: "Maximum attempts reached",
+    adminWebhooksRetrySuccess: "Event reprocessed successfully",
+    adminWebhooksRetryFailed: "Retry failed again",
+    adminWebhooksFilterAll: "All",
+    adminWebhooksFilterFailed: "Failed",
 
     // ── Admin dashboard ───────────────────────────────────────
     adminActiveClients: "Active clients",
@@ -713,6 +771,11 @@ export const strings = {
     adminNoRequestsShort: "No requests",
     adminInstalledTemplates: "Installed templates",
     adminNoTemplates: "No templates installed",
+    adminSuspendClient: "Suspend client",
+    adminReactivateClient: "Reactivate client",
+    adminSuspendClientConfirm: "Suspend this client? Its users won't be able to access the platform until it's reactivated.",
+    adminClientSuspended: "Client suspended",
+    adminClientReactivated: "Client reactivated",
 
     // ── Admin requests ────────────────────────────────────────
     adminOpenPlural: "open",
@@ -748,6 +811,7 @@ export const strings = {
     adminFilterAll: "All",
     adminActionClientCreate: "Client created",
     adminActionPlanChange: "Plan changed",
+    adminActionClientStatusChange: "Client status changed",
     adminActionTeamInvite: "User invited",
     adminActionTeamRemove: "User removed",
     adminActionTemplateInstall: "Template installed",
@@ -828,6 +892,12 @@ export const strings = {
     adminWebhookRotated: "Secret regenerated. Update your workflow in n8n.",
     adminWebhookRotateError: "Error regenerating secret",
     adminWebhookRotateBtn: "Rotate",
+    adminOrgWebhookBtn: "n8n Credentials",
+    adminOrgWebhookTitle: "n8n integration credentials",
+    adminOrgWebhookDesc: "This secret authenticates all of this organization's leads, conversations and scoring webhooks. It's unique per organization — no one else can use it to write data here.",
+    adminOrgWebhookOrgIdLabel: "x-reymen-orgid",
+    adminOrgWebhookSecretLabel: "x-reymen-secret",
+    adminOrgWebhookEndpointsLabel: "Endpoints using this secret",
     adminCompleteFields: "Complete all required fields",
     adminCreateError: "Error creating",
     adminUpdateError: "Error updating",

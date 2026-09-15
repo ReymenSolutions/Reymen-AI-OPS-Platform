@@ -8,19 +8,26 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const session = await auth();
   if (!session || !isAdmin(session.user.role)) return redirect("/login");
 
-  const orgLogoUrl = session.user.organizationId
-    ? (await prisma.organization.findUnique({
-        where: { id: session.user.organizationId },
-        select: { logoUrl: true },
-      }))?.logoUrl ?? null
-    : null;
+  // Re-validated on every request (not just at login) so deactivating an
+  // admin account takes effect immediately rather than only blocking their
+  // next sign-in. Single query (with the org relation included) instead of
+  // two round trips — this layout re-runs on every admin navigation.
+  const currentUser = await prisma.user.findUnique({
+    where: { id: session.user.id, isActive: true },
+    select: { id: true, organization: { select: { logoUrl: true } } },
+  });
+  if (!currentUser) return redirect("/login");
+
+  const hasOrganization = !!session.user.organizationId;
+  const orgLogoUrl = currentUser.organization?.logoUrl ?? null;
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
       <AdminSidebar
         adminName={session.user.name ?? "Reymen"}
         orgLogoUrl={orgLogoUrl}
-        canEditLogo={!!session.user.organizationId}
+        personalImageUrl={session.user.image ?? null}
+        hasOrganization={hasOrganization}
       />
       <div className="flex flex-1 flex-col min-h-0">
         <TopBar />

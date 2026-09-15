@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isWebhookAuthorized } from "@/lib/webhook-validator";
-
-const WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET ?? "";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { processScoringEvent } from "@/lib/webhook-processors";
 
 export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-reymen-signature") ?? "";
@@ -11,8 +12,31 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.text();
 
-  if (!isWebhookAuthorized(rawBody, signature, plainSecret, WEBHOOK_SECRET)) {
+  // Authenticate against THIS organization's own webhook secret — never a
+  // shared secret — so knowing another org's id is never enough to forge
+  // requests into it. x-reymen-orgid is just an identifier here, not itself
+  // a credential.
+  const org = orgId
+    ? await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true, n8nWebhookSecret: true } })
+    : null;
+
+  if (!org || !isWebhookAuthorized(rawBody, signature, plainSecret, org.n8nWebhookSecret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rateLimit = await checkRateLimit(`webhook:scoring:${orgId}`, { limit: 120, windowMs: 60 * 1000 });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+    );
+  }
+
+  let parsedBody: unknown;
+  try {
+    parsedBody = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const webhookEvent = await prisma.webhookEvent.create({
@@ -20,34 +44,14 @@ export async function POST(req: NextRequest) {
       organizationId: orgId,
       source: "n8n",
       eventType: "lead.scored",
-      payload: JSON.parse(rawBody),
+      payload: parsedBody as Prisma.InputJsonValue,
       status: "PROCESSING",
+      attempts: 1,
     },
   });
 
   try {
-    const payload = JSON.parse(rawBody) as {
-      leadId: string;
-      score: number;
-      reason?: string;
-    };
-
-    if (payload.score < 0 || payload.score > 100) {
-      throw new Error("Score must be between 0 and 100");
-    }
-
-    const lead = await prisma.lead.findFirst({
-      where: { id: payload.leadId, organizationId: orgId, deletedAt: null },
-    });
-    if (!lead) throw new Error("Lead not found");
-
-    await prisma.lead.update({
-      where: { id: payload.leadId },
-      data: {
-        score: Math.round(payload.score),
-        scoreReason: payload.reason,
-      },
-    });
+    await processScoringEvent(parsedBody, orgId);
 
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },

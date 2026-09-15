@@ -32,6 +32,8 @@ const STATUS_VARIANT: Record<string, StatusVariant> = {
   SUCCESS: "success",
   FAILED: "destructive",
   RETRYING: "warning",
+  PROCESSING: "info",
+  PROCESSED: "success",
 };
 
 const STATUS_KEY: Record<string, keyof Strings> = {
@@ -59,6 +61,8 @@ const STATUS_KEY: Record<string, keyof Strings> = {
   SUCCESS: "statusSuccess",
   FAILED: "statusFailed",
   RETRYING: "statusRetrying",
+  PROCESSING: "statusProcessing",
+  PROCESSED: "statusProcessed",
 };
 
 interface StatusBadgeProps {

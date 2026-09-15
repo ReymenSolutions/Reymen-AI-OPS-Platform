@@ -16,9 +16,11 @@ export async function createPrompt(data: z.infer<typeof promptSchema>) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
 
+  const parsed = promptSchema.parse(data);
+
   await prisma.prompt.create({
     data: {
-      ...data,
+      ...parsed,
       organizationId: session.user.organizationId,
       isActive: false,
     },
@@ -35,12 +37,14 @@ export async function updatePrompt(
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
 
+  const parsed = promptSchema.partial().parse(data);
+
   const prompt = await prisma.prompt.findFirst({
     where: { id, organizationId: session.user.organizationId },
   });
   if (!prompt) throw new Error("Prompt no encontrado");
 
-  await prisma.prompt.update({ where: { id }, data });
+  await prisma.prompt.update({ where: { id }, data: parsed });
 
   revalidatePath("/portal/prompts");
   return { success: true };

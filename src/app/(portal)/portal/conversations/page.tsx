@@ -9,29 +9,44 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { formatDate } from "@/lib/utils";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
 
-export default async function PortalConversationsPage() {
+const PAGE_SIZE = 50;
+
+export default async function PortalConversationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
 
-  const [t, conversations] = await Promise.all([
+  const { page: pageParam } = await searchParams;
+  const page = Math.max(1, Number(pageParam) || 1);
+  const where = { organizationId: session.user.organizationId };
+
+  const [t, conversations, total] = await Promise.all([
     getServerT(),
     prisma.conversation.findMany({
-      where: { organizationId: session.user.organizationId },
+      where,
       orderBy: { updatedAt: "desc" },
       include: { _count: { select: { messages: true } } },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
     }),
+    prisma.conversation.count({ where }),
   ]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div>
       <PageHeader
         title={t.conversationsTitle}
-        description={`${conversations.length} ${t.conversationsCount}`}
+        description={`${total} ${t.conversationsCount}`}
       />
 
-      {conversations.length === 0 ? (
+      {total === 0 ? (
         <Card>
           <CardContent className="py-0">
             <EmptyState
@@ -74,6 +89,36 @@ export default async function PortalConversationsPage() {
               ))}
             </tbody>
           </table>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm">
+              <p className="text-xs text-slate-400">
+                {t.paginationPage} {page} {t.paginationOf} {totalPages} · {total} {t.paginationResults}
+              </p>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={page > 1 ? `/portal/conversations?page=${page - 1}` : "#"}
+                  aria-disabled={page <= 1}
+                  className={`inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    page <= 1 ? "opacity-40 pointer-events-none" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  {t.paginationPrev}
+                </Link>
+                <Link
+                  href={page < totalPages ? `/portal/conversations?page=${page + 1}` : "#"}
+                  aria-disabled={page >= totalPages}
+                  className={`inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    page >= totalPages ? "opacity-40 pointer-events-none" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {t.paginationNext}
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

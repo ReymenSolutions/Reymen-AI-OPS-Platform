@@ -2,65 +2,60 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isWebhookAuthorized } from "@/lib/webhook-validator";
-
-const WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET ?? "";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { processAutomationEvent } from "@/lib/webhook-processors";
 
 export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-reymen-signature") ?? "";
   const plainSecret = req.headers.get("x-reymen-secret") ?? "";
-  const orgId = req.headers.get("x-reymen-orgid") ?? "";
 
   const rawBody = await req.text();
 
-  if (!isWebhookAuthorized(rawBody, signature, plainSecret, WEBHOOK_SECRET)) {
+  let parsedBody: unknown;
+  try {
+    parsedBody = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const automationId = (parsedBody as { automationId?: string }).automationId;
+  if (!automationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Rate limit on the claimed automationId before authenticating, so
+  // brute-forcing a webhookSecret for a known automation gets throttled
+  // the same as legitimate high-volume traffic would.
+  const rateLimit = await checkRateLimit(`webhook:automations:${automationId}`, { limit: 60, windowMs: 60 * 1000 });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+    );
+  }
+
+  const automation = await prisma.automation.findUnique({ where: { id: automationId } });
+
+  // Authenticate against this specific automation's own webhook secret,
+  // matching what the admin panel's Webhook Info dialog documents to n8n.
+  if (!automation || !isWebhookAuthorized(rawBody, signature, plainSecret, automation.webhookSecret)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const orgId = automation.organizationId;
 
   const webhookEvent = await prisma.webhookEvent.create({
     data: {
       organizationId: orgId,
       source: "n8n",
       eventType: "automation.event",
-      payload: JSON.parse(rawBody),
+      payload: parsedBody as Prisma.InputJsonValue,
       status: "PROCESSING",
+      attempts: 1,
     },
   });
 
   try {
-    const payload = JSON.parse(rawBody) as {
-      automationId: string;
-      type: string;
-      status: "SUCCESS" | "FAILED" | "PENDING";
-      payload?: Record<string, unknown>;
-      errorMessage?: string;
-      duration?: number;
-    };
-
-    const automation = await prisma.automation.findFirst({
-      where: { id: payload.automationId, organizationId: orgId },
-    });
-
-    if (!automation) throw new Error("Automation not found");
-
-    await prisma.automationEvent.create({
-      data: {
-        automationId: payload.automationId,
-        organizationId: orgId,
-        type: payload.type,
-        status: payload.status,
-        payload: payload.payload as Prisma.InputJsonValue ?? undefined,
-        errorMessage: payload.errorMessage,
-        duration: payload.duration,
-      },
-    });
-
-    // Update automation status if error
-    if (payload.status === "FAILED") {
-      await prisma.automation.update({
-        where: { id: payload.automationId },
-        data: { status: "ERROR" },
-      });
-    }
+    await processAutomationEvent(parsedBody, orgId);
 
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },

@@ -22,7 +22,17 @@ const INDUSTRY_LABELS: Record<string, string> = {
 async function getTemplates() {
   return prisma.automationTemplate.findMany({
     orderBy: [{ isPublished: "desc" }, { createdAt: "desc" }],
-    include: {
+    // Explicit select — the list view never shows longDescription (a Text
+    // column, only used on the template detail page), no reason to pull it
+    // for every card on every visit to this page.
+    select: {
+      id: true,
+      iconEmoji: true,
+      isPublished: true,
+      name: true,
+      description: true,
+      industry: true,
+      currentVersion: true,
       _count: { select: { versions: true, installations: true } },
     },
   });

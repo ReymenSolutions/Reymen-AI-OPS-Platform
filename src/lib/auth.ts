@@ -1,64 +1,114 @@
-import NextAuth, { type DefaultSession } from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "./prisma";
-import type { UserRole } from "@prisma/client";
+import { checkRateLimit } from "./rate-limit";
+import { verifyTotpCode } from "./totp";
+import { authConfig } from "./auth.config";
+export { isAdmin, isClientRole } from "./roles";
 
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      role: UserRole;
-      organizationId: string | null;
-      theme: string;
-      language: string;
-      impersonating?: { adminId: string; adminName: string | null; adminEmail: string } | null;
-    } & DefaultSession["user"];
-  }
-  interface User {
-    role: UserRole;
-    organizationId: string | null;
-    image?: string | null;
-    theme?: string | null;
-    language?: string | null;
-  }
+class RateLimitedSignin extends CredentialsSignin {
+  code = "rate_limited";
 }
+
+class TwoFactorRequiredSignin extends CredentialsSignin {
+  code = "totp_required";
+}
+
+class TwoFactorInvalidSignin extends CredentialsSignin {
+  code = "totp_invalid";
+}
+
+async function consumeBackupCode(userId: string, code: string, hashes: string[]): Promise<boolean> {
+  const normalized = code.trim().toUpperCase();
+  for (const hash of hashes) {
+    if (await bcrypt.compare(normalized, hash)) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { totpBackupCodeHashes: hashes.filter((h) => h !== hash) },
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
+function clientIp(request?: Request): string | null {
+  const forwarded = request?.headers.get("x-forwarded-for");
+  return forwarded ? forwarded.split(",")[0].trim() : null;
+}
+
+// A precomputed bcrypt hash with no matching plaintext. Compared against
+// when the user doesn't exist (or has no password set) so that
+// bcrypt.compare() always runs — otherwise "no such user" returns
+// immediately while "wrong password" takes ~bcrypt's full cost-12 runtime,
+// letting an attacker time responses to enumerate registered emails.
+const DUMMY_PASSWORD_HASH = "$2b$12$0APBnsAoVXPA3KuUG55K3e//22j27ckpDNZu8LeeyOJ9lzBQPbi8e";
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
+  totpCode: z.string().optional(),
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
-    error: "/login",
-  },
   providers: [
     Credentials({
       name: "credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        totpCode: { label: "Authenticator code", type: "text" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
         const { email, password } = parsed.data;
+        // URLSearchParams (used by the client signIn() call) stringifies an
+        // omitted/undefined field as the literal text "undefined" — treat
+        // that the same as "no code provided".
+        const totpCode =
+          parsed.data.totpCode && parsed.data.totpCode !== "undefined" ? parsed.data.totpCode : undefined;
+
+        const ip = clientIp(request);
+        const [emailLimit, ipLimit] = await Promise.all([
+          checkRateLimit(`login:email:${email.toLowerCase()}`, { limit: 5, windowMs: 10 * 60 * 1000 }),
+          ip
+            ? checkRateLimit(`login:ip:${ip}`, { limit: 20, windowMs: 10 * 60 * 1000 })
+            : Promise.resolve({ allowed: true }),
+        ]);
+        if (!emailLimit.allowed || !ipLimit.allowed) throw new RateLimitedSignin();
 
         const user = await prisma.user.findUnique({
           where: { email, isActive: true },
+          include: { organization: { select: { isActive: true } } },
         });
 
-        if (!user || !user.passwordHash) return null;
+        // Always run bcrypt.compare, even for a nonexistent user or a
+        // suspended org, against a dummy hash — otherwise those cases
+        // return near-instantly while a real "wrong password" takes
+        // bcrypt's full runtime, letting response timing reveal which
+        // emails are registered.
+        const orgSuspended = !!user?.organizationId && user.organization?.isActive === false;
+        const isValid = await bcrypt.compare(
+          password,
+          user?.passwordHash && !orgSuspended ? user.passwordHash : DUMMY_PASSWORD_HASH
+        );
+        if (!user || !user.passwordHash || orgSuspended || !isValid) return null;
 
-        const isValid = await bcrypt.compare(password, user.passwordHash);
-        if (!isValid) return null;
+        if (user.totpEnabled) {
+          if (!totpCode) throw new TwoFactorRequiredSignin();
+
+          const validTotp = user.totpSecret ? verifyTotpCode(user.totpSecret, totpCode) : false;
+          const validBackup =
+            !validTotp && (await consumeBackupCode(user.id, totpCode, user.totpBackupCodeHashes));
+          if (!validTotp && !validBackup) throw new TwoFactorInvalidSignin();
+        }
 
         return {
           id: user.id,
@@ -73,75 +123,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user, trigger, session }) {
-      if (trigger === "update" && session) {
-        if (session.image !== undefined) token.image = session.image;
-        if (session.theme !== undefined) token.theme = session.theme;
-        if (session.language !== undefined) token.language = session.language;
-      }
-      if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.organizationId = user.organizationId;
-        token.image = user.image ?? null;
-        token.theme = user.theme ?? "light";
-        token.language = user.language ?? "es";
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      // Admins can impersonate — read cookie in server context (fails silently in Edge/middleware)
-      if (token && (token.role === "SUPER_ADMIN" || token.role === "ADMIN")) {
-        try {
-          const { cookies } = await import("next/headers");
-          const cookieStore = await cookies();
-          const raw = cookieStore.get("reymen-impersonate")?.value;
-          if (raw) {
-            const imp = JSON.parse(raw) as {
-              adminId: string; adminName: string | null; adminEmail: string;
-              targetUserId: string; targetName: string | null; targetEmail: string;
-              targetImage: string | null; targetRole: string; targetOrgId: string;
-            };
-            if (imp.adminId === (token.id as string)) {
-              session.user.id = imp.targetUserId;
-              session.user.name = imp.targetName;
-              session.user.email = imp.targetEmail;
-              session.user.image = imp.targetImage ?? null;
-              session.user.role = imp.targetRole as UserRole;
-              session.user.organizationId = imp.targetOrgId;
-              session.user.theme = (token.theme as string) ?? "light";
-              session.user.language = (token.language as string) ?? "es";
-              session.user.impersonating = {
-                adminId: imp.adminId,
-                adminName: imp.adminName,
-                adminEmail: imp.adminEmail,
-              };
-              return session;
-            }
-          }
-        } catch {
-          // cookies() not available in Edge runtime (middleware) — return real session below
-        }
-      }
-      if (token) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as UserRole;
-        session.user.organizationId = token.organizationId as string | null;
-        session.user.image = (token.image as string | null) ?? null;
-        session.user.theme = (token.theme as string) ?? "light";
-        session.user.language = (token.language as string) ?? "es";
-        session.user.impersonating = null;
-      }
-      return session;
-    },
-  },
 });
-
-export function isAdmin(role: UserRole): boolean {
-  return role === "SUPER_ADMIN" || role === "ADMIN";
-}
-
-export function isClientRole(role: UserRole): boolean {
-  return ["OWNER", "MANAGER", "AGENT", "VIEWER", "CLIENT"].includes(role);
-}

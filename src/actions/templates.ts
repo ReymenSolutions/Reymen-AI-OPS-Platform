@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { generateWebhookSecret } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
+import { assertPlanCapacity } from "@/lib/plan-limits";
 import type { Prisma } from "@prisma/client";
 
 const installSchema = z.object({
@@ -42,6 +43,8 @@ export async function installTemplate(data: z.infer<typeof installSchema>) {
   if (existing?.status === "ACTIVE") {
     throw new Error("Este template ya está instalado");
   }
+
+  await assertPlanCapacity(orgId, "automations");
 
   const automation = await prisma.automation.create({
     data: {

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth, isAdmin } from "@/lib/auth";
+import { notifyAdmins } from "@/lib/admin-notifications";
+import { newClientRequestEmail } from "@/lib/email-templates";
 import type { RequestStatus } from "@prisma/client";
 
 const createRequestSchema = z.object({
@@ -26,12 +28,19 @@ export async function createRequest(formData: FormData) {
 
   if (!parsed.success) throw new Error("Datos inválidos");
 
-  await prisma.request.create({
-    data: {
-      ...parsed.data,
-      organizationId: session.user.organizationId,
-    },
-  });
+  const [, org] = await Promise.all([
+    prisma.request.create({
+      data: {
+        ...parsed.data,
+        organizationId: session.user.organizationId,
+      },
+    }),
+    prisma.organization.findUnique({ where: { id: session.user.organizationId }, select: { name: true } }),
+  ]);
+
+  const adminUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin/requests`;
+  const email = newClientRequestEmail(org?.name ?? "un cliente", parsed.data.title, adminUrl);
+  await notifyAdmins(email);
 
   revalidatePath("/portal/requests");
   return { success: true };
