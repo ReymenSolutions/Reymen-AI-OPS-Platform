@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Bot, Phone, MessageSquare, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Bot, Phone, MessageSquare, AlertTriangle, CheckCircle2, Activity } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireModule } from "@/lib/modules";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/shared/MetricCard";
@@ -12,10 +12,12 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { AssistantConfigForm } from "@/components/portal/AssistantConfigForm";
 import { AssistantToggle } from "@/components/portal/AssistantToggle";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 async function getWhatsAppData(orgId: string) {
-  const [assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount] = await Promise.all([
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const [assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount, failedWebhooks24h, lastProcessedWebhook] = await Promise.all([
     prisma.whatsAppAssistant.findUnique({ where: { organizationId: orgId } }),
     prisma.conversation.findMany({
       where: { organizationId: orgId, status: "OPEN", channel: "whatsapp" },
@@ -26,9 +28,15 @@ async function getWhatsAppData(orgId: string) {
     prisma.conversation.count({ where: { organizationId: orgId, status: "ESCALATED" } }),
     prisma.conversation.count({ where: { organizationId: orgId, channel: "whatsapp" } }),
     prisma.conversation.count({ where: { organizationId: orgId, status: "RESOLVED", aiHandled: true } }),
+    prisma.webhookEvent.count({ where: { organizationId: orgId, status: "FAILED", createdAt: { gte: since24h } } }),
+    prisma.webhookEvent.findFirst({
+      where: { organizationId: orgId, status: "PROCESSED" },
+      orderBy: { processedAt: "desc" },
+      select: { processedAt: true },
+    }),
   ]);
 
-  return { assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount };
+  return { assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount, failedWebhooks24h, lastProcessedWebhook };
 }
 
 export default async function WhatsAppCenterPage() {
@@ -36,9 +44,10 @@ export default async function WhatsAppCenterPage() {
   if (!session?.user.organizationId) return redirect("/login");
   await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
-  const [t, { assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount }] =
+  const [t, lang, { assistant, activeConvs, escalatedConvs, totalConvs, resolvedCount, failedWebhooks24h, lastProcessedWebhook }] =
     await Promise.all([
       getServerT(),
+      getServerLang(),
       getWhatsAppData(session.user.organizationId),
     ]);
 
@@ -150,6 +159,34 @@ export default async function WhatsAppCenterPage() {
           </Card>
         </div>
       </div>
+
+      {/* Webhook health — lets the client self-diagnose a broken integration without exposing n8n */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Activity className="h-4 w-4" />
+            {lang === "es" ? "Salud de la integración" : "Integration health"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-4">
+            {failedWebhooks24h === 0 ? (
+              <Badge variant="success">{lang === "es" ? "Operativo" : "Operational"}</Badge>
+            ) : (
+              <Badge variant="destructive">
+                {lang === "es" ? `${failedWebhooks24h} fallos en 24h` : `${failedWebhooks24h} failures in 24h`}
+              </Badge>
+            )}
+            <span className="text-xs text-slate-500">
+              {lastProcessedWebhook?.processedAt
+                ? `${lang === "es" ? "Última actividad recibida" : "Last activity received"}: ${formatDateTime(lastProcessedWebhook.processedAt)}`
+                : lang === "es"
+                ? "Aún no se ha recibido actividad"
+                : "No activity received yet"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

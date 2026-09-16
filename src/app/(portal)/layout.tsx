@@ -26,9 +26,23 @@ export default async function PortalLayout({ children }: { children: React.React
   const org = currentUser.organization;
   const enabledModules = await getEnabledModules(org.id);
 
+  // Conversations a human needs to look at: escalated, or already taken out
+  // of AI's hands but still open. Only queried when the module is enabled,
+  // so this never runs an extra query for orgs without WhatsApp/CRM AI.
+  const pendingConversations = enabledModules.includes("AI_WHATSAPP")
+    ? await prisma.conversation.count({
+        where: { organizationId: org.id, aiHandled: false, status: { in: ["OPEN", "ESCALATED"] } },
+      })
+    : 0;
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      <PortalSidebar orgName={org.name} orgLogoUrl={org.logoUrl} enabledModules={enabledModules} />
+      <PortalSidebar
+        orgName={org.name}
+        orgLogoUrl={org.logoUrl}
+        enabledModules={enabledModules}
+        pendingConversations={pendingConversations}
+      />
       <div className="flex flex-1 flex-col min-h-0">
         <TopBar />
         <main className="flex-1 overflow-y-auto p-6">

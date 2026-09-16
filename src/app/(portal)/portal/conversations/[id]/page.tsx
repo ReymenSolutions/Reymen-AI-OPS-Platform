@@ -4,12 +4,14 @@ import { ArrowLeft, Bot } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireModule } from "@/lib/modules";
+import { can } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { ConversationActions } from "@/components/portal/ConversationActions";
 import { MessageThread } from "@/components/portal/MessageThread";
 import { formatDateTime } from "@/lib/utils";
+import type { UserRole } from "@prisma/client";
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -17,7 +19,12 @@ async function getConversation(id: string, orgId: string) {
   const conv = await prisma.conversation.findFirst({
     where: { id, organizationId: orgId },
     include: {
-      messages: { orderBy: { createdAt: "desc" }, take: MESSAGE_PAGE_SIZE },
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: MESSAGE_PAGE_SIZE,
+        include: { sender: { select: { name: true, email: true } } },
+      },
+      assignedTo: { select: { id: true, name: true, email: true } },
       _count: { select: { messages: true } },
     },
   });
@@ -40,8 +47,19 @@ export default async function ConversationDetailPage({
   if (!session?.user.organizationId) return redirect("/login");
   await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
-  const conv = await getConversation(id, session.user.organizationId);
+  const [conv, teamUsers] = await Promise.all([
+    getConversation(id, session.user.organizationId),
+    prisma.user.findMany({
+      where: { organizationId: session.user.organizationId, isActive: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
   if (!conv) notFound();
+
+  const role = session.user.role as UserRole;
+  const canReply = can(role, "conversations:reply");
+  const canAssign = can(role, "conversations:assign");
 
   return (
     <div>
@@ -57,16 +75,30 @@ export default async function ConversationDetailPage({
       <PageHeader
         title={conv.contactName ?? conv.contactPhone ?? "Conversación"}
         description={`${conv.channel} · ${conv._count.messages} mensajes`}
-        actions={<ConversationActions conversationId={conv.id} status={conv.status} />}
+        actions={
+          <ConversationActions
+            conversationId={conv.id}
+            status={conv.status}
+            aiHandled={conv.aiHandled}
+            assignedTo={conv.assignedTo}
+            teamUsers={teamUsers}
+            canReply={canReply}
+            canAssign={canAssign}
+          />
+        }
       />
 
       {/* Status & meta */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <StatusBadge status={conv.status} />
         <Badge variant="secondary" className="capitalize">{conv.channel}</Badge>
-        {conv.aiHandled && (
+        {conv.aiHandled ? (
           <span className="flex items-center gap-1 text-xs text-slate-500">
             <Bot className="h-3 w-3" /> Manejado por IA
+          </span>
+        ) : (
+          <span className="text-xs text-slate-500">
+            Control humano{conv.assignedTo ? ` · ${conv.assignedTo.name ?? conv.assignedTo.email}` : " · sin asignar"}
           </span>
         )}
         {conv.escalatedAt && (
@@ -87,6 +119,7 @@ export default async function ConversationDetailPage({
         contactName={conv.contactName}
         initialMessages={conv.messages}
         hasMoreInitially={conv.hasMoreMessages}
+        canReply={canReply && conv.status !== "RESOLVED" && conv.status !== "CLOSED"}
       />
     </div>
   );

@@ -67,8 +67,10 @@ model User {
   organization Organization? @relation(fields: [organizationId], references: [id])
   accounts     Account[]
   sessions     Session[]
-  ownedOpportunities Opportunity[]
-  authoredNotes      Note[]
+  ownedOpportunities     Opportunity[]
+  authoredNotes          Note[]
+  assignedConversations  Conversation[] @relation("ConversationAssignee")
+  sentMessages           Message[]      @relation("MessageSender")
 
   @@index([organizationId])
   @@index([email])
@@ -306,16 +308,19 @@ model Conversation {
   contactName    String?
   status         ConversationStatus @default(OPEN)
   aiHandled      Boolean            @default(true)
+  assignedToId   String?
   escalatedAt    DateTime?
   resolvedAt     DateTime?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  assignedTo   User?        @relation("ConversationAssignee", fields: [assignedToId], references: [id])
   messages     Message[]
 
   @@index([organizationId])
   @@index([organizationId, status])
+  @@index([organizationId, assignedToId])
 }
 
 enum ConversationStatus {
@@ -335,9 +340,19 @@ model Message {
   // "new message" webhook (e.g. the provider's own message ID) instead of
   // appending the same message twice.
   externalId     String?
+  // Set only for role=AGENT (a human reply sent from the portal) — null for
+  // USER/ASSISTANT/SYSTEM, which have no platform user as their sender.
+  senderId       String?
+  attachmentUrl  String?              @db.Text
+  attachmentType String?
+  // Only tracked for outbound sends (role=AGENT/ASSISTANT) — n8n reports
+  // status transitions back via the message.status webhook once it hears
+  // from the WhatsApp Business API. Null for inbound USER/SYSTEM messages.
+  deliveryStatus MessageDeliveryStatus?
   createdAt      DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender       User?        @relation("MessageSender", fields: [senderId], references: [id])
 
   @@unique([conversationId, externalId])
   @@index([conversationId])
@@ -347,6 +362,15 @@ enum MessageRole {
   USER
   ASSISTANT
   SYSTEM
+  AGENT
+}
+
+enum MessageDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
 }
 
 // ─── APPOINTMENTS ─────────────────────────────────────────────────

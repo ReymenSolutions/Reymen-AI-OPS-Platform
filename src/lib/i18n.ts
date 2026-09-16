@@ -155,6 +155,8 @@ export const strings = {
     colChannel: "Canal",
     colMessages: "Mensajes",
     colLastActivity: "Última actividad",
+    assignedTo: "Asignado a",
+    needsAttention: "Necesita atención",
 
     // ── Settings ─────────────────────────────────────────────
     settingsTitle: "Configuración",
@@ -649,6 +651,8 @@ export const strings = {
     colChannel: "Channel",
     colMessages: "Messages",
     colLastActivity: "Last activity",
+    assignedTo: "Assigned to",
+    needsAttention: "Needs attention",
 
     // ── Settings ─────────────────────────────────────────────
     settingsTitle: "Settings",

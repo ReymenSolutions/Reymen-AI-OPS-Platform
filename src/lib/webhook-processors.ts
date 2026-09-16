@@ -133,6 +133,27 @@ export async function processScoringEvent(payload: unknown, orgId: string): Prom
   });
 }
 
+/** n8n reports back what happened to a message it sent via the WhatsApp Business API on our behalf. */
+export async function processMessageStatusEvent(payload: unknown, orgId: string): Promise<void> {
+  const body = payload as { messageId: string; status: "SENT" | "DELIVERED" | "READ" | "FAILED"; errorMessage?: string };
+
+  if (!body.messageId) throw new Error("Missing messageId");
+
+  const message = await prisma.message.findFirst({
+    where: { id: body.messageId, conversation: { organizationId: orgId } },
+    select: { id: true },
+  });
+  if (!message) throw new Error("Message not found");
+
+  await prisma.message.update({
+    where: { id: message.id },
+    data: {
+      deliveryStatus: body.status,
+      metadata: body.errorMessage ? { deliveryError: body.errorMessage } : undefined,
+    },
+  });
+}
+
 export async function processAutomationEvent(payload: unknown, orgId: string): Promise<void> {
   const body = payload as {
     automationId: string;
@@ -168,7 +189,7 @@ export async function processAutomationEvent(payload: unknown, orgId: string): P
   }
 }
 
-export type WebhookEventType = "lead.created" | "conversation.message" | "lead.scored" | "automation.event";
+export type WebhookEventType = "lead.created" | "conversation.message" | "lead.scored" | "automation.event" | "message.status";
 
 /** Dispatches a stored WebhookEvent's payload to the processor matching its eventType. */
 export async function processWebhookEventPayload(
@@ -186,6 +207,8 @@ export async function processWebhookEventPayload(
       return processScoringEvent(payload, orgId);
     case "automation.event":
       return processAutomationEvent(payload, orgId);
+    case "message.status":
+      return processMessageStatusEvent(payload, orgId);
     default:
       throw new Error(`Unknown webhook event type: ${eventType}`);
   }

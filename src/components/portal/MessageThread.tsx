@@ -1,20 +1,45 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Bot, User, Settings, Loader2, ChevronUp } from "lucide-react";
+import { Bot, User, Settings, Headset, Loader2, ChevronUp, Clock, Check, CheckCheck, AlertCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { getOlderMessages } from "@/actions/conversations";
+import { MessageComposer } from "@/components/portal/MessageComposer";
 import { formatDateTime } from "@/lib/utils";
-import type { Message } from "@prisma/client";
+import type { Message, MessageDeliveryStatus } from "@prisma/client";
+
+type MessageWithSender = Message & { sender: { name: string | null; email: string } | null };
 
 interface MessageThreadProps {
   conversationId: string;
   contactName: string | null;
-  initialMessages: Message[];
+  initialMessages: MessageWithSender[];
   hasMoreInitially: boolean;
+  canReply: boolean;
 }
 
-export function MessageThread({ conversationId, contactName, initialMessages, hasMoreInitially }: MessageThreadProps) {
+function DeliveryStatusIcon({ status }: { status: MessageDeliveryStatus | null }) {
+  if (!status) return null;
+  if (status === "PENDING") return <Clock className="h-3 w-3 text-slate-400" />;
+  if (status === "SENT") return <Check className="h-3 w-3 text-slate-400" />;
+  if (status === "DELIVERED") return <CheckCheck className="h-3 w-3 text-slate-400" />;
+  if (status === "READ") return <CheckCheck className="h-3 w-3 text-brand-600" />;
+  return <AlertCircle className="h-3 w-3 text-red-500" />;
+}
+
+function Attachment({ url, type }: { url: string; type: string | null }) {
+  if (type?.startsWith("image/")) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt="Adjunto" className="mt-2 max-h-48 rounded-md border border-slate-200" />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs text-brand-600 hover:underline">
+      Ver adjunto
+    </a>
+  );
+}
+
+export function MessageThread({ conversationId, contactName, initialMessages, hasMoreInitially, canReply }: MessageThreadProps) {
   const [messages, setMessages] = useState(initialMessages);
   const [hasMore, setHasMore] = useState(hasMoreInitially);
   const [isPending, startTransition] = useTransition();
@@ -60,7 +85,7 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
               <div
                 key={msg.id}
                 className={`flex gap-3 p-4 ${
-                  msg.role === "USER" ? "bg-white" : msg.role === "ASSISTANT" ? "bg-slate-50" : "bg-amber-50"
+                  msg.role === "USER" ? "bg-white" : msg.role === "ASSISTANT" ? "bg-slate-50" : msg.role === "AGENT" ? "bg-brand-50/40" : "bg-amber-50"
                 }`}
               >
                 {/* Avatar */}
@@ -70,6 +95,8 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
                       ? "bg-slate-200 text-slate-700"
                       : msg.role === "ASSISTANT"
                       ? "bg-brand-100 text-brand-700"
+                      : msg.role === "AGENT"
+                      ? "bg-indigo-100 text-indigo-700"
                       : "bg-amber-100 text-amber-700"
                   }`}
                 >
@@ -77,6 +104,8 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
                     <User className="h-4 w-4" />
                   ) : msg.role === "ASSISTANT" ? (
                     <Bot className="h-4 w-4" />
+                  ) : msg.role === "AGENT" ? (
+                    <Headset className="h-4 w-4" />
                   ) : (
                     <Settings className="h-4 w-4" />
                   )}
@@ -90,21 +119,26 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
                         ? contactName ?? "Usuario"
                         : msg.role === "ASSISTANT"
                         ? "Asistente AI"
+                        : msg.role === "AGENT"
+                        ? msg.sender?.name ?? msg.sender?.email ?? "Agente"
                         : "Sistema"}
                     </span>
                     <span className="text-xs text-slate-400">
                       {formatDateTime(msg.createdAt)}
                     </span>
+                    {msg.role === "AGENT" && <DeliveryStatusIcon status={msg.deliveryStatus} />}
                   </div>
                   <p className="text-sm text-slate-900 whitespace-pre-wrap leading-relaxed">
                     {msg.content}
                   </p>
+                  {msg.attachmentUrl && <Attachment url={msg.attachmentUrl} type={msg.attachmentType} />}
                 </div>
               </div>
             ))}
           </div>
         )}
       </CardContent>
+      {canReply && <MessageComposer conversationId={conversationId} onSent={(msg) => setMessages((prev) => [...prev, msg])} />}
     </Card>
   );
 }

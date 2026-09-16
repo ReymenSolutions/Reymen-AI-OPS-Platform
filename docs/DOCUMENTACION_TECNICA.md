@@ -337,10 +337,13 @@ model Conversation {
   contactName    String?
   status         ConversationStatus @default(OPEN)
   aiHandled      Boolean            @default(true)
+  assignedToId   String?            // human owner while aiHandled=false; null = unassigned/AI
   escalatedAt    DateTime?
   resolvedAt     DateTime?
 }
 ```
+
+`assignedToId` and `aiHandled` are independent: `assignConversation()` sets who owns the conversation without necessarily touching AI/human mode (assigning to someone does force `aiHandled=false`, as a safety default; unassigning leaves it as-is), while `takeHumanControl()`/`releaseToAI()` toggle `aiHandled` and set/clear the assignment together. The n8n AI-reply workflow must check `GET /api/v1/conversations/status` before generating an automatic reply and stay silent when `aiHandled` is `false` — this is the anti-collision guard between the bot and a human agent.
 
 ---
 
@@ -363,11 +366,15 @@ Individual message within a Conversation.
 
 ```prisma
 model Message {
-  id             String      @id @default(cuid())
+  id             String                 @id @default(cuid())
   conversationId String
   role           MessageRole
-  content        String      @db.Text
+  content        String                 @db.Text
   metadata       Json?
+  senderId       String?                // set only for role=AGENT — the portal user who sent it
+  attachmentUrl  String?                @db.Text  // https:// URL or a data: URL for a small (<=5MB) inline upload
+  attachmentType String?                // MIME type
+  deliveryStatus MessageDeliveryStatus? // outbound only (AGENT/ASSISTANT); null for inbound USER/SYSTEM
 }
 ```
 
@@ -380,6 +387,21 @@ enum MessageRole {
   USER       // Client / WhatsApp contact
   ASSISTANT  // AI bot response
   SYSTEM     // Internal event (e.g., "Escalated to human")
+  AGENT      // Manual reply sent by a human from the portal
+}
+```
+
+---
+
+### Enum: MessageDeliveryStatus
+
+```prisma
+enum MessageDeliveryStatus {
+  PENDING    // Stored, outbound trigger to n8n just fired
+  SENT       // n8n confirmed it reached WhatsApp
+  DELIVERED  // WhatsApp delivery receipt
+  READ       // WhatsApp read receipt
+  FAILED     // Outbound trigger failed, or n8n reported a send failure
 }
 ```
 
@@ -756,11 +778,16 @@ type Action =
   | "leads:create"
   | "leads:delete"
   | "leads:update_status"
+  | "opportunities:create"
+  | "opportunities:manage"
+  | "pipeline:manage"
   | "automations:view"
   | "automations:manage"
   | "conversations:view"
   | "conversations:escalate"
   | "conversations:resolve"
+  | "conversations:reply"
+  | "conversations:assign"
   | "knowledge_base:manage"
   | "prompts:manage"
   | "team:manage"
@@ -892,9 +919,33 @@ export async function triggerN8nWorkflow(
    - `X-Reymen-Source: platform`
 4. Returns `{ success: true }` or `{ success: false, error: string }`.
 
+**Current caller:** `sendManualMessage()` (`src/actions/conversations.ts`) is the one place today that calls
+`triggerN8nWorkflow()`, using `webhookPath: "whatsapp-outbound"`. When an agent replies from the portal, the
+platform stores the `Message` (`deliveryStatus: PENDING`) first, then fires this trigger so the actual send
+through the WhatsApp Business API happens entirely inside n8n — the platform never holds WhatsApp API
+credentials. If the trigger itself fails to reach n8n (network error, non-2xx), the message is marked
+`FAILED` immediately; otherwise n8n reports the real outcome asynchronously via the `message.status` webhook
+below.
+
+```json
+{
+  "organizationId": "org_xxx",
+  "event": "message.send",
+  "data": {
+    "conversationId": "conv_xxx",
+    "messageId": "msg_xxx",
+    "contactPhone": "+52 55 1234 5678",
+    "channel": "whatsapp",
+    "content": "Claro, tenemos disponibilidad el jueves.",
+    "attachmentUrl": null,
+    "attachmentType": null
+  }
+}
+```
+
 ### Inbound: n8n → Platform (Webhook Events)
 
-n8n sends data back to the platform via four webhook endpoints. All are POST routes located under `/api/webhooks/n8n/`.
+n8n sends data back to the platform via five webhook endpoints. All are POST routes located under `/api/webhooks/n8n/`.
 
 #### WebhookEvent Reliability Pattern
 
@@ -913,7 +964,7 @@ This ensures:
 - Failed events are logged with error messages for debugging.
 - The system can audit all events received from n8n.
 
-### All 4 Inbound Webhook Routes
+### All 5 Inbound Webhook Routes
 
 #### POST `/api/webhooks/n8n/leads`
 
@@ -1013,6 +1064,44 @@ Updates the AI score and reason for a Lead.
 
 ---
 
+#### POST `/api/webhooks/n8n/message-status`
+
+Reports the delivery outcome of a message the platform asked n8n to send via `whatsapp-outbound` (see above).
+
+**Request body:**
+```json
+{
+  "messageId": "msg_xxx",
+  "status": "DELIVERED",
+  "errorMessage": null
+}
+```
+
+**Behavior:**
+- Looks up the `Message` by id, scoped through its conversation's `organizationId` (never trusts a bare id from
+  another org).
+- Updates `Message.deliveryStatus`. A non-null `errorMessage` is stored in `Message.metadata.deliveryError`.
+- Sets `WebhookEvent.eventType = "message.status"`.
+
+### Pull endpoint: `/api/v1/conversations/status`
+
+Unlike the routes above (n8n pushes events to the platform), this one is the platform exposing state **for n8n
+to pull**, the same pattern as `/api/v1/knowledge-base`. The AI-reply workflow calls it right before generating
+an automatic response:
+
+```
+GET /api/v1/conversations/status?orgId=org_xxx&contactPhone=%2B525512345678
+Header: X-Api-Key: {organization's n8nWebhookSecret}
+```
+
+Returns `{ data: { conversationId, aiHandled, status, assignedToId } }` — no matching open conversation returns
+`aiHandled: true` (the bot is free to create one and respond, matching a brand-new `Conversation`'s default).
+**If `aiHandled` is `false`, the workflow must not generate a reply** — a human has taken or been given control
+via `takeHumanControl()`/`assignConversation()`. This is the anti-collision guard between the bot and a human
+agent; skipping this check means the bot and a human agent can race to answer the same message.
+
+---
+
 ## 8. Webhook Security
 
 ### Per-organization secrets, not a shared global one
@@ -1036,7 +1125,7 @@ security review — inbound authentication is now **per-organization**:
 
 ### HMAC-SHA256 Verification
 
-Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring,automations}`) use
+Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring,automations,message-status}`) use
 HMAC-SHA256 signing via `src/lib/webhook-validator.ts`, verified against the
 **target organization's own** `n8nWebhookSecret` (or, for `/automations`, that specific
 automation's own `webhookSecret`):

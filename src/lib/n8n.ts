@@ -34,6 +34,9 @@ export async function triggerN8nWorkflow(
         "X-Reymen-Source": "platform",
       },
       body,
+      // n8n being slow or unreachable must never hang the caller (e.g. a
+      // user-facing "send message" Server Action) indefinitely.
+      signal: AbortSignal.timeout(5_000),
     });
 
     if (!res.ok) {

@@ -9,8 +9,14 @@ const authMock = vi.fn();
 vi.mock("@/lib/auth", () => ({ auth: () => authMock() }));
 
 vi.mock("@/lib/email", () => ({ sendEmail: vi.fn().mockResolvedValue({ sent: true }) }));
+const triggerN8nWorkflowMock = vi.fn().mockResolvedValue({ success: true });
+vi.mock("@/lib/n8n", () => ({ triggerN8nWorkflow: (...args: unknown[]) => triggerN8nWorkflowMock(...args) }));
+
 const { sendEmail } = await import("@/lib/email");
-const { escalateConversation, resolveConversation, getOlderMessages } = await import("./conversations");
+const {
+  escalateConversation, resolveConversation, getOlderMessages,
+  sendManualMessage, takeHumanControl, releaseToAI, assignConversation,
+} = await import("./conversations");
 
 describe("conversations actions", () => {
   let org: { id: string };
@@ -25,6 +31,8 @@ describe("conversations actions", () => {
 
   beforeEach(() => {
     (sendEmail as ReturnType<typeof vi.fn>).mockClear();
+    triggerN8nWorkflowMock.mockClear();
+    triggerN8nWorkflowMock.mockResolvedValue({ success: true });
   });
 
   afterAll(async () => {
@@ -145,6 +153,163 @@ describe("conversations actions", () => {
       await expect(getOlderMessages(otherConv.id, otherMsg.id)).rejects.toThrow(/no encontrada/i);
 
       await cleanupOrg(otherOrg.id);
+    });
+  });
+
+  describe("sendManualMessage", () => {
+    it("creates an AGENT message, triggers the outbound n8n workflow, and takes control of the conversation", async () => {
+      authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+      const conv = await prisma.conversation.create({
+        data: { organizationId: org.id, channel: "whatsapp", contactPhone: "+15551110000" },
+      });
+
+      const result = await sendManualMessage({ conversationId: conv.id, content: "Claro, ahí estaré" });
+      expect(result.success).toBe(true);
+      expect(result.delivered).toBe(true);
+      expect(result.message.role).toBe("AGENT");
+
+      const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+      expect(updated.aiHandled).toBe(false);
+      expect(updated.assignedToId).toBe(owner.id);
+
+      expect(triggerN8nWorkflowMock).toHaveBeenCalledWith(
+        "whatsapp-outbound",
+        expect.objectContaining({ event: "message.send", data: expect.objectContaining({ conversationId: conv.id }) })
+      );
+    });
+
+    it("marks the message FAILED when the outbound trigger fails", async () => {
+      triggerN8nWorkflowMock.mockResolvedValueOnce({ success: false, error: "n8n unreachable" });
+      authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+
+      const result = await sendManualMessage({ conversationId: conv.id, content: "hola" });
+      expect(result.delivered).toBe(false);
+
+      const msg = await prisma.message.findUniqueOrThrow({ where: { id: result.message.id } });
+      expect(msg.deliveryStatus).toBe("FAILED");
+    });
+
+    it("rejects sending into a RESOLVED conversation", async () => {
+      authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp", status: "RESOLVED" } });
+
+      await expect(sendManualMessage({ conversationId: conv.id, content: "hola" })).rejects.toThrow(/cerrada/);
+    });
+
+    it("rejects an empty message with no attachment", async () => {
+      authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+
+      await expect(sendManualMessage({ conversationId: conv.id, content: "   " })).rejects.toThrow(/vacío/);
+    });
+
+    it("a VIEWER cannot send a manual message", async () => {
+      const viewer = await createTestUser(org.id, "VIEWER", "conv-viewer");
+      authMock.mockResolvedValue(fakeSession({ id: viewer.id, role: "VIEWER", organizationId: org.id }));
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+
+      await expect(sendManualMessage({ conversationId: conv.id, content: "hola" })).rejects.toThrow();
+    });
+  });
+
+  describe("takeHumanControl / releaseToAI", () => {
+    it("takeHumanControl claims an unassigned conversation and turns off aiHandled", async () => {
+      authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+
+      await takeHumanControl(conv.id);
+
+      const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+      expect(updated.aiHandled).toBe(false);
+      expect(updated.assignedToId).toBe(owner.id);
+    });
+
+    it("an AGENT cannot take control of a conversation already assigned to someone else", async () => {
+      const agentA = await createTestUser(org.id, "AGENT", "conv-agent-a");
+      const agentB = await createTestUser(org.id, "AGENT", "conv-agent-b");
+      const conv = await prisma.conversation.create({
+        data: { organizationId: org.id, channel: "whatsapp", aiHandled: false, assignedToId: agentA.id },
+      });
+
+      authMock.mockResolvedValue(fakeSession({ id: agentB.id, role: "AGENT", organizationId: org.id }));
+      await expect(takeHumanControl(conv.id)).rejects.toThrow(/otro agente/);
+    });
+
+    it("a MANAGER (with conversations:assign) can take over from another agent", async () => {
+      const agentA = await createTestUser(org.id, "AGENT", "conv-agent-c");
+      const manager = await createTestUser(org.id, "MANAGER", "conv-manager");
+      const conv = await prisma.conversation.create({
+        data: { organizationId: org.id, channel: "whatsapp", aiHandled: false, assignedToId: agentA.id },
+      });
+
+      authMock.mockResolvedValue(fakeSession({ id: manager.id, role: "MANAGER", organizationId: org.id }));
+      await takeHumanControl(conv.id);
+
+      const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+      expect(updated.assignedToId).toBe(manager.id);
+    });
+
+    it("releaseToAI turns aiHandled back on and clears the assignment", async () => {
+      authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+      const conv = await prisma.conversation.create({
+        data: { organizationId: org.id, channel: "whatsapp", aiHandled: false, assignedToId: owner.id },
+      });
+
+      await releaseToAI(conv.id);
+
+      const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+      expect(updated.aiHandled).toBe(true);
+      expect(updated.assignedToId).toBeNull();
+    });
+  });
+
+  describe("assignConversation", () => {
+    it("a MANAGER can assign a conversation to any active teammate, which also turns off aiHandled", async () => {
+      const manager = await createTestUser(org.id, "MANAGER", "conv-assign-manager");
+      const agent = await createTestUser(org.id, "AGENT", "conv-assign-agent");
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+
+      authMock.mockResolvedValue(fakeSession({ id: manager.id, role: "MANAGER", organizationId: org.id }));
+      await assignConversation(conv.id, agent.id);
+
+      const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+      expect(updated.assignedToId).toBe(agent.id);
+      expect(updated.aiHandled).toBe(false);
+    });
+
+    it("unassigning (userId=null) leaves aiHandled untouched", async () => {
+      const manager = await createTestUser(org.id, "MANAGER", "conv-unassign-manager");
+      const conv = await prisma.conversation.create({
+        data: { organizationId: org.id, channel: "whatsapp", aiHandled: false, assignedToId: manager.id },
+      });
+
+      authMock.mockResolvedValue(fakeSession({ id: manager.id, role: "MANAGER", organizationId: org.id }));
+      await assignConversation(conv.id, null);
+
+      const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+      expect(updated.assignedToId).toBeNull();
+      expect(updated.aiHandled).toBe(false);
+    });
+
+    it("an AGENT (no conversations:assign) cannot assign a conversation to someone else", async () => {
+      const agent = await createTestUser(org.id, "AGENT", "conv-noassign-agent");
+      const otherAgent = await createTestUser(org.id, "AGENT", "conv-noassign-target");
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+
+      authMock.mockResolvedValue(fakeSession({ id: agent.id, role: "AGENT", organizationId: org.id }));
+      await expect(assignConversation(conv.id, otherAgent.id)).rejects.toThrow();
+    });
+
+    it("rejects assigning to a user outside the organization", async () => {
+      const manager = await createTestUser(org.id, "MANAGER", "conv-assign-manager-2");
+      const outsider = await createTestUser(null, "AGENT", "conv-assign-outsider");
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+
+      authMock.mockResolvedValue(fakeSession({ id: manager.id, role: "MANAGER", organizationId: org.id }));
+      await expect(assignConversation(conv.id, outsider.id)).rejects.toThrow(/no encontrado/);
+
+      await prisma.user.delete({ where: { id: outsider.id } });
     });
   });
 });

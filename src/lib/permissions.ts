@@ -12,6 +12,8 @@ type Action =
   | "conversations:view"
   | "conversations:escalate"
   | "conversations:resolve"
+  | "conversations:reply"
+  | "conversations:assign"
   | "knowledge_base:manage"
   | "prompts:manage"
   | "team:manage"
@@ -25,7 +27,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "leads:create", "leads:delete", "leads:update_status",
     "opportunities:create", "opportunities:manage", "pipeline:manage",
     "automations:view", "automations:manage",
-    "conversations:view", "conversations:escalate", "conversations:resolve",
+    "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage", "team:manage",
     "requests:create", "reports:view", "settings:view", "settings:manage",
   ],
@@ -33,7 +35,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "leads:create", "leads:delete", "leads:update_status",
     "opportunities:create", "opportunities:manage", "pipeline:manage",
     "automations:view", "automations:manage",
-    "conversations:view", "conversations:escalate", "conversations:resolve",
+    "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage", "team:manage",
     "requests:create", "reports:view", "settings:view", "settings:manage",
   ],
@@ -41,7 +43,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "leads:create", "leads:delete", "leads:update_status",
     "opportunities:create", "opportunities:manage", "pipeline:manage",
     "automations:view", "automations:manage",
-    "conversations:view", "conversations:escalate", "conversations:resolve",
+    "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage", "team:manage",
     "requests:create", "reports:view", "settings:view", "settings:manage",
   ],
@@ -49,7 +51,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "leads:create", "leads:update_status",
     "opportunities:create", "opportunities:manage",
     "automations:view",
-    "conversations:view", "conversations:escalate", "conversations:resolve",
+    "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage",
     "requests:create", "reports:view", "settings:view",
   ],
@@ -57,7 +59,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "leads:create", "leads:update_status",
     "opportunities:create", "opportunities:manage",
     "automations:view",
-    "conversations:view", "conversations:escalate", "conversations:resolve",
+    "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply",
     "requests:create",
   ],
   VIEWER: [

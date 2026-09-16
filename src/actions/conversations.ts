@@ -6,6 +6,17 @@ import { auth } from "@/lib/auth";
 import { notifyAdmins } from "@/lib/admin-notifications";
 import { escalationAlertEmail } from "@/lib/email-templates";
 import { assertModuleEnabled } from "@/lib/modules";
+import { can } from "@/lib/permissions";
+import { logAudit } from "@/lib/audit";
+import { triggerN8nWorkflow } from "@/lib/n8n";
+import type { UserRole } from "@prisma/client";
+
+async function requireOrgAndWhatsapp() {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
+  return session;
+}
 
 export async function escalateConversation(conversationId: string) {
   const session = await auth();
@@ -68,6 +79,7 @@ export async function getOlderMessages(conversationId: string, beforeMessageId: 
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: MESSAGE_PAGE_SIZE,
+    include: { sender: { select: { name: true, email: true } } },
   });
 
   return { messages: older.reverse(), hasMore: older.length === MESSAGE_PAGE_SIZE };
@@ -92,5 +104,186 @@ export async function resolveConversation(conversationId: string) {
   revalidatePath(`/portal/conversations/${conversationId}`);
   revalidatePath("/portal/conversations");
   revalidatePath("/portal/whatsapp");
+  return { success: true };
+}
+
+/**
+ * Sends a manual reply from the portal. The platform never talks to the
+ * WhatsApp Business API directly — it stores the message and hands the
+ * actual send off to n8n (see docs/DOCUMENTACION_TECNICA.md §8), which
+ * reports delivery status back via the message.status webhook. Sending
+ * implicitly takes human control (aiHandled=false) and claims the
+ * conversation for the caller if nobody has it yet, so the bot doesn't
+ * keep auto-replying underneath a human who just answered.
+ */
+export async function sendManualMessage(data: {
+  conversationId: string;
+  content: string;
+  attachmentUrl?: string;
+  attachmentType?: string;
+}) {
+  const session = await requireOrgAndWhatsapp();
+  if (!can(session.user.role as UserRole, "conversations:reply")) throw new Error("No autorizado");
+
+  const content = data.content.trim();
+  if (!content && !data.attachmentUrl) throw new Error("El mensaje no puede estar vacío");
+
+  const conv = await prisma.conversation.findFirst({
+    where: { id: data.conversationId, organizationId: session.user.organizationId! },
+  });
+  if (!conv) throw new Error("Conversación no encontrada");
+  if (conv.status === "RESOLVED" || conv.status === "CLOSED") {
+    throw new Error("No se puede responder a una conversación cerrada");
+  }
+
+  const message = await prisma.message.create({
+    data: {
+      conversationId: conv.id,
+      role: "AGENT",
+      content: content || "(adjunto)",
+      senderId: session.user.id,
+      attachmentUrl: data.attachmentUrl,
+      attachmentType: data.attachmentType,
+      deliveryStatus: "PENDING",
+    },
+  });
+
+  await prisma.conversation.update({
+    where: { id: conv.id },
+    data: { aiHandled: false, assignedToId: conv.assignedToId ?? session.user.id },
+  });
+
+  const trigger = await triggerN8nWorkflow("whatsapp-outbound", {
+    organizationId: session.user.organizationId!,
+    event: "message.send",
+    data: {
+      conversationId: conv.id,
+      messageId: message.id,
+      contactPhone: conv.contactPhone,
+      channel: conv.channel,
+      content,
+      attachmentUrl: data.attachmentUrl,
+      attachmentType: data.attachmentType,
+    },
+  });
+
+  const finalMessage = trigger.success
+    ? message
+    : await prisma.message.update({ where: { id: message.id }, data: { deliveryStatus: "FAILED" } });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "conversation.manual_message",
+    resource: "Conversation",
+    resourceId: conv.id,
+    metadata: { messageId: message.id, delivered: trigger.success },
+  });
+
+  revalidatePath(`/portal/conversations/${conv.id}`);
+  revalidatePath("/portal/conversations");
+  revalidatePath("/portal/whatsapp");
+  return {
+    success: true,
+    delivered: trigger.success,
+    message: { ...finalMessage, sender: { name: session.user.name ?? null, email: session.user.email } },
+  };
+}
+
+/** A human agent takes over from the AI assistant, claiming the conversation if nobody else has it. */
+export async function takeHumanControl(conversationId: string) {
+  const session = await requireOrgAndWhatsapp();
+  if (!can(session.user.role as UserRole, "conversations:reply")) throw new Error("No autorizado");
+
+  const conv = await prisma.conversation.findFirst({
+    where: { id: conversationId, organizationId: session.user.organizationId! },
+  });
+  if (!conv) throw new Error("Conversación no encontrada");
+
+  if (conv.assignedToId && conv.assignedToId !== session.user.id) {
+    if (!can(session.user.role as UserRole, "conversations:assign")) {
+      throw new Error("Esta conversación ya está siendo atendida por otro agente");
+    }
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { aiHandled: false, assignedToId: session.user.id },
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "conversation.take_control",
+    resource: "Conversation",
+    resourceId: conversationId,
+  });
+
+  revalidatePath(`/portal/conversations/${conversationId}`);
+  revalidatePath("/portal/conversations");
+  return { success: true };
+}
+
+/** Hands the conversation back to the AI assistant and clears the human assignment. */
+export async function releaseToAI(conversationId: string) {
+  const session = await requireOrgAndWhatsapp();
+  if (!can(session.user.role as UserRole, "conversations:reply")) throw new Error("No autorizado");
+
+  const conv = await prisma.conversation.findFirst({
+    where: { id: conversationId, organizationId: session.user.organizationId! },
+  });
+  if (!conv) throw new Error("Conversación no encontrada");
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { aiHandled: true, assignedToId: null },
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "conversation.release_to_ai",
+    resource: "Conversation",
+    resourceId: conversationId,
+  });
+
+  revalidatePath(`/portal/conversations/${conversationId}`);
+  revalidatePath("/portal/conversations");
+  return { success: true };
+}
+
+/** Assigns (or unassigns, with userId=null) a conversation to a specific teammate. */
+export async function assignConversation(conversationId: string, userId: string | null) {
+  const session = await requireOrgAndWhatsapp();
+  if (!can(session.user.role as UserRole, "conversations:assign")) throw new Error("No autorizado");
+
+  const conv = await prisma.conversation.findFirst({
+    where: { id: conversationId, organizationId: session.user.organizationId! },
+  });
+  if (!conv) throw new Error("Conversación no encontrada");
+
+  if (userId) {
+    const target = await prisma.user.findFirst({
+      where: { id: userId, organizationId: session.user.organizationId, isActive: true },
+    });
+    if (!target) throw new Error("Usuario no encontrado");
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { assignedToId: userId, aiHandled: userId ? false : conv.aiHandled },
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "conversation.assign",
+    resource: "Conversation",
+    resourceId: conversationId,
+    metadata: { assignedToId: userId },
+  });
+
+  revalidatePath(`/portal/conversations/${conversationId}`);
+  revalidatePath("/portal/conversations");
   return { success: true };
 }

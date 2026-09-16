@@ -10,6 +10,7 @@ const {
   processConversationEvent,
   processScoringEvent,
   processAutomationEvent,
+  processMessageStatusEvent,
   processWebhookEventPayload,
 } = await import("./webhook-processors");
 
@@ -139,5 +140,44 @@ describe("webhook processors", () => {
 
   it("processWebhookEventPayload rejects an unknown eventType", async () => {
     await expect(processWebhookEventPayload("something.unknown", {}, org.id)).rejects.toThrow(/unknown webhook/i);
+  });
+
+  describe("processMessageStatusEvent", () => {
+    it("updates deliveryStatus on the referenced message", async () => {
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+      const msg = await prisma.message.create({
+        data: { conversationId: conv.id, role: "AGENT", content: "hola", deliveryStatus: "PENDING" },
+      });
+
+      await processMessageStatusEvent({ messageId: msg.id, status: "DELIVERED" }, org.id);
+
+      const updated = await prisma.message.findUniqueOrThrow({ where: { id: msg.id } });
+      expect(updated.deliveryStatus).toBe("DELIVERED");
+    });
+
+    it("stores the error message in metadata on a FAILED status", async () => {
+      const conv = await prisma.conversation.create({ data: { organizationId: org.id, channel: "whatsapp" } });
+      const msg = await prisma.message.create({
+        data: { conversationId: conv.id, role: "AGENT", content: "hola", deliveryStatus: "PENDING" },
+      });
+
+      await processMessageStatusEvent({ messageId: msg.id, status: "FAILED", errorMessage: "número inválido" }, org.id);
+
+      const updated = await prisma.message.findUniqueOrThrow({ where: { id: msg.id } });
+      expect(updated.deliveryStatus).toBe("FAILED");
+      expect((updated.metadata as { deliveryError?: string })?.deliveryError).toBe("número inválido");
+    });
+
+    it("rejects a messageId belonging to another organization", async () => {
+      const otherOrg = await createTestOrg("Message Status Other Org");
+      const conv = await prisma.conversation.create({ data: { organizationId: otherOrg.id, channel: "whatsapp" } });
+      const msg = await prisma.message.create({
+        data: { conversationId: conv.id, role: "AGENT", content: "hola", deliveryStatus: "PENDING" },
+      });
+
+      await expect(processMessageStatusEvent({ messageId: msg.id, status: "DELIVERED" }, org.id)).rejects.toThrow(/not found/i);
+
+      await cleanupOrg(otherOrg.id);
+    });
   });
 });

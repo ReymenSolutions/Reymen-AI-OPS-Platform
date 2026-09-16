@@ -102,9 +102,10 @@ interface PortalSidebarProps {
   orgName: string;
   orgLogoUrl?: string | null;
   enabledModules: PlatformModule[];
+  pendingConversations?: number;
 }
 
-export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModules }: PortalSidebarProps) {
+export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModules, pendingConversations = 0 }: PortalSidebarProps) {
   const pathname = usePathname();
   const { t, lang } = usePreferences();
   const labels = useNavItems();
@@ -202,7 +203,12 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
                 )}
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
-                {labels[item.key]}
+                <span className="flex-1">{labels[item.key]}</span>
+                {item.key === "conversations" && pendingConversations > 0 && (
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                    {pendingConversations > 99 ? "99+" : pendingConversations}
+                  </span>
+                )}
               </Link>
             );
           })}

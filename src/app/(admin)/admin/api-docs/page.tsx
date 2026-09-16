@@ -41,9 +41,24 @@ const ENDPOINTS = [
     ),
   },
   {
+    method: "POST",
+    path: "/api/webhooks/n8n/message-status",
+    description: "Reporta el estado de entrega de un mensaje enviado manualmente desde el portal (ver /whatsapp-outbound abajo). messageId es el que el portal envió al disparar el mensaje. Misma autenticación que /leads.",
+    body: JSON.stringify(
+      { messageId: "msg_xxx", status: "DELIVERED", errorMessage: null },
+      null, 2
+    ),
+  },
+  {
     method: "GET",
     path: "/api/v1/knowledge-base",
     description: "Retorna artículos de la base de conocimiento. Autenticación: header X-Api-Key con el secreto propio de la organización. Parámetros: ?orgId=xxx&q=búsqueda&category=categoria.",
+    body: null,
+  },
+  {
+    method: "GET",
+    path: "/api/v1/conversations/status",
+    description: "Consulta si una conversación está en modo IA o control humano. El workflow de IA debe llamar esto antes de generar una respuesta automática y abstenerse si aiHandled es false — evita que el bot responda encima de un agente humano. Autenticación: X-Api-Key. Parámetros: ?orgId=xxx&contactPhone=xxx (o &conversationId=xxx).",
     body: null,
   },
 ];
@@ -150,6 +165,34 @@ export default function ApiDocsPage() {
           </Card>
         ))}
       </div>
+
+      {/* Outbound: platform → n8n */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Webhook className="h-4 w-4" />
+            Envío saliente (plataforma → n8n)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-slate-600">
+            La plataforma nunca llama directamente a la API de WhatsApp Business — cuando un agente envía un mensaje
+            manual desde el portal, la plataforma guarda el <code className="rounded bg-slate-100 px-1 font-mono text-xs">Message</code>{" "}
+            (estado <code className="rounded bg-slate-100 px-1 font-mono text-xs">PENDING</code>) y dispara una
+            petición POST firmada (mismo esquema timestamp/HMAC) a{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">{"{N8N_BASE_URL}/webhook/whatsapp-outbound"}</code>.
+            El workflow de n8n en ese endpoint es responsable de llamar a la API de WhatsApp Business y reportar el
+            resultado con <code className="rounded bg-slate-100 px-1 font-mono text-xs">/api/webhooks/n8n/message-status</code>{" "}
+            usando el mismo <code className="rounded bg-slate-100 px-1 font-mono text-xs">messageId</code> recibido.
+          </p>
+          <pre className="rounded-lg bg-slate-950 p-4 text-xs text-slate-300 overflow-x-auto">
+            <code>{JSON.stringify(
+              { organizationId: "org_xxx", event: "message.send", data: { conversationId: "conv_xxx", messageId: "msg_xxx", contactPhone: "+52 55 1234 5678", channel: "whatsapp", content: "Claro, tenemos disponibilidad el jueves.", attachmentUrl: null, attachmentType: null } },
+              null, 2
+            )}</code>
+          </pre>
+        </CardContent>
+      </Card>
 
       <Card className="mt-6">
         <CardContent className="p-5">
