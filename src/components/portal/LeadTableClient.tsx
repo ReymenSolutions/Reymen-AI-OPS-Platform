@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -124,7 +125,9 @@ export function LeadTableClient({ leads, total, page, pageSize, query, status }:
               {leads.map((lead) => (
                 <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-900">{lead.name}</p>
+                    <Link href={`/portal/leads/${lead.id}`} className="font-medium text-slate-900 hover:text-brand-600 hover:underline">
+                      {lead.name}
+                    </Link>
                     {lead.notes && (
                       <p className="text-xs text-slate-400 truncate max-w-[180px]">{lead.notes}</p>
                     )}

@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
+import { hasModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +11,7 @@ import { InviteUserForm } from "@/components/portal/InviteUserForm";
 import { RemoveUserButton } from "@/components/portal/RemoveUserButton";
 import { EditUserDialog } from "@/components/portal/EditUserDialog";
 import { BillingActions } from "@/components/portal/BillingActions";
+import { PipelineStagesPanel } from "@/components/portal/PipelineStagesPanel";
 import { formatDate } from "@/lib/utils";
 import { can } from "@/lib/permissions";
 import { PLAN_LIMITS } from "@/lib/permissions";
@@ -20,8 +22,9 @@ export default async function PortalSettingsPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
 
-  const [t, org] = await Promise.all([
+  const [t, lang, org, crmEnabled, pipelineStages] = await Promise.all([
     getServerT(),
+    getServerLang(),
     prisma.organization.findUnique({
       where: { id: session.user.organizationId },
       include: {
@@ -32,12 +35,19 @@ export default async function PortalSettingsPage() {
         },
       },
     }),
+    hasModule(session.user.organizationId, "CRM"),
+    prisma.pipelineStage.findMany({
+      where: { organizationId: session.user.organizationId },
+      orderBy: { order: "asc" },
+      include: { _count: { select: { opportunities: true } } },
+    }),
   ]);
 
   if (!org) return redirect("/login");
 
   const canManageTeam = can(session.user.role as UserRole, "team:manage");
   const canManageBilling = can(session.user.role as UserRole, "settings:manage");
+  const canManagePipeline = can(session.user.role as UserRole, "pipeline:manage");
   const plan = PLAN_LIMITS[org.plan] ?? PLAN_LIMITS.starter;
   const stripeEnabled = isStripeConfigured();
   const hasActiveSubscription =
@@ -141,6 +151,28 @@ export default async function PortalSettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Pipeline stages (CRM module only) */}
+        {crmEnabled && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>{lang === "es" ? "Etapas del pipeline" : "Pipeline stages"}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PipelineStagesPanel
+                stages={pipelineStages.map((s) => ({
+                  id: s.id,
+                  name: s.name,
+                  order: s.order,
+                  isWon: s.isWon,
+                  isLost: s.isLost,
+                  opportunityCount: s._count.opportunities,
+                }))}
+                canManage={canManagePipeline}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

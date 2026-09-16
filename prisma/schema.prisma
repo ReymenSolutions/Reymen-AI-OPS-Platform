@@ -38,6 +38,9 @@ model Organization {
   prompts               Prompt[]
   templateInstallations TemplateInstallation[]
   modules               OrganizationModule[]
+  pipelineStages        PipelineStage[]
+  opportunities         Opportunity[]
+  notes                 Note[]
 
   @@index([slug])
 }
@@ -64,6 +67,8 @@ model User {
   organization Organization? @relation(fields: [organizationId], references: [id])
   accounts     Account[]
   sessions     Session[]
+  ownedOpportunities Opportunity[]
+  authoredNotes      Note[]
 
   @@index([organizationId])
   @@index([email])
@@ -134,13 +139,20 @@ model Lead {
   score          Int?
   scoreReason    String?    @db.Text
   notes          String?    @db.Text
+  // Free-text tags for quick contact-level categorization (same pattern as
+  // KnowledgeBase.tags / AutomationTemplate.tags elsewhere in this schema —
+  // a plain array, not a separate Tag model, since nothing here needs
+  // cross-org tag reuse or tag-level metadata).
+  tags           String[]   @default([])
   metadata       Json?
   assignedTo     String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   deletedAt      DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization  Organization  @relation(fields: [organizationId], references: [id])
+  opportunities Opportunity[]
+  noteHistory   Note[]
 
   @@unique([organizationId, externalId])
   @@index([organizationId])
@@ -155,6 +167,81 @@ enum LeadStatus {
   PROPOSAL
   WON
   LOST
+}
+
+// ─── SALES PIPELINE (Opportunities) ──────────────────────────────
+// A Lead is the contact/lead identity (unchanged, see above) — an
+// Opportunity is a deal being worked in a configurable pipeline against
+// that contact. One Lead can have zero, one, or several Opportunities
+// over time (a returning customer, a second sale). Kept separate from
+// Lead.status (the simpler, fixed CRM funnel every org already uses) so
+// existing leads/webhooks/reports keep working unchanged; Opportunity is
+// purely additive.
+
+model PipelineStage {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  order          Int
+  isWon          Boolean  @default(false)
+  isLost         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization  Organization  @relation(fields: [organizationId], references: [id])
+  opportunities Opportunity[]
+
+  @@unique([organizationId, order])
+  @@index([organizationId])
+}
+
+model Opportunity {
+  id             String   @id @default(cuid())
+  organizationId String
+  leadId         String
+  pipelineStageId String
+  title          String
+  // Monetary amount as a plain float, matching this schema's existing
+  // pragmatic style (Metric.value is also Float) rather than introducing
+  // Prisma's Decimal type solely for this — precise accounting isn't a
+  // requirement here, "how big is this deal" for pipeline/reporting is.
+  amount             Float?
+  currency           String    @default("MXN")
+  ownerId            String?
+  estimatedCloseDate DateTime?
+  nextActivityAt     DateTime?
+  nextActivityNote   String?   @db.Text
+  lossReason         String?   @db.Text
+  tags               String[]  @default([])
+  closedAt           DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization  Organization  @relation(fields: [organizationId], references: [id])
+  lead          Lead          @relation(fields: [leadId], references: [id])
+  pipelineStage PipelineStage @relation(fields: [pipelineStageId], references: [id])
+  owner         User?         @relation(fields: [ownerId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, pipelineStageId])
+  @@index([leadId])
+  @@index([ownerId])
+}
+
+model Note {
+  id             String   @id @default(cuid())
+  organizationId String
+  leadId         String
+  authorId       String?
+  content        String   @db.Text
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  lead         Lead         @relation(fields: [leadId], references: [id])
+  author       User?        @relation(fields: [authorId], references: [id])
+
+  @@index([leadId])
+  @@index([organizationId])
 }
 
 // ─── AUTOMATIONS ──────────────────────────────────────────────────

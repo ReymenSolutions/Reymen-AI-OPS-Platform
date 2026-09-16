@@ -51,6 +51,19 @@ export async function createClient(formData: FormData) {
           role: "OWNER",
         },
       },
+      // Same default pipeline every pre-existing org received via the
+      // add_crm_pipeline migration backfill — keeps new orgs consistent
+      // with it instead of starting with an empty, unusable pipeline.
+      pipelineStages: {
+        create: [
+          { name: "Nuevo", order: 0 },
+          { name: "Contactado", order: 1 },
+          { name: "Calificado", order: 2 },
+          { name: "Propuesta", order: 3 },
+          { name: "Ganado", order: 4, isWon: true },
+          { name: "Perdido", order: 5, isLost: true },
+        ],
+      },
     },
     include: { users: true },
   });

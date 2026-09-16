@@ -23,6 +23,10 @@ export function formatDateTime(date: Date | string) {
   }).format(new Date(date));
 }
 
+export function formatCurrency(amount: number, currency: string = "MXN") {
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+}
+
 export function generateSlug(name: string): string {
   return name
     .toLowerCase()

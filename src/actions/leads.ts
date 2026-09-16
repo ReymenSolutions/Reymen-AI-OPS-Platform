@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { assertPlanCapacity } from "@/lib/plan-limits";
 import { assertModuleEnabled } from "@/lib/modules";
+import { findPotentialDuplicateLeads } from "@/lib/duplicate-detection";
 import type { LeadStatus } from "@prisma/client";
 
 const createLeadSchema = z.object({
@@ -52,7 +53,13 @@ export async function createLead(formData: FormData) {
   });
 
   revalidatePath("/portal/leads");
-  return { success: true, leadId: lead.id };
+
+  // Surfaced to the UI as a non-blocking "possible duplicate?" prompt —
+  // creation always succeeds; this never blocks it. See mergeLeads() for
+  // the controlled unification step.
+  const duplicates = await findPotentialDuplicateLeads(session.user.organizationId, parsed.data, lead.id);
+
+  return { success: true, leadId: lead.id, duplicates: duplicates.map((d) => ({ id: d.id, name: d.name, email: d.email, phone: d.phone })) };
 }
 
 export async function updateLeadStatus(leadId: string, status: LeadStatus) {
@@ -103,5 +110,113 @@ export async function deleteLead(leadId: string) {
   });
 
   revalidatePath("/portal/leads");
+  return { success: true };
+}
+
+export async function updateLeadTags(leadId: string, tags: string[]) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "CRM");
+
+  const lead = await prisma.lead.findFirst({
+    where: { id: leadId, organizationId: session.user.organizationId },
+  });
+  if (!lead) throw new Error("Lead no encontrado");
+
+  const cleaned = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
+  await prisma.lead.update({ where: { id: leadId }, data: { tags: cleaned } });
+
+  revalidatePath(`/portal/leads/${leadId}`);
+  revalidatePath("/portal/leads");
+  return { success: true };
+}
+
+/** Small search used by the "new opportunity" lead picker — not a list page, so a tight limit is fine. */
+export async function searchLeads(query: string) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "CRM");
+
+  if (!query.trim()) return [];
+
+  return prisma.lead.findMany({
+    where: {
+      organizationId: session.user.organizationId,
+      deletedAt: null,
+      OR: [
+        { name: { contains: query, mode: "insensitive" } },
+        { email: { contains: query, mode: "insensitive" } },
+        { phone: { contains: query, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, name: true, email: true, phone: true },
+    take: 10,
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function checkLeadDuplicates(leadId: string) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "CRM");
+
+  const lead = await prisma.lead.findFirst({
+    where: { id: leadId, organizationId: session.user.organizationId },
+  });
+  if (!lead) throw new Error("Lead no encontrado");
+
+  const duplicates = await findPotentialDuplicateLeads(session.user.organizationId, lead, leadId);
+  return duplicates.map((d) => ({ id: d.id, name: d.name, email: d.email, phone: d.phone, createdAt: d.createdAt }));
+}
+
+/**
+ * Controlled unification: folds `duplicateLeadId` into `primaryLeadId`.
+ * Moves the duplicate's opportunities and notes onto the primary, merges
+ * tags, backfills the primary's email/phone if it's missing one the
+ * duplicate has (never overwrites a value the primary already has), then
+ * soft-deletes the duplicate. Conversations aren't re-pointed (they aren't
+ * linked to a Lead by a hard foreign key — they're matched by phone number
+ * at display time), so backfilling `phone` onto the primary is what makes
+ * the duplicate's conversation history show up under the surviving lead.
+ */
+export async function mergeLeads(primaryLeadId: string, duplicateLeadId: string) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "CRM");
+  if (primaryLeadId === duplicateLeadId) throw new Error("No puedes fusionar un lead consigo mismo");
+
+  const orgId = session.user.organizationId;
+  const [primary, duplicate] = await Promise.all([
+    prisma.lead.findFirst({ where: { id: primaryLeadId, organizationId: orgId, deletedAt: null } }),
+    prisma.lead.findFirst({ where: { id: duplicateLeadId, organizationId: orgId, deletedAt: null } }),
+  ]);
+  if (!primary || !duplicate) throw new Error("Lead no encontrado");
+
+  await prisma.$transaction([
+    prisma.opportunity.updateMany({ where: { leadId: duplicateLeadId }, data: { leadId: primaryLeadId } }),
+    prisma.note.updateMany({ where: { leadId: duplicateLeadId }, data: { leadId: primaryLeadId } }),
+    prisma.appointment.updateMany({ where: { leadId: duplicateLeadId }, data: { leadId: primaryLeadId } }),
+    prisma.lead.update({
+      where: { id: primaryLeadId },
+      data: {
+        tags: Array.from(new Set([...primary.tags, ...duplicate.tags])),
+        email: primary.email ?? duplicate.email,
+        phone: primary.phone ?? duplicate.phone,
+      },
+    }),
+    prisma.lead.update({ where: { id: duplicateLeadId }, data: { deletedAt: new Date() } }),
+  ]);
+
+  await logAudit({
+    organizationId: orgId,
+    userId: session.user.id,
+    action: "lead.merge",
+    resource: "Lead",
+    resourceId: primaryLeadId,
+    metadata: { mergedFromId: duplicateLeadId, mergedFromName: duplicate.name },
+  });
+
+  revalidatePath("/portal/leads");
+  revalidatePath(`/portal/leads/${primaryLeadId}`);
   return { success: true };
 }

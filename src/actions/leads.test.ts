@@ -8,7 +8,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const authMock = vi.fn();
 vi.mock("@/lib/auth", () => ({ auth: () => authMock() }));
 
-const { createLead, updateLeadStatus, deleteLead } = await import("./leads");
+const { createLead, updateLeadStatus, deleteLead, updateLeadTags, checkLeadDuplicates, mergeLeads, searchLeads } = await import("./leads");
 
 describe("leads actions", () => {
   let orgA: { id: string };
@@ -132,5 +132,109 @@ describe("leads actions", () => {
     expect(count).toBe(0);
 
     await cleanupOrg(orgD.id);
+  });
+
+  it("createLead flags a same-phone lead as a non-blocking duplicate without preventing creation", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+    const fd1 = new FormData();
+    fd1.set("name", "Original Contact");
+    fd1.set("phone", "555-0100");
+    const first = await createLead(fd1);
+    expect(first.duplicates).toEqual([]);
+
+    const fd2 = new FormData();
+    fd2.set("name", "Same Phone Different Name");
+    fd2.set("phone", "(555) 0100");
+    const second = await createLead(fd2);
+    expect(second.success).toBe(true);
+    expect(second.duplicates.map((d) => d.id)).toContain(first.leadId);
+  });
+
+  it("checkLeadDuplicates matches by normalized email regardless of case", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+    const fd1 = new FormData();
+    fd1.set("name", "Email Match A");
+    fd1.set("email", "Person@Example.com");
+    const a = await createLead(fd1);
+
+    const fd2 = new FormData();
+    fd2.set("name", "Email Match B");
+    fd2.set("email", "person@example.com");
+    const b = await createLead(fd2);
+
+    const duplicates = await checkLeadDuplicates(b.leadId);
+    expect(duplicates.map((d) => d.id)).toContain(a.leadId);
+  });
+
+  it("updateLeadTags dedupes and trims tags", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+    const fd = new FormData();
+    fd.set("name", "Tag Target");
+    const { leadId } = await createLead(fd);
+
+    await updateLeadTags(leadId, ["  vip ", "vip", "urgente", ""]);
+    const lead = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
+    expect(lead.tags.sort()).toEqual(["urgente", "vip"]);
+  });
+
+  it("searchLeads finds a lead by partial name match, scoped to the caller's org", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+    const fd = new FormData();
+    fd.set("name", "Zulema Buscar");
+    await createLead(fd);
+
+    const results = await searchLeads("Zulema");
+    expect(results.some((r) => r.name === "Zulema Buscar")).toBe(true);
+  });
+
+  it("mergeLeads moves opportunities/notes/appointments to the primary and soft-deletes the duplicate", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+    const fdPrimary = new FormData();
+    fdPrimary.set("name", "Primary Lead");
+    fdPrimary.set("phone", "555-9999");
+    const primary = await createLead(fdPrimary);
+
+    const fdDup = new FormData();
+    fdDup.set("name", "Duplicate Lead");
+    fdDup.set("email", "dup@example.com");
+    const duplicate = await createLead(fdDup);
+
+    await prisma.pipelineStage.create({ data: { organizationId: orgA.id, name: "Merge Test Stage", order: 900 } });
+    const stage = await prisma.pipelineStage.findFirstOrThrow({ where: { organizationId: orgA.id, name: "Merge Test Stage" } });
+    const opp = await prisma.opportunity.create({
+      data: { organizationId: orgA.id, leadId: duplicate.leadId, pipelineStageId: stage.id, title: "Deal on duplicate" },
+    });
+    const note = await prisma.note.create({
+      data: { organizationId: orgA.id, leadId: duplicate.leadId, content: "Note on duplicate" },
+    });
+
+    const result = await mergeLeads(primary.leadId, duplicate.leadId);
+    expect(result.success).toBe(true);
+
+    const movedOpp = await prisma.opportunity.findUniqueOrThrow({ where: { id: opp.id } });
+    expect(movedOpp.leadId).toBe(primary.leadId);
+    const movedNote = await prisma.note.findUniqueOrThrow({ where: { id: note.id } });
+    expect(movedNote.leadId).toBe(primary.leadId);
+
+    const primaryLead = await prisma.lead.findUniqueOrThrow({ where: { id: primary.leadId } });
+    expect(primaryLead.email).toBe("dup@example.com");
+
+    const dupLead = await prisma.lead.findUniqueOrThrow({ where: { id: duplicate.leadId } });
+    expect(dupLead.deletedAt).not.toBeNull();
+  });
+
+  it("enforces tenant isolation: org B cannot merge org A's leads", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+    const fd1 = new FormData();
+    fd1.set("name", "Iso Merge Primary");
+    const p1 = await createLead(fd1);
+    const fd2 = new FormData();
+    fd2.set("name", "Iso Merge Duplicate");
+    const p2 = await createLead(fd2);
+
+    const userB = await createTestUser(orgB.id, "OWNER", "leads-merge-owner-b");
+    authMock.mockResolvedValue(fakeSession({ id: userB.id, role: "OWNER", organizationId: orgB.id }));
+
+    await expect(mergeLeads(p1.leadId, p2.leadId)).rejects.toThrow();
   });
 });

@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
   Calendar, FileText, LogOut, BookOpen, Bot, SlidersHorizontal,
-  Layers, Upload, Loader2,
+  Layers, Upload, Loader2, GitBranch,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -65,6 +65,7 @@ function useNavItems() {
   return {
     dashboard: t.dashboard,
     leads: t.leads,
+    pipeline: t.pipeline,
     automations: t.automations,
     whatsapp: t.whatsapp,
     conversations: t.conversations,
@@ -84,6 +85,7 @@ function useNavItems() {
 const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule }[] = [
   { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard },
   { href: "/portal/leads", key: "leads", icon: Users, module: "CRM" },
+  { href: "/portal/pipeline", key: "pipeline", icon: GitBranch, module: "CRM" },
   { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS" },
   { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, module: "AI_WHATSAPP" },
   { href: "/portal/conversations", key: "conversations", icon: MessageSquare, module: "AI_WHATSAPP" },
