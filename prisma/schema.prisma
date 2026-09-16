@@ -124,6 +124,12 @@ model Lead {
   email          String?
   phone          String?
   source         String?
+  // Caller-supplied idempotency key (e.g. the lead's ID in the client's own
+  // CRM, or a WhatsApp message ID) — lets a resent/retried webhook upsert
+  // the same Lead instead of creating a duplicate. Null when the source
+  // doesn't provide one (manual portal creation, or a legacy n8n workflow
+  // not yet updated), in which case no dedup is possible for that lead.
+  externalId     String?
   status         LeadStatus @default(NEW)
   score          Int?
   scoreReason    String?    @db.Text
@@ -136,6 +142,7 @@ model Lead {
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
+  @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([organizationId, status])
   @@index([organizationId, createdAt])
@@ -237,10 +244,15 @@ model Message {
   role           MessageRole
   content        String      @db.Text
   metadata       Json?
+  // Same idempotency-key pattern as Lead.externalId — dedupes a retried
+  // "new message" webhook (e.g. the provider's own message ID) instead of
+  // appending the same message twice.
+  externalId     String?
   createdAt      DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
 
+  @@unique([conversationId, externalId])
   @@index([conversationId])
 }
 
@@ -334,10 +346,17 @@ model WebhookEvent {
   attempts       Int                @default(0)
   processedAt    DateTime?
   errorMessage   String?
+  // Caller-supplied idempotency key for the raw delivery itself (distinct
+  // from Lead/Message.externalId, which identifies the domain entity) —
+  // lets the route recognize "I've already ingested this exact delivery"
+  // and short-circuit before ever calling a processor, independent of
+  // whether that processor call would itself be safe to repeat.
+  externalEventId String?
   createdAt      DateTime           @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
+  @@unique([organizationId, source, externalEventId])
   @@index([organizationId, status])
   @@index([createdAt])
 }

@@ -35,6 +35,33 @@ describe("webhook processors", () => {
     await expect(processLeadEvent({}, org.id)).rejects.toThrow(/missing lead name/i);
   });
 
+  it("CRITICAL: processLeadEvent is idempotent by externalId — replaying the same payload does not create a second lead", async () => {
+    const payload = { name: "Dedup Lead", source: "n8n", externalId: "crm-dedup-1" };
+    await processLeadEvent(payload, org.id);
+    await processLeadEvent(payload, org.id); // simulates a retried delivery
+    await processLeadEvent(payload, org.id); // and a third, for good measure
+
+    const count = await prisma.lead.count({ where: { organizationId: org.id, externalId: "crm-dedup-1" } });
+    expect(count).toBe(1);
+  });
+
+  it("without an externalId, processLeadEvent has no way to dedup and creates a lead every time (documented limitation)", async () => {
+    const payload = { name: "No External Id Lead", source: "n8n" };
+    await processLeadEvent(payload, org.id);
+    await processLeadEvent(payload, org.id);
+
+    const count = await prisma.lead.count({ where: { organizationId: org.id, name: "No External Id Lead" } });
+    expect(count).toBe(2);
+  });
+
+  it("CRITICAL: concurrent deliveries with the same externalId still result in exactly one lead (race, not just sequential retry)", async () => {
+    const payload = { name: "Race Lead", source: "n8n", externalId: "crm-race-1" };
+    await Promise.all([processLeadEvent(payload, org.id), processLeadEvent(payload, org.id)]);
+
+    const count = await prisma.lead.count({ where: { organizationId: org.id, externalId: "crm-race-1" } });
+    expect(count).toBe(1);
+  });
+
   it("processConversationEvent creates a conversation and message, returning the conversation id", async () => {
     const result = await processConversationEvent(
       {
@@ -52,6 +79,21 @@ describe("webhook processors", () => {
     });
     expect(conv.organizationId).toBe(org.id);
     expect(conv.messages).toHaveLength(1);
+  });
+
+  it("CRITICAL: processConversationEvent is idempotent by message externalId — replaying doesn't append the message twice", async () => {
+    const payload = {
+      contactPhone: "+15557778888",
+      contactName: "Dedup Contact",
+      channel: "whatsapp",
+      message: { role: "USER" as const, content: "Mensaje repetido", externalId: "wa-dedup-1" },
+    };
+
+    const first = await processConversationEvent(payload, org.id);
+    await processConversationEvent(payload, org.id); // same conversation resolved by contactPhone, same message externalId
+
+    const conv = await prisma.conversation.findUniqueOrThrow({ where: { id: first.conversationId }, include: { messages: true } });
+    expect(conv.messages.filter((m) => m.externalId === "wa-dedup-1")).toHaveLength(1);
   });
 
   it("processScoringEvent updates the lead's score", async () => {

@@ -95,18 +95,29 @@ describe("webhook retry", () => {
   });
 
   it("retryAllFailedWebhookEvents retries every eligible FAILED event, oldest first", async () => {
-    // retryAllFailedWebhookEvents intentionally has no org filter (it's a
-    // platform-wide cron sweep), so other test files' FAILED events running
-    // concurrently in the shared test DB may also get swept up here — assert
-    // on this test's own events rather than the exact global result counts.
     processWebhookEventPayload.mockResolvedValue(undefined);
     const e1 = await createFailedEvent();
     const e2 = await createFailedEvent();
     const exhausted = await createFailedEvent(MAX_WEBHOOK_ATTEMPTS);
 
-    const result = await retryAllFailedWebhookEvents();
-    expect(result.retried).toBeGreaterThanOrEqual(2);
-    expect(result.succeeded).toBeGreaterThanOrEqual(2);
+    // retryAllFailedWebhookEvents also supports an unscoped platform-wide
+    // sweep (used by the real cron and the admin "retry all" action), and
+    // other test files exercise that exact unscoped call concurrently
+    // against this same shared test DB. Even scoped to this org, a
+    // concurrent unscoped sweep from another file can process e1/e2 before
+    // this call's own query runs, so asserting on the return value of one
+    // specific call is inherently racy. Instead, retry (idempotent — a row
+    // no longer FAILED is simply excluded from the next query) until this
+    // org's own events are settled, then assert on their actual end state,
+    // which is true regardless of which call ends up doing the work.
+    for (let i = 0; i < 5; i++) {
+      const [u1, u2] = await Promise.all([
+        prisma.webhookEvent.findUniqueOrThrow({ where: { id: e1.id } }),
+        prisma.webhookEvent.findUniqueOrThrow({ where: { id: e2.id } }),
+      ]);
+      if (u1.status === "PROCESSED" && u2.status === "PROCESSED") break;
+      await retryAllFailedWebhookEvents({ organizationId: org.id });
+    }
 
     const [u1, u2, uExhausted] = await Promise.all([
       prisma.webhookEvent.findUniqueOrThrow({ where: { id: e1.id } }),

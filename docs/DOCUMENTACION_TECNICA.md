@@ -1036,9 +1036,10 @@ security review — inbound authentication is now **per-organization**:
 
 ### HMAC-SHA256 Verification
 
-Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring}`) use
+Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring,automations}`) use
 HMAC-SHA256 signing via `src/lib/webhook-validator.ts`, verified against the
-**target organization's own** `n8nWebhookSecret`:
+**target organization's own** `n8nWebhookSecret` (or, for `/automations`, that specific
+automation's own `webhookSecret`):
 
 ```typescript
 // route.ts: look up the org's own secret, then verify against it
@@ -1046,14 +1047,15 @@ const org = orgId
   ? await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true, n8nWebhookSecret: true } })
   : null;
 
-const authorized = org && isWebhookAuthorized(rawBody, hmacSignature, plainSecret, org.n8nWebhookSecret);
+const authorized = org && isWebhookAuthorized(rawBody, hmacSignature, plainSecret, org.n8nWebhookSecret, timestamp);
 ```
 
 ```typescript
 export function verifyWebhookSignature(
   payload: string,    // raw request body as string
   signature: string,  // value of X-Reymen-Signature header
-  secret: string       // that org's n8nWebhookSecret, looked up by orgId
+  secret: string,      // that org's n8nWebhookSecret, looked up by orgId
+  timestamp: string    // value of X-Reymen-Timestamp header — part of the signed message, see Replay Protection below
 ): boolean
 ```
 
@@ -1061,8 +1063,64 @@ export function verifyWebhookSignature(
 
 **Algorithm:**
 ```
-HMAC-SHA256(key=secret, message=rawBody) → hex → "sha256=" + hex
+HMAC-SHA256(key=secret, message=`${timestamp}.${rawBody}`) → hex → "sha256=" + hex
 ```
+
+The timestamp is mixed into the signed message, not just carried alongside it — a
+signature computed for one timestamp doesn't verify against a different one, so an
+attacker can't reuse a captured signature with a fresher timestamp of their choosing.
+
+### Replay Protection (timestamp window)
+
+A bare HMAC signature over the body never expires on its own: capture one valid
+request (a proxy log, a misconfigured n8n execution log) and it verifies forever.
+`isTimestampFresh()` in `webhook-validator.ts` closes that — the request is rejected
+before the signature is even checked if `X-Reymen-Timestamp` (Unix milliseconds) is
+missing or falls outside a window of the server's own clock:
+
+```typescript
+const REPLAY_WINDOW_MS = 5 * 60 * 1000;      // reject anything older than 5 minutes
+const CLOCK_SKEW_AHEAD_MS = 30 * 1000;       // small forward allowance for sender clock drift
+
+export function isTimestampFresh(timestamp: string): boolean {
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || ts <= 0) return false;
+  const age = Date.now() - ts;
+  return age <= REPLAY_WINDOW_MS && age >= -CLOCK_SKEW_AHEAD_MS;
+}
+```
+
+**Breaking change for n8n workflows**: any workflow signing requests to this platform
+must add the `X-Reymen-Timestamp` header and sign `${timestamp}.${body}` instead of
+just `body`, or every request will be rejected with 401. This is documented on
+`/admin/api-docs`. The dev-only plain-secret shortcut (`x-reymen-secret`, non-production
+environments) is unaffected — it never involved a signature or timestamp.
+
+### Idempotency (duplicate delivery / duplicate data prevention)
+
+Two independent layers, since they protect against two different failure modes:
+
+1. **Delivery-level** (`src/lib/webhook-ingest.ts`, `ingestWebhookEvent()`): the caller
+   may send `X-Reymen-Event-Id` — its own stable ID for that specific delivery (e.g.
+   n8n's execution ID). `WebhookEvent` has a unique constraint on
+   `(organizationId, source, externalEventId)`; a resend of the same event id short-circuits
+   as `{ success: true, duplicate: true }` without calling the processor a second time,
+   including under real concurrency (two simultaneous identical deliveries — the second
+   one's `WebhookEvent.create()` hits the unique constraint, caught and treated as a
+   duplicate rather than an error).
+2. **Domain-level** (`Lead.externalId`, `Message.externalId`): the payload may include
+   its own stable ID for the underlying record (a CRM lead ID, a WhatsApp message ID).
+   `processLeadEvent`/`processConversationEvent` check for an existing row with that
+   `(organizationId | conversationId, externalId)` before creating, and the same unique
+   constraints catch the concurrent case. This is what actually prevents a duplicate
+   **Lead** or **Message**, independent of whether the delivery itself was deduped —
+   two different deliveries (different event ids) describing the same underlying lead
+   still collapse to one row.
+
+Both are opt-in from n8n's side: a workflow that sends neither `externalId` nor
+`X-Reymen-Event-Id` gets the pre-idempotency behavior (every delivery processed,
+possible duplicates on retry) exactly as before. New/updated n8n workflows should
+send both.
 
 ### Constant-Time Comparison
 
@@ -2043,6 +2101,37 @@ Several models use compound unique constraints to enforce business rules at the 
 | `TemplateVersion` | `[templateId, version]` | No duplicate semver within a template |
 | `TemplateInstallation` | `[organizationId, templateId]` | One installation record per org/template |
 | `Account` (NextAuth) | `[provider, providerAccountId]` | One OAuth account per provider |
+| `Lead` | `[organizationId, externalId]` | Nullable idempotency key — see §8 Idempotency |
+| `Message` | `[conversationId, externalId]` | Same, scoped to the conversation |
+| `WebhookEvent` | `[organizationId, source, externalEventId]` | Delivery-level idempotency key |
+| `OrganizationModule` | `[organizationId, module]` | One entitlement row per org/module |
+
+Every one of these idempotency-key columns is nullable, and Postgres unique indexes
+treat `NULL` as distinct from every other `NULL` — so rows that don't supply the key
+(most rows, for `externalId`/`externalEventId`) never collide with each other; the
+constraint only ever fires once a caller actually reuses the same non-null key.
+
+### 3b. Concurrency Control: Serializable Transactions for Slot Booking
+
+`createAppointment` (`src/actions/appointments.ts`) prevents double-booking with a
+`Prisma.TransactionIsolationLevel.Serializable` transaction, not just a
+check-then-insert under the default Read Committed isolation:
+
+```typescript
+await prisma.$transaction(async (tx) => {
+  const overlapping = await tx.appointment.findFirst({
+    where: { organizationId, status: { in: ["SCHEDULED", "CONFIRMED"] }, startTime: { lt: end }, endTime: { gt: start } },
+  });
+  if (overlapping) throw new Error("Ese horario ya está ocupado por otra cita.");
+  await tx.appointment.create({ data: { ... } });
+}, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+```
+
+Under Read Committed, two concurrent requests for the same slot can both pass the
+overlap check before either commits (classic TOCTOU race) — Serializable makes
+Postgres itself detect that conflict and abort one transaction with a `40001`
+serialization failure (surfaced by Prisma as error code `P2034`), which the action
+catches and reports as the same "slot taken" error rather than a generic 500.
 
 ### 4. CSV Export Route Pattern
 

@@ -21,7 +21,8 @@ export async function triggerN8nWorkflow(
   }
 
   const body = JSON.stringify(payload);
-  const signature = createWebhookSignature(body, N8N_WEBHOOK_SECRET);
+  const timestamp = Date.now().toString();
+  const signature = createWebhookSignature(body, N8N_WEBHOOK_SECRET, timestamp);
 
   try {
     const res = await fetch(`${N8N_BASE_URL}/webhook/${webhookPath}`, {
@@ -29,6 +30,7 @@ export async function triggerN8nWorkflow(
       headers: {
         "Content-Type": "application/json",
         "X-Reymen-Signature": signature,
+        "X-Reymen-Timestamp": timestamp,
         "X-Reymen-Source": "platform",
       },
       body,

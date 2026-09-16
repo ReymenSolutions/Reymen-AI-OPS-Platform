@@ -15,6 +15,14 @@ function makeRequest(body: string, headers: Record<string, string>): NextRequest
   });
 }
 
+/** Signs `body` with a fresh timestamp and returns both headers, ready to spread into makeRequest. */
+function signed(body: string, secret: string, timestamp = Date.now().toString()) {
+  return {
+    "x-reymen-signature": createWebhookSignature(body, secret, timestamp),
+    "x-reymen-timestamp": timestamp,
+  };
+}
+
 describe("POST /api/webhooks/n8n/leads — per-organization secret isolation", () => {
   let orgA: { id: string; n8nWebhookSecret: string };
   let orgB: { id: string; n8nWebhookSecret: string };
@@ -31,10 +39,9 @@ describe("POST /api/webhooks/n8n/leads — per-organization secret isolation", (
 
   it("accepts a request signed with the target org's own secret", async () => {
     const body = JSON.stringify({ name: "Legit Lead", source: "n8n" });
-    const signature = createWebhookSignature(body, orgA.n8nWebhookSecret);
 
     const res = await POST(
-      makeRequest(body, { "x-reymen-signature": signature, "x-reymen-orgid": orgA.id })
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id })
     );
     expect(res.status).toBe(200);
 
@@ -46,10 +53,8 @@ describe("POST /api/webhooks/n8n/leads — per-organization secret isolation", (
     const body = JSON.stringify({ name: "Forged Lead", source: "n8n" });
     // Attacker knows org B's own secret (e.g. they operate org B's n8n workflow)
     // and tries to inject data into org A by just changing the orgId header.
-    const signatureFromOrgB = createWebhookSignature(body, orgB.n8nWebhookSecret);
-
     const res = await POST(
-      makeRequest(body, { "x-reymen-signature": signatureFromOrgB, "x-reymen-orgid": orgA.id })
+      makeRequest(body, { ...signed(body, orgB.n8nWebhookSecret), "x-reymen-orgid": orgA.id })
     );
     expect(res.status).toBe(401);
 
@@ -59,28 +64,74 @@ describe("POST /api/webhooks/n8n/leads — per-organization secret isolation", (
 
   it("rejects a request with a non-existent orgId", async () => {
     const body = JSON.stringify({ name: "Nowhere Lead", source: "n8n" });
-    const signature = createWebhookSignature(body, "any-secret-since-org-does-not-exist");
-
     const res = await POST(
-      makeRequest(body, { "x-reymen-signature": signature, "x-reymen-orgid": "does-not-exist" })
+      makeRequest(body, { ...signed(body, "any-secret-since-org-does-not-exist"), "x-reymen-orgid": "does-not-exist" })
     );
     expect(res.status).toBe(401);
   });
 
   it("rejects a request with no orgId header at all", async () => {
     const body = JSON.stringify({ name: "No Org Lead", source: "n8n" });
-    const res = await POST(makeRequest(body, { "x-reymen-signature": "sha256=whatever" }));
+    const res = await POST(makeRequest(body, { "x-reymen-signature": "sha256=whatever", "x-reymen-timestamp": Date.now().toString() }));
     expect(res.status).toBe(401);
   });
 
   it("rejects a request with a tampered body even if the org id is correct", async () => {
     const originalBody = JSON.stringify({ name: "Original", source: "n8n" });
-    const signature = createWebhookSignature(originalBody, orgA.n8nWebhookSecret);
+    const headers = signed(originalBody, orgA.n8nWebhookSecret);
     const tamperedBody = JSON.stringify({ name: "Tampered", source: "n8n" });
 
+    const res = await POST(makeRequest(tamperedBody, { ...headers, "x-reymen-orgid": orgA.id }));
+    expect(res.status).toBe(401);
+  });
+
+  it("CRITICAL: rejects a validly-signed request whose timestamp is outside the freshness window (replay)", async () => {
+    const body = JSON.stringify({ name: "Replayed Lead", source: "n8n" });
+    const staleTimestamp = (Date.now() - 10 * 60 * 1000).toString(); // 10 minutes old
     const res = await POST(
-      makeRequest(tamperedBody, { "x-reymen-signature": signature, "x-reymen-orgid": orgA.id })
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret, staleTimestamp), "x-reymen-orgid": orgA.id })
     );
     expect(res.status).toBe(401);
+
+    const replayed = await prisma.lead.findFirst({ where: { organizationId: orgA.id, name: "Replayed Lead" } });
+    expect(replayed).toBeNull();
+  });
+
+  it("idempotency: resending the same delivery (same x-reymen-event-id) does not create a second lead", async () => {
+    const body = JSON.stringify({ name: "Idempotent Lead", source: "n8n" });
+    const eventId = "evt-idempotent-lead-1";
+
+    const first = await POST(
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id, "x-reymen-event-id": eventId })
+    );
+    expect(first.status).toBe(200);
+
+    const second = await POST(
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id, "x-reymen-event-id": eventId })
+    );
+    expect(second.status).toBe(200);
+    expect((await second.json()).duplicate).toBe(true);
+
+    const count = await prisma.lead.count({ where: { organizationId: orgA.id, name: "Idempotent Lead" } });
+    expect(count).toBe(1);
+  });
+
+  it("idempotency: resending the same lead externalId (even under a different event id) does not create a second lead", async () => {
+    const body = JSON.stringify({ name: "Stable External Lead", source: "n8n", externalId: "crm-lead-777" });
+
+    const first = await POST(
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id, "x-reymen-event-id": "evt-a" })
+    );
+    expect(first.status).toBe(200);
+
+    // Different delivery/event id, but the same underlying lead — n8n's own
+    // retry logic re-sent the whole HTTP request with a fresh execution ID.
+    const second = await POST(
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id, "x-reymen-event-id": "evt-b" })
+    );
+    expect(second.status).toBe(200);
+
+    const count = await prisma.lead.count({ where: { organizationId: orgA.id, externalId: "crm-lead-777" } });
+    expect(count).toBe(1);
   });
 });

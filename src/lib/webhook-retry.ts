@@ -50,11 +50,22 @@ export async function retryWebhookEvent(eventId: string): Promise<{ success: boo
 
 /**
  * Retries every FAILED event still under the attempt cap, oldest first.
- * Used by the admin "retry all" action and the scheduled retry cron.
+ * Used by the admin "retry all" action and the scheduled retry cron — both
+ * call this with no `organizationId`, sweeping every organization's backlog
+ * together (intentional: this is a platform-wide reliability sweep, not a
+ * per-tenant one). `organizationId` exists so a narrower sweep is possible
+ * (e.g. clearing one org's backlog specifically) without a second code path.
  */
-export async function retryAllFailedWebhookEvents(limit = 50): Promise<{ retried: number; succeeded: number }> {
+export async function retryAllFailedWebhookEvents(
+  options: { limit?: number; organizationId?: string } = {}
+): Promise<{ retried: number; succeeded: number }> {
+  const { limit = 50, organizationId } = options;
   const events = await prisma.webhookEvent.findMany({
-    where: { status: "FAILED", attempts: { lt: MAX_WEBHOOK_ATTEMPTS } },
+    where: {
+      status: "FAILED",
+      attempts: { lt: MAX_WEBHOOK_ATTEMPTS },
+      ...(organizationId ? { organizationId } : {}),
+    },
     orderBy: { createdAt: "asc" },
     take: limit,
     select: { id: true },

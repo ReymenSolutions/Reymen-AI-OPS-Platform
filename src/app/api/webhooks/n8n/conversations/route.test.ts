@@ -15,6 +15,13 @@ function makeRequest(body: string, headers: Record<string, string>): NextRequest
   });
 }
 
+function signed(body: string, secret: string, timestamp = Date.now().toString()) {
+  return {
+    "x-reymen-signature": createWebhookSignature(body, secret, timestamp),
+    "x-reymen-timestamp": timestamp,
+  };
+}
+
 describe("POST /api/webhooks/n8n/conversations — per-organization secret isolation", () => {
   let orgA: { id: string; n8nWebhookSecret: string };
   let orgB: { id: string; n8nWebhookSecret: string };
@@ -35,10 +42,9 @@ describe("POST /api/webhooks/n8n/conversations — per-organization secret isola
       channel: "whatsapp",
       message: { role: "USER", content: "hola" },
     });
-    const signature = createWebhookSignature(body, orgA.n8nWebhookSecret);
 
     const res = await POST(
-      makeRequest(body, { "x-reymen-signature": signature, "x-reymen-orgid": orgA.id })
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id })
     );
     expect(res.status).toBe(200);
 
@@ -52,10 +58,9 @@ describe("POST /api/webhooks/n8n/conversations — per-organization secret isola
       channel: "whatsapp",
       message: { role: "USER", content: "forged message" },
     });
-    const signatureFromOrgB = createWebhookSignature(body, orgB.n8nWebhookSecret);
 
     const res = await POST(
-      makeRequest(body, { "x-reymen-signature": signatureFromOrgB, "x-reymen-orgid": orgA.id })
+      makeRequest(body, { ...signed(body, orgB.n8nWebhookSecret), "x-reymen-orgid": orgA.id })
     );
     expect(res.status).toBe(401);
 
@@ -67,7 +72,45 @@ describe("POST /api/webhooks/n8n/conversations — per-organization secret isola
 
   it("rejects a request with no orgId header", async () => {
     const body = JSON.stringify({ contactPhone: "+1", channel: "whatsapp", message: { role: "USER", content: "x" } });
-    const res = await POST(makeRequest(body, { "x-reymen-signature": "sha256=whatever" }));
+    const res = await POST(makeRequest(body, { "x-reymen-signature": "sha256=whatever", "x-reymen-timestamp": Date.now().toString() }));
     expect(res.status).toBe(401);
+  });
+
+  it("CRITICAL: rejects a validly-signed request whose timestamp is outside the freshness window (replay)", async () => {
+    const body = JSON.stringify({
+      contactPhone: "+15550001111",
+      channel: "whatsapp",
+      message: { role: "USER", content: "replayed" },
+    });
+    const staleTimestamp = (Date.now() - 10 * 60 * 1000).toString();
+    const res = await POST(
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret, staleTimestamp), "x-reymen-orgid": orgA.id })
+    );
+    expect(res.status).toBe(401);
+
+    const replayed = await prisma.conversation.findFirst({ where: { organizationId: orgA.id, contactPhone: "+15550001111" } });
+    expect(replayed).toBeNull();
+  });
+
+  it("idempotency: resending the same message externalId does not append it twice", async () => {
+    const body = JSON.stringify({
+      contactPhone: "+15552223333",
+      channel: "whatsapp",
+      message: { role: "USER", content: "hola de nuevo", externalId: "wa-msg-abc" },
+    });
+
+    const first = await POST(
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id, "x-reymen-event-id": "evt-conv-a" })
+    );
+    expect(first.status).toBe(200);
+
+    const second = await POST(
+      makeRequest(body, { ...signed(body, orgA.n8nWebhookSecret), "x-reymen-orgid": orgA.id, "x-reymen-event-id": "evt-conv-b" })
+    );
+    expect(second.status).toBe(200);
+
+    const conv = await prisma.conversation.findFirstOrThrow({ where: { organizationId: orgA.id, contactPhone: "+15552223333" } });
+    const messageCount = await prisma.message.count({ where: { conversationId: conv.id, externalId: "wa-msg-abc" } });
+    expect(messageCount).toBe(1);
   });
 });

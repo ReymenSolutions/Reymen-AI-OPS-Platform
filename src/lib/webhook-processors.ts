@@ -17,6 +17,7 @@ export async function processLeadEvent(payload: unknown, orgId: string): Promise
     email?: string;
     phone?: string;
     source?: string;
+    externalId?: string;
     metadata?: Record<string, unknown>;
   };
 
@@ -25,18 +26,39 @@ export async function processLeadEvent(payload: unknown, orgId: string): Promise
   const org = await prisma.organization.findUnique({ where: { id: orgId, isActive: true } });
   if (!org) throw new Error("Organization not found");
 
+  // Idempotency: if the source supplied a stable ID for this lead (its own
+  // CRM record ID, a WhatsApp message ID, etc.) and we've already created a
+  // Lead for it, this is a retried/duplicated delivery — no-op rather than
+  // creating a second Lead. Sources that don't send externalId (not yet
+  // updated to do so) get the old always-create behavior, with no dedup.
+  if (body.externalId) {
+    const existing = await prisma.lead.findUnique({
+      where: { organizationId_externalId: { organizationId: orgId, externalId: body.externalId } },
+    });
+    if (existing) return;
+  }
+
   await assertPlanCapacity(orgId, "leads");
 
-  await prisma.lead.create({
-    data: {
-      organizationId: orgId,
-      name: body.name,
-      email: body.email,
-      phone: body.phone,
-      source: body.source ?? "n8n",
-      metadata: (body.metadata as Prisma.InputJsonValue) ?? undefined,
-    },
-  });
+  try {
+    await prisma.lead.create({
+      data: {
+        organizationId: orgId,
+        name: body.name,
+        email: body.email,
+        phone: body.phone,
+        source: body.source ?? "n8n",
+        externalId: body.externalId,
+        metadata: (body.metadata as Prisma.InputJsonValue) ?? undefined,
+      },
+    });
+  } catch (err) {
+    // Two concurrent deliveries with the same externalId both passed the
+    // check above — the unique constraint on (organizationId, externalId)
+    // catches the race. That's a successful idempotent no-op, not an error.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return;
+    throw err;
+  }
 }
 
 export async function processConversationEvent(payload: unknown, orgId: string): Promise<{ conversationId: string }> {
@@ -45,7 +67,7 @@ export async function processConversationEvent(payload: unknown, orgId: string):
     contactPhone: string;
     contactName?: string;
     channel: string;
-    message: { role: "USER" | "ASSISTANT" | "SYSTEM"; content: string };
+    message: { role: "USER" | "ASSISTANT" | "SYSTEM"; content: string; externalId?: string };
   };
 
   let conversation = body.conversationId
@@ -67,13 +89,28 @@ export async function processConversationEvent(payload: unknown, orgId: string):
     });
   }
 
-  await prisma.message.create({
-    data: {
-      conversationId: conversation.id,
-      role: body.message.role,
-      content: body.message.content,
-    },
-  });
+  // Same idempotency pattern as leads: dedup by the provider's own message
+  // ID when supplied, so a retried "new message" webhook doesn't append the
+  // same message twice into the conversation.
+  if (body.message.externalId) {
+    const existingMessage = await prisma.message.findUnique({
+      where: { conversationId_externalId: { conversationId: conversation.id, externalId: body.message.externalId } },
+    });
+    if (existingMessage) return { conversationId: conversation.id };
+  }
+
+  try {
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: body.message.role,
+        content: body.message.content,
+        externalId: body.message.externalId,
+      },
+    });
+  } catch (err) {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+  }
 
   return { conversationId: conversation.id };
 }

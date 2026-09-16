@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isWebhookAuthorized } from "@/lib/webhook-validator";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { processAutomationEvent } from "@/lib/webhook-processors";
+import { ingestWebhookEvent } from "@/lib/webhook-ingest";
 
 export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-reymen-signature") ?? "";
+  const timestamp = req.headers.get("x-reymen-timestamp") ?? "";
   const plainSecret = req.headers.get("x-reymen-secret") ?? "";
+  const externalEventId = req.headers.get("x-reymen-event-id") || null;
 
   const rawBody = await req.text();
 
@@ -38,39 +40,17 @@ export async function POST(req: NextRequest) {
 
   // Authenticate against this specific automation's own webhook secret,
   // matching what the admin panel's Webhook Info dialog documents to n8n.
-  if (!automation || !isWebhookAuthorized(rawBody, signature, plainSecret, automation.webhookSecret)) {
+  if (!automation || !isWebhookAuthorized(rawBody, signature, plainSecret, automation.webhookSecret, timestamp)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const orgId = automation.organizationId;
 
-  const webhookEvent = await prisma.webhookEvent.create({
-    data: {
-      organizationId: orgId,
-      source: "n8n",
-      eventType: "automation.event",
-      payload: parsedBody as Prisma.InputJsonValue,
-      status: "PROCESSING",
-      attempts: 1,
-    },
-  });
+  const result = await ingestWebhookEvent(
+    { organizationId: orgId, source: "n8n", eventType: "automation.event", payload: parsedBody, externalEventId },
+    () => processAutomationEvent(parsedBody, orgId)
+  );
 
-  try {
-    await processAutomationEvent(parsedBody, orgId);
-
-    await prisma.webhookEvent.update({
-      where: { id: webhookEvent.id },
-      data: { status: "PROCESSED", processedAt: new Date() },
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    await prisma.webhookEvent.update({
-      where: { id: webhookEvent.id },
-      data: {
-        status: "FAILED",
-        errorMessage: error instanceof Error ? error.message : "Unknown error",
-      },
-    });
-    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
-  }
+  if (result.outcome === "duplicate") return NextResponse.json({ success: true, duplicate: true });
+  if (result.outcome === "failed") return NextResponse.json({ error: "Processing failed" }, { status: 500 });
+  return NextResponse.json({ success: true });
 }

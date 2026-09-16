@@ -49,7 +49,9 @@ const ENDPOINTS = [
 ];
 
 const AUTH_HEADER = `X-Reymen-OrgId: <organization id>
-X-Reymen-Signature: sha256=<hmac_sha256(org_secret, body)>
+X-Reymen-Timestamp: <unix ms, e.g. Date.now()>
+X-Reymen-Signature: sha256=<hmac_sha256(org_secret, \`\${timestamp}.\${body}\`)>
+X-Reymen-Event-Id: <optional but recommended — see below>
 Content-Type: application/json`;
 
 export default function ApiDocsPage() {
@@ -73,21 +75,45 @@ export default function ApiDocsPage() {
             Los webhooks de leads, conversaciones, scoring y la API de knowledge base se autentican con el{" "}
             <strong>secreto propio de cada organización</strong> (nunca uno compartido) — obtenlo desde{" "}
             <code className="rounded bg-slate-100 px-1 font-mono text-xs">Clientes → [cliente] → Credenciales n8n</code>{" "}
-            en este panel. Incluye una firma HMAC-SHA256 del body en el header{" "}
-            <code className="rounded bg-slate-100 px-1 font-mono text-xs">x-reymen-signature</code>, junto con{" "}
-            <code className="rounded bg-slate-100 px-1 font-mono text-xs">x-reymen-orgid</code>.
+            en este panel. Incluye una firma HMAC-SHA256 en el header{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">x-reymen-signature</code>, calculada sobre{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">{"{timestamp}.{body}"}</code> (no solo el
+            body), junto con <code className="rounded bg-slate-100 px-1 font-mono text-xs">x-reymen-orgid</code> y{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono text-xs">x-reymen-timestamp</code>.
           </p>
           <pre className="rounded-lg bg-slate-950 p-4 text-xs text-slate-300 overflow-x-auto">
             <code>{AUTH_HEADER}</code>
           </pre>
           <p className="text-sm text-slate-600">
+            <strong>x-reymen-timestamp</strong> (milisegundos Unix) debe estar dentro de una ventana de 5 minutos del
+            reloj del servidor — una petición firmada correctamente pero con un timestamp viejo se rechaza con 401.
+            Esto evita que una petición capturada (un log, un proxy) pueda reenviarse indefinidamente y seguir siendo
+            aceptada. Un workflow de n8n existente que aún no envíe este header dejará de funcionar tras esta
+            actualización — hay que agregarlo a la firma.
+          </p>
+          <p className="text-sm text-slate-600">
+            <strong>x-reymen-event-id</strong> (opcional pero recomendado): un identificador único de esa entrega
+            específica (el ID de ejecución de n8n, por ejemplo). Si se envía, reenviar la misma entrega con el mismo
+            ID no la vuelve a procesar — responde <code className="rounded bg-slate-100 px-1 font-mono text-xs">{"{ success: true, duplicate: true }"}</code>{" "}
+            sin crear un lead/mensaje duplicado. Sin este header, cada entrega se procesa siempre, incluso si es un
+            reintento del mismo evento.
+          </p>
+          <p className="text-sm text-slate-600">
+            Para dedupe a nivel de dato (no solo de entrega), los payloads de <code className="rounded bg-slate-100 px-1 font-mono text-xs">/leads</code>{" "}
+            y el mensaje de <code className="rounded bg-slate-100 px-1 font-mono text-xs">/conversations</code> aceptan
+            un campo opcional <code className="rounded bg-slate-100 px-1 font-mono text-xs">externalId</code> (el ID
+            del lead en tu propio CRM, o el ID del mensaje de WhatsApp) — si ya existe un lead/mensaje con ese
+            externalId, la entrega se ignora sin duplicar.
+          </p>
+          <p className="text-sm text-slate-600">
             Para la API de Knowledge Base, usa el header{" "}
             <code className="rounded bg-slate-100 px-1 font-mono text-xs">X-Api-Key: {"<secreto de la organización>"}</code>{" "}
-            junto con <code className="rounded bg-slate-100 px-1 font-mono text-xs">?orgId=</code>.
+            junto con <code className="rounded bg-slate-100 px-1 font-mono text-xs">?orgId=</code> (sin firma ni timestamp).
           </p>
           <p className="text-sm text-slate-600">
             <strong>/api/webhooks/n8n/automations</strong> es distinto: se autentica con el secreto propio de cada
-            automatización (visible en su diálogo &quot;Webhook Info&quot; en Automatizaciones), no con el de la organización.
+            automatización (visible en su diálogo &quot;Webhook Info&quot; en Automatizaciones), no con el de la organización,
+            pero usa el mismo esquema de timestamp/firma/event-id.
           </p>
         </CardContent>
       </Card>
