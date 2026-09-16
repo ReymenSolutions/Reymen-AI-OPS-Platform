@@ -11,6 +11,7 @@ const {
   processScoringEvent,
   processAutomationEvent,
   processMessageStatusEvent,
+  processAppointmentReminderSentEvent,
   processWebhookEventPayload,
 } = await import("./webhook-processors");
 
@@ -176,6 +177,51 @@ describe("webhook processors", () => {
       });
 
       await expect(processMessageStatusEvent({ messageId: msg.id, status: "DELIVERED" }, org.id)).rejects.toThrow(/not found/i);
+
+      await cleanupOrg(otherOrg.id);
+    });
+  });
+
+  describe("processAppointmentReminderSentEvent", () => {
+    it("creates a log row for the appointment/rule pair", async () => {
+      const apt = await prisma.appointment.create({
+        data: { organizationId: org.id, title: "Reminder Test", startTime: new Date(), endTime: new Date(Date.now() + 30 * 60 * 1000) },
+      });
+      const rule = await prisma.appointmentReminderRule.create({
+        data: { organizationId: org.id, offsetMinutes: 60, template: "hi" },
+      });
+
+      await processAppointmentReminderSentEvent({ appointmentId: apt.id, ruleId: rule.id }, org.id);
+
+      const log = await prisma.appointmentReminderLog.findUnique({
+        where: { appointmentId_ruleId: { appointmentId: apt.id, ruleId: rule.id } },
+      });
+      expect(log).not.toBeNull();
+    });
+
+    it("CRITICAL: is idempotent — resending the same pair does not throw or duplicate", async () => {
+      const apt = await prisma.appointment.create({
+        data: { organizationId: org.id, title: "Reminder Idempotent", startTime: new Date(), endTime: new Date(Date.now() + 30 * 60 * 1000) },
+      });
+      const rule = await prisma.appointmentReminderRule.create({
+        data: { organizationId: org.id, offsetMinutes: 60, template: "hi" },
+      });
+
+      await processAppointmentReminderSentEvent({ appointmentId: apt.id, ruleId: rule.id }, org.id);
+      await processAppointmentReminderSentEvent({ appointmentId: apt.id, ruleId: rule.id }, org.id);
+
+      const count = await prisma.appointmentReminderLog.count({ where: { appointmentId: apt.id, ruleId: rule.id } });
+      expect(count).toBe(1);
+    });
+
+    it("rejects an appointment belonging to another organization", async () => {
+      const otherOrg = await createTestOrg("Reminder Sent Other Org");
+      const apt = await prisma.appointment.create({
+        data: { organizationId: otherOrg.id, title: "Other Org Apt", startTime: new Date(), endTime: new Date(Date.now() + 30 * 60 * 1000) },
+      });
+      const rule = await prisma.appointmentReminderRule.create({ data: { organizationId: org.id, offsetMinutes: 60, template: "hi" } });
+
+      await expect(processAppointmentReminderSentEvent({ appointmentId: apt.id, ruleId: rule.id }, org.id)).rejects.toThrow(/not found/i);
 
       await cleanupOrg(otherOrg.id);
     });

@@ -17,6 +17,10 @@ model Organization {
   logoUrl                  String?
   isActive                 Boolean  @default(true)
   plan                     String   @default("starter")
+  // IANA timezone name (e.g. "America/Mexico_City") — used to render
+  // appointment times and to evaluate AvailabilityRule/reminder windows in
+  // the org's local time rather than the server's.
+  timezone                 String   @default("America/Mexico_City")
   stripeCustomerId         String?  @unique
   stripeSubscriptionId     String?  @unique
   stripeSubscriptionStatus String?
@@ -41,6 +45,9 @@ model Organization {
   pipelineStages        PipelineStage[]
   opportunities         Opportunity[]
   notes                 Note[]
+  services              Service[]
+  availabilityRules     AvailabilityRule[]
+  reminderRules         AppointmentReminderRule[]
 
   @@index([slug])
 }
@@ -155,6 +162,7 @@ model Lead {
   organization  Organization  @relation(fields: [organizationId], references: [id])
   opportunities Opportunity[]
   noteHistory   Note[]
+  appointments  Appointment[]
 
   @@unique([organizationId, externalId])
   @@index([organizationId])
@@ -379,6 +387,7 @@ model Appointment {
   id             String            @id @default(cuid())
   organizationId String
   leadId         String?
+  serviceId      String?
   title          String
   description    String?
   startTime      DateTime
@@ -389,7 +398,10 @@ model Appointment {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization  Organization           @relation(fields: [organizationId], references: [id])
+  lead          Lead?                  @relation(fields: [leadId], references: [id])
+  service       Service?               @relation(fields: [serviceId], references: [id])
+  reminderLogs  AppointmentReminderLog[]
 
   @@index([organizationId])
   @@index([organizationId, startTime])
@@ -401,6 +413,81 @@ enum AppointmentStatus {
   CANCELLED
   COMPLETED
   NO_SHOW
+}
+
+// ─── SERVICES & AVAILABILITY (Agenda) ──────────────────────────────
+
+model Service {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  description     String?  @db.Text
+  durationMinutes Int
+  // Minimum gap enforced after this service's own appointments — does not
+  // retroactively apply to existing appointments booked without a service.
+  bufferMinutes   Int      @default(0)
+  price           Float?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  appointments Appointment[]
+
+  @@index([organizationId])
+}
+
+// A recurring weekly open window (e.g. Mon-Fri 9:00-18:00 = dayOfWeek 1-5,
+// startMinute 540, endMinute 1080). Evaluated in the organization's own
+// timezone. No rows for an org means "no restriction configured" — bookings
+// are allowed at any time, preserving today's behavior until an org opts in.
+model AvailabilityRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  dayOfWeek      Int // 0 = Sunday .. 6 = Saturday
+  startMinute    Int // minutes since local midnight
+  endMinute      Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, dayOfWeek])
+}
+
+// Configuration only — the platform never sends the reminder itself. n8n
+// polls GET /api/v1/appointments/due-reminders on its own schedule and sends
+// the actual WhatsApp message, then reports success via
+// POST /api/webhooks/n8n/appointment-reminder-sent (logged in
+// AppointmentReminderLog so the same reminder is never sent twice).
+model AppointmentReminderRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  // How long before the appointment's startTime this rule fires, e.g. 1440
+  // (24h) or 60 (1h).
+  offsetMinutes  Int
+  channel        String   @default("whatsapp")
+  template       String   @db.Text
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+model AppointmentReminderLog {
+  id            String   @id @default(cuid())
+  appointmentId String
+  ruleId        String
+  sentAt        DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+
+  @@unique([appointmentId, ruleId])
 }
 
 // ─── REQUESTS ─────────────────────────────────────────────────────

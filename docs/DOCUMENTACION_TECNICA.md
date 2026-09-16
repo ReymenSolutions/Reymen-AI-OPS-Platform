@@ -416,6 +416,7 @@ model Appointment {
   id             String            @id @default(cuid())
   organizationId String
   leadId         String?           // Optional link to a Lead
+  serviceId      String?           // Optional link to a Service — auto-fills duration/buffer on booking
   title          String
   description    String?
   startTime      DateTime
@@ -428,6 +429,10 @@ model Appointment {
 
 **Key indexes:** `[organizationId]`, `[organizationId, startTime]`
 
+Times are stored in UTC as always; `Organization.timezone` (an IANA name, e.g. `"America/Mexico_City"`) is only
+used to render them and to evaluate `AvailabilityRule` windows in the org's own local time — see
+`src/lib/availability.ts`.
+
 ---
 
 ### Enum: AppointmentStatus
@@ -439,6 +444,76 @@ enum AppointmentStatus {
   CANCELLED   // Cancelled
   COMPLETED   // Appointment took place
   NO_SHOW     // Client did not attend
+}
+```
+
+---
+
+### Model: Service
+
+A bookable service (e.g. "Consulta general", 30 min). Optional on `Appointment` — booking without a service
+still works exactly as before, with a manually chosen end time.
+
+```prisma
+model Service {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  description     String?
+  durationMinutes Int
+  bufferMinutes   Int      @default(0) // gap enforced after this service's own bookings, not retroactive
+  price           Float?
+  isActive        Boolean  @default(true)
+}
+```
+
+---
+
+### Model: AvailabilityRule
+
+A recurring weekly open window, evaluated in the organization's own timezone (e.g. Mon-Fri 9:00-18:00 =
+five rows with `dayOfWeek` 1-5, `startMinute` 540, `endMinute` 1080). **An organization with zero active
+rows has no restriction configured** — every slot is bookable, which is the same behavior every organization
+had before this model existed, so nothing breaks for an org that hasn't opted into Agenda hours yet.
+
+```prisma
+model AvailabilityRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  dayOfWeek      Int      // 0 = Sunday .. 6 = Saturday
+  startMinute    Int      // minutes since local midnight
+  endMinute      Int
+  isActive       Boolean  @default(true)
+}
+```
+
+A booking that crosses local midnight is always rejected rather than matched against two different days'
+rules — see `isWithinAvailability()` in `src/lib/availability.ts`.
+
+---
+
+### Models: AppointmentReminderRule / AppointmentReminderLog
+
+Configuration-only, following the same "platform stores config, n8n executes" principle as the rest of the
+integration (see §7). The platform never sends a reminder itself.
+
+```prisma
+model AppointmentReminderRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  offsetMinutes  Int      // e.g. 1440 (24h) or 60 (1h) before the appointment's startTime
+  channel        String   @default("whatsapp")
+  template       String
+  isActive       Boolean  @default(true)
+}
+
+model AppointmentReminderLog {
+  id            String   @id @default(cuid())
+  appointmentId String
+  ruleId        String
+  sentAt        DateTime @default(now())
+
+  @@unique([appointmentId, ruleId]) // a given rule can only ever fire once per appointment
 }
 ```
 
@@ -964,7 +1039,7 @@ This ensures:
 - Failed events are logged with error messages for debugging.
 - The system can audit all events received from n8n.
 
-### All 5 Inbound Webhook Routes
+### All 6 Inbound Webhook Routes
 
 #### POST `/api/webhooks/n8n/leads`
 
@@ -1100,6 +1175,39 @@ Returns `{ data: { conversationId, aiHandled, status, assignedToId } }` — no m
 via `takeHumanControl()`/`assignConversation()`. This is the anti-collision guard between the bot and a human
 agent; skipping this check means the bot and a human agent can race to answer the same message.
 
+#### POST `/api/webhooks/n8n/appointment-reminder-sent`
+
+Reports that a reminder from `/api/v1/appointments/due-reminders` (below) was actually sent, so that
+(appointmentId, ruleId) combination is never returned as due again.
+
+**Request body:**
+```json
+{ "appointmentId": "apt_xxx", "ruleId": "rule_xxx" }
+```
+
+**Behavior:**
+- Verifies both the appointment and the rule belong to the calling organization.
+- Inserts an `AppointmentReminderLog` row; a duplicate insert (P2002 on the `(appointmentId, ruleId)` unique
+  constraint) is treated as a successful idempotent no-op, same pattern as every other domain-level dedup in
+  this codebase.
+
+### Pull endpoint: `/api/v1/appointments/due-reminders`
+
+Same pull pattern as `/api/v1/conversations/status` above — there is still no cron inside the platform for
+this. The reminders automation in n8n polls this on its own schedule and sends the actual WhatsApp message
+for each row returned:
+
+```
+GET /api/v1/appointments/due-reminders?orgId=org_xxx
+Header: X-Api-Key: {organization's n8nWebhookSecret}
+```
+
+For every active `AppointmentReminderRule`, returns each upcoming `SCHEDULED`/`CONFIRMED` appointment whose
+`startTime` falls within `(now, now + rule.offsetMinutes]` and that has no `AppointmentReminderLog` row for
+that rule yet — i.e. every reminder that is due right now and hasn't been sent. Each row carries the raw
+`template` string and the appointment's `contactName`/`contactPhone` (via its `Lead`, when linked) for n8n to
+interpolate and send; the platform does not render the final message itself.
+
 ---
 
 ## 8. Webhook Security
@@ -1125,7 +1233,7 @@ security review — inbound authentication is now **per-organization**:
 
 ### HMAC-SHA256 Verification
 
-Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring,automations,message-status}`) use
+Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring,automations,message-status,appointment-reminder-sent}`) use
 HMAC-SHA256 signing via `src/lib/webhook-validator.ts`, verified against the
 **target organization's own** `n8nWebhookSecret` (or, for `/automations`, that specific
 automation's own `webhookSecret`):

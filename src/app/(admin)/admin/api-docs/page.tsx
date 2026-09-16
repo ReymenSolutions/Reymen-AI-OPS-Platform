@@ -50,6 +50,15 @@ const ENDPOINTS = [
     ),
   },
   {
+    method: "POST",
+    path: "/api/webhooks/n8n/appointment-reminder-sent",
+    description: "Registra que se envió un recordatorio de cita (ver /due-reminders abajo), para que esa combinación cita+regla nunca vuelva a reportarse como pendiente. Misma autenticación que /leads.",
+    body: JSON.stringify(
+      { appointmentId: "apt_xxx", ruleId: "rule_xxx" },
+      null, 2
+    ),
+  },
+  {
     method: "GET",
     path: "/api/v1/knowledge-base",
     description: "Retorna artículos de la base de conocimiento. Autenticación: header X-Api-Key con el secreto propio de la organización. Parámetros: ?orgId=xxx&q=búsqueda&category=categoria.",
@@ -59,6 +68,12 @@ const ENDPOINTS = [
     method: "GET",
     path: "/api/v1/conversations/status",
     description: "Consulta si una conversación está en modo IA o control humano. El workflow de IA debe llamar esto antes de generar una respuesta automática y abstenerse si aiHandled es false — evita que el bot responda encima de un agente humano. Autenticación: X-Api-Key. Parámetros: ?orgId=xxx&contactPhone=xxx (o &conversationId=xxx).",
+    body: null,
+  },
+  {
+    method: "GET",
+    path: "/api/v1/appointments/due-reminders",
+    description: "Retorna las citas que necesitan un recordatorio enviado ahora, según las reglas configuradas en Agenda → Configuración. La automatización de recordatorios debe llamar esto periódicamente (no hay cron dentro de la plataforma) y reportar cada envío con /appointment-reminder-sent. Autenticación: X-Api-Key. Parámetros: ?orgId=xxx.",
     body: null,
   },
 ];

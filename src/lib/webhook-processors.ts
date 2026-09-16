@@ -154,6 +154,25 @@ export async function processMessageStatusEvent(payload: unknown, orgId: string)
   });
 }
 
+/** n8n reports it sent an appointment reminder — logged for dedup so the same rule never fires twice for the same appointment across polls. */
+export async function processAppointmentReminderSentEvent(payload: unknown, orgId: string): Promise<void> {
+  const body = payload as { appointmentId: string; ruleId: string };
+  if (!body.appointmentId || !body.ruleId) throw new Error("Missing appointmentId or ruleId");
+
+  const [appointment, rule] = await Promise.all([
+    prisma.appointment.findFirst({ where: { id: body.appointmentId, organizationId: orgId }, select: { id: true } }),
+    prisma.appointmentReminderRule.findFirst({ where: { id: body.ruleId, organizationId: orgId }, select: { id: true } }),
+  ]);
+  if (!appointment) throw new Error("Appointment not found");
+  if (!rule) throw new Error("Reminder rule not found");
+
+  try {
+    await prisma.appointmentReminderLog.create({ data: { appointmentId: body.appointmentId, ruleId: body.ruleId } });
+  } catch (err) {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+  }
+}
+
 export async function processAutomationEvent(payload: unknown, orgId: string): Promise<void> {
   const body = payload as {
     automationId: string;
@@ -189,7 +208,13 @@ export async function processAutomationEvent(payload: unknown, orgId: string): P
   }
 }
 
-export type WebhookEventType = "lead.created" | "conversation.message" | "lead.scored" | "automation.event" | "message.status";
+export type WebhookEventType =
+  | "lead.created"
+  | "conversation.message"
+  | "lead.scored"
+  | "automation.event"
+  | "message.status"
+  | "appointment_reminder.sent";
 
 /** Dispatches a stored WebhookEvent's payload to the processor matching its eventType. */
 export async function processWebhookEventPayload(
@@ -209,6 +234,8 @@ export async function processWebhookEventPayload(
       return processAutomationEvent(payload, orgId);
     case "message.status":
       return processMessageStatusEvent(payload, orgId);
+    case "appointment_reminder.sent":
+      return processAppointmentReminderSentEvent(payload, orgId);
     default:
       throw new Error(`Unknown webhook event type: ${eventType}`);
   }
