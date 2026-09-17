@@ -111,6 +111,11 @@ export const strings = {
     noLeadsYet: "Sin leads aún. Activa tu primera automatización.",
     automationActivity: "Actividad de automatizaciones",
     noRecentActivity: "Sin actividad reciente",
+    dashboardNeedsAttention: "Necesita tu atención",
+    dashboardAllClear: "Todo en orden",
+    dashboardAutomationErrorsNote: "automatizaciones con error",
+    dashboardEscalatedNote: "conversaciones escaladas sin atender",
+    dashboardOpenRequestsNote: "solicitudes abiertas",
 
     // ── Leads ────────────────────────────────────────────────
     leadsTitle: "Leads",
@@ -624,6 +629,11 @@ export const strings = {
     noLeadsYet: "No leads yet. Activate your first automation.",
     automationActivity: "Automation activity",
     noRecentActivity: "No recent activity",
+    dashboardNeedsAttention: "Needs your attention",
+    dashboardAllClear: "All clear",
+    dashboardAutomationErrorsNote: "automations with errors",
+    dashboardEscalatedNote: "escalated conversations unattended",
+    dashboardOpenRequestsNote: "open requests",
 
     // ── Leads ────────────────────────────────────────────────
     leadsTitle: "Leads",

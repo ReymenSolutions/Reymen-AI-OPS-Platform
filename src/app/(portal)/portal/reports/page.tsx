@@ -2,6 +2,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getServerT } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
+import { getEnabledModules } from "@/lib/modules";
+import { getRoiData } from "@/lib/roi";
+import { PLAN_LIMITS } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/shared/MetricCard";
@@ -10,6 +13,7 @@ import { LeadFunnelChart } from "@/components/charts/LeadFunnelChart";
 import { AutomationHealthChart } from "@/components/charts/AutomationHealthChart";
 import { RoiCalculator } from "@/components/portal/RoiCalculator";
 import { Users, Zap, Calendar, TrendingUp } from "lucide-react";
+import type { PlatformModule } from "@prisma/client";
 
 // STATUS_LABELS sourced from server translations at render time
 
@@ -91,11 +95,18 @@ async function getReportData(orgId: string) {
 export default async function PortalReportsPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  const orgId = session.user.organizationId;
 
-  const [t, data] = await Promise.all([
+  const [t, data, enabledModules, org] = await Promise.all([
     getServerT(),
-    getReportData(session.user.organizationId),
+    getReportData(orgId),
+    getEnabledModules(orgId),
+    prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { plan: true } }),
   ]);
+  const roi = await getRoiData(orgId, org.plan);
+
+  const hasModule = (m: PlatformModule) => enabledModules.includes(m);
+  const planLabel = (PLAN_LIMITS[org.plan] ?? PLAN_LIMITS.starter).label;
 
   const wonLeads = data.leadsByStatus.find((l) => l.status === "WON")?._count.id ?? 0;
   const conversionRate = data.totalLeads > 0 ? Math.round((wonLeads / data.totalLeads) * 100) : 0;
@@ -121,65 +132,77 @@ export default async function PortalReportsPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-4">
-        <MetricCard title={t.totalLeadsReport} value={data.totalLeads} icon={Users} />
-        <MetricCard title={t.wonLeads} value={wonLeads} icon={TrendingUp} iconClassName="bg-emerald-50" />
-        <MetricCard title={t.conversion} value={`${conversionRate}%`} icon={Users} iconClassName="bg-brand-50" />
+        {hasModule("CRM") && (
+          <>
+            <MetricCard title={t.totalLeadsReport} value={data.totalLeads} icon={Users} />
+            <MetricCard title={t.wonLeads} value={wonLeads} icon={TrendingUp} iconClassName="bg-emerald-50" />
+            <MetricCard title={t.conversion} value={`${conversionRate}%`} icon={Users} iconClassName="bg-brand-50" />
+          </>
+        )}
         <MetricCard title={t.confirmedAppointments} value={data.confirmedAppointments} icon={Calendar} iconClassName="bg-amber-50" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
-        <Card>
-          <CardHeader><CardTitle>{t.leadsLast30}</CardTitle></CardHeader>
-          <CardContent><LeadTrendChart data={trendData} /></CardContent>
-        </Card>
+        {hasModule("CRM") && (
+          <>
+            <Card>
+              <CardHeader><CardTitle>{t.leadsLast30}</CardTitle></CardHeader>
+              <CardContent><LeadTrendChart data={trendData} /></CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader><CardTitle>{t.conversionFunnel}</CardTitle></CardHeader>
-          <CardContent><LeadFunnelChart data={funnelData} /></CardContent>
-        </Card>
+            <Card>
+              <CardHeader><CardTitle>{t.conversionFunnel}</CardTitle></CardHeader>
+              <CardContent><LeadFunnelChart data={funnelData} /></CardContent>
+            </Card>
+          </>
+        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="h-4 w-4" />
-              {t.automationHealth}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AutomationHealthChart success={successEvents} failed={failedEvents} pending={pendingEvents} />
-          </CardContent>
-        </Card>
+        {hasModule("AUTOMATIONS") && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                {t.automationHealth}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AutomationHealthChart success={successEvents} failed={failedEvents} pending={pendingEvents} />
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader><CardTitle>{t.leadsBySource}</CardTitle></CardHeader>
-          <CardContent>
-            {data.leadsBySource.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">{t.noData}</p>
-            ) : (
-              <div className="space-y-3 pt-2">
-                {data.leadsBySource
-                  .sort((a, b) => b._count.id - a._count.id)
-                  .map((item) => {
-                    const pct = data.totalLeads > 0 ? Math.round((item._count.id / data.totalLeads) * 100) : 0;
-                    return (
-                      <div key={item.source ?? "unknown"}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-slate-600 capitalize">{item.source ?? t.noSource}</span>
-                          <span className="font-semibold">{item._count.id} <span className="text-slate-400 font-normal">({pct}%)</span></span>
+        {hasModule("CRM") && (
+          <Card>
+            <CardHeader><CardTitle>{t.leadsBySource}</CardTitle></CardHeader>
+            <CardContent>
+              {data.leadsBySource.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">{t.noData}</p>
+              ) : (
+                <div className="space-y-3 pt-2">
+                  {data.leadsBySource
+                    .sort((a, b) => b._count.id - a._count.id)
+                    .map((item) => {
+                      const pct = data.totalLeads > 0 ? Math.round((item._count.id / data.totalLeads) * 100) : 0;
+                      return (
+                        <div key={item.source ?? "unknown"}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-slate-600 capitalize">{item.source ?? t.noSource}</span>
+                            <span className="font-semibold">{item._count.id} <span className="text-slate-400 font-normal">({pct}%)</span></span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
+                          </div>
                         </div>
-                        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                          <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                      );
+                    })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      <RoiCalculator totalLeads={data.totalLeads} wonLeads={wonLeads} />
+      {hasModule("CRM") && <RoiCalculator data={roi} planLabel={planLabel} />}
     </div>
   );
 }

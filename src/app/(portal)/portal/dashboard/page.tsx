@@ -1,15 +1,17 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Users, Zap, MessageSquare, FileText, AlertTriangle, Rocket, ArrowRight } from "lucide-react";
+import { Users, Zap, MessageSquare, FileText, AlertTriangle, CheckCircle2, Rocket, ArrowRight } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getServerT } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
 import { getOnboardingStatus } from "@/lib/onboarding";
+import { getEnabledModules } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatDate } from "@/lib/utils";
+import type { PlatformModule } from "@prisma/client";
 
 async function getPortalMetrics(orgId: string) {
   const today = new Date();
@@ -21,6 +23,7 @@ async function getPortalMetrics(orgId: string) {
     activeAutomations,
     automationErrors,
     openConversations,
+    escalatedConversations,
     openRequests,
     recentLeads,
     recentEvents,
@@ -30,6 +33,7 @@ async function getPortalMetrics(orgId: string) {
     prisma.automation.count({ where: { organizationId: orgId, status: "ACTIVE" } }),
     prisma.automation.count({ where: { organizationId: orgId, status: "ERROR" } }),
     prisma.conversation.count({ where: { organizationId: orgId, status: "OPEN" } }),
+    prisma.conversation.count({ where: { organizationId: orgId, status: "ESCALATED" } }),
     prisma.request.count({ where: { organizationId: orgId, status: "OPEN" } }),
     prisma.lead.findMany({
       where: { organizationId: orgId, deletedAt: null },
@@ -46,7 +50,7 @@ async function getPortalMetrics(orgId: string) {
 
   return {
     totalLeads, newLeadsToday, activeAutomations, automationErrors,
-    openConversations, openRequests, recentLeads, recentEvents,
+    openConversations, escalatedConversations, openRequests, recentLeads, recentEvents,
   };
 }
 
@@ -54,11 +58,28 @@ export default async function PortalDashboardPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
 
-  const [t, metrics, onboarding] = await Promise.all([
+  const [t, metrics, onboarding, enabledModules] = await Promise.all([
     getServerT(),
     getPortalMetrics(session.user.organizationId),
     getOnboardingStatus(session.user.organizationId),
+    getEnabledModules(session.user.organizationId),
   ]);
+
+  const hasModule = (m: PlatformModule) => enabledModules.includes(m);
+
+  // Actionable, module-aware: only items the client can actually do something
+  // about right now, each linking straight to where they'd fix it. A disabled
+  // module's data never shows up here as something to act on.
+  const needsAttention: { label: string; count: number; href: string }[] = [];
+  if (hasModule("AUTOMATIONS") && metrics.automationErrors > 0) {
+    needsAttention.push({ label: t.dashboardAutomationErrorsNote, count: metrics.automationErrors, href: "/portal/automations" });
+  }
+  if (hasModule("AI_WHATSAPP") && metrics.escalatedConversations > 0) {
+    needsAttention.push({ label: t.dashboardEscalatedNote, count: metrics.escalatedConversations, href: "/portal/conversations" });
+  }
+  if (metrics.openRequests > 0) {
+    needsAttention.push({ label: t.dashboardOpenRequestsNote, count: metrics.openRequests, href: "/portal/requests" });
+  }
 
   return (
     <div>
@@ -84,6 +105,29 @@ export default async function PortalDashboardPage() {
           <ArrowRight className="h-4 w-4 text-brand-600 flex-shrink-0" />
         </Link>
       )}
+
+      <Card className={`mb-6 ${needsAttention.length > 0 ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+        <CardContent className="p-4">
+          {needsAttention.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                <AlertTriangle className="h-4 w-4" />
+                {t.dashboardNeedsAttention}
+              </div>
+              {needsAttention.map((item) => (
+                <Link key={item.label} href={item.href} className="text-sm text-amber-700 hover:underline">
+                  <strong>{item.count}</strong> {item.label}
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+              <CheckCircle2 className="h-4 w-4" />
+              {t.dashboardAllClear}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-3 xl:grid-cols-6">
         <MetricCard title={t.totalLeads} value={metrics.totalLeads} icon={Users} />

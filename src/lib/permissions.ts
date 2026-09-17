@@ -85,3 +85,13 @@ export const PLAN_LIMITS: Record<string, { leads: number; users: number; automat
   professional: { leads: 5000,   users: 10, automations: 15, label: "Professional" },
   enterprise:   { leads: 99999,  users: 99, automations: 99, label: "Enterprise" },
 };
+
+// Monthly subscription cost per plan, in USD. The single source of truth for
+// what a client actually pays — used anywhere real cost needs to be compared
+// against real revenue (e.g. ROI reporting), instead of each caller hardcoding
+// its own price table.
+export const PLAN_PRICES: Record<string, number> = {
+  starter: 299,
+  professional: 699,
+  enterprise: 1499,
+};

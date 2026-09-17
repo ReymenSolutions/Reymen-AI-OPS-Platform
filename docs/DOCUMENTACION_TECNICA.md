@@ -2513,8 +2513,9 @@ reymen-ai-ops-platform/
 │   │   ├── metrics.ts              # recordMetric(), METRIC_KEYS, monthPeriod() (Fase 9)
 │   │   ├── onboarding.ts           # getOnboardingStatus() (Fase 10)
 │   │   ├── n8n.ts                  # triggerN8nWorkflow() outbound client, triggerN8nWorkflowSync() (Fase 7)
-│   │   ├── permissions.ts          # can(), PLAN_LIMITS, ROLE_PERMISSIONS
+│   │   ├── permissions.ts          # can(), PLAN_LIMITS, PLAN_PRICES, ROLE_PERMISSIONS
 │   │   ├── prisma.ts               # Prisma singleton client
+│   │   ├── roi.ts                  # getRoiData() — real revenue from won Opportunities (Fase 11)
 │   │   ├── tenant.ts               # getOrganizationBySlug/Id(), assertOrgAccess()
 │   │   ├── utils.ts                # cn(), formatDate(), generateSlug(), generateWebhookSecret()
 │   │   └── webhook-validator.ts    # verifyWebhookSignature(), createWebhookSignature()
@@ -2737,6 +2738,69 @@ whenever `onboardingCompletedAt` is still null. Verified live against a genuinel
 Automotriz Wolf, 0 leads/automations/assistant/extra-users at the time) walking through real portal
 actions — creating a lead and inviting a teammate through the actual UI — and confirming the
 checklist moved from "0 de 4" to "2 de 4" against the live database, not a mock.
+
+### 9. Real ROI and an Actionable Client Dashboard (Fase 11)
+
+`/portal/reports` had a "Simulador de ROI" (`RoiCalculator.tsx`) that was pure guesswork: a free-text
+"average deal value" number input (defaulting to a made-up $5,000) multiplied by the count of leads
+in `Lead.status = WON`, compared against a plan-price table (`starter: 299, professional: 699,
+enterprise: 1499`) that was hardcoded inside that one client component and nowhere else — so the
+"ROI" a client saw was never actually derived from money they'd recorded anywhere in the platform.
+
+Fase 11 replaced the input with real numbers pulled from the sales pipeline itself. The CRM module
+already has a real notion of a closed deal — an `Opportunity` sitting in a `PipelineStage` with
+`isWon: true`, carrying its own `amount` and `closedAt` (set automatically by
+`moveOpportunityStage()` the moment a rep drags/selects a deal into a won stage; see §11's actions
+file). `src/lib/roi.ts`'s `getRoiData(organizationId, plan)` sums `Opportunity.amount` over won
+opportunities — both all-time and over the last 30 days, matching the reports page's own existing
+30-day window so the revenue figure is comparable to one month of subscription cost instead of
+mixing an all-time sum against a single month's price:
+
+```typescript
+const [totals, last30] = await Promise.all([
+  prisma.opportunity.aggregate({
+    where: { organizationId, amount: { not: null }, pipelineStage: { isWon: true } },
+    _sum: { amount: true }, _count: { id: true },
+  }),
+  prisma.opportunity.aggregate({
+    where: { organizationId, amount: { not: null }, pipelineStage: { isWon: true }, closedAt: { gte: thirtyDaysAgo } },
+    _sum: { amount: true }, _count: { id: true },
+  }),
+]);
+const roi = planCost > 0 ? Math.round(((last30Revenue - planCost) / planCost) * 100) : null;
+```
+
+The plan-price table moved out of the component and into `PLAN_PRICES` in `src/lib/permissions.ts`,
+next to the pre-existing `PLAN_LIMITS` — one canonical source for "what does this plan actually
+cost," keyed off the org's real `Organization.plan`, not a dropdown the client could pick to flatter
+their own number. `RoiCalculator.tsx` dropped `"use client"` entirely (there's no more local state to
+manage) and renders whatever `getRoiData()` returns; an org with zero won-and-priced opportunities
+gets an honest empty state pointing at `/portal/pipeline` instead of a chart built on a guess.
+
+`/portal/reports` itself was never module-gated — it queried and rendered lead/automation charts
+unconditionally even for an org without `CRM` or `AUTOMATIONS` enabled. Fase 11 wrapped the
+CRM-derived sections (KPI cards, lead trend, funnel, leads-by-source, the ROI panel) in
+`hasModule("CRM")` and the automation-health chart in `hasModule("AUTOMATIONS")`, the same pattern as
+§7/§8. The appointments KPI stays ungated, matching `/portal/appointments` itself, which has never
+been gated behind a `PlatformModule` (Agenda isn't one of the five module enum values).
+
+**Actionable dashboard:** `/portal/dashboard` gained the same needs-attention block §8 built for the
+admin client-operations screen — automation errors (`AUTOMATIONS`-gated), escalated conversations
+(`AI_WHATSAPP`-gated), and open requests (module-agnostic) — reusing `getEnabledModules()` and a
+`conversation.count({ status: "ESCALATED" })` query added alongside the page's existing metrics.
+Unlike the admin version, each item here is a `<Link>` straight to the page where the client would
+act on it (`/portal/automations`, `/portal/conversations`, `/portal/requests`), since this is the
+client's own dashboard, not an admin's read-only summary — "accionable" means one click away, not
+just visible.
+
+Verified live: created a real pipeline stage marked `isWon`, created a real `Opportunity` with an
+`amount` through the portal's own Pipeline UI (lead search, create-opportunity dialog), moved it into
+the won stage via the opportunity card's stage selector (the same `moveOpportunityStage()` action a
+real user triggers), and confirmed `/portal/reports` flipped from the "no hay oportunidades ganadas"
+empty state to a real `$4,200` revenue figure and a real ROI percentage against that org's actual
+Starter plan price — then deleted the test opportunity and stages to restore the org to its prior
+state (it had no pipeline stages configured before this test, which is itself pre-existing state
+across every seeded org, not something Fase 11 introduced or needed to fix).
 
 ---
 
