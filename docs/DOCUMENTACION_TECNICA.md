@@ -2407,6 +2407,7 @@ reymen-ai-ops-platform/
 │   │   ├── conversations.ts        # escalateConversation, resolveConversation
 │   │   ├── knowledge-base.ts       # createArticle, updateArticle, deleteArticle, toggleArticle
 │   │   ├── leads.ts                # createLead, updateLeadStatus, deleteLead
+│   │   ├── onboarding.ts           # skipOnboarding() (Fase 10)
 │   │   ├── prompts.ts              # createPrompt, updatePrompt, activatePrompt, deletePrompt, listPromptVersions, rollbackPromptVersion
 │   │   ├── requests.ts             # createRequest, updateRequestStatus
 │   │   ├── team.ts                 # inviteTeamMember, removeTeamMember
@@ -2438,7 +2439,7 @@ reymen-ai-ops-platform/
 │   │   │   │   ├── dashboard/      # Client KPI dashboard
 │   │   │   │   ├── knowledge-base/ # KB article management
 │   │   │   │   ├── leads/          # Lead CRM table
-│   │   │   │   ├── onboarding/     # First-time setup guide
+│   │   │   │   ├── onboarding/     # Real, module-aware setup checklist (Fase 10)
 │   │   │   │   ├── prompts/        # Prompt management
 │   │   │   │   ├── reports/        # Charts + ROI calculator
 │   │   │   │   ├── requests/       # Support requests
@@ -2510,6 +2511,7 @@ reymen-ai-ops-platform/
 │   │   ├── audit.ts                # logAudit() fire-and-forget
 │   │   ├── auth.ts                 # NextAuth config, isAdmin(), isClientRole()
 │   │   ├── metrics.ts              # recordMetric(), METRIC_KEYS, monthPeriod() (Fase 9)
+│   │   ├── onboarding.ts           # getOnboardingStatus() (Fase 10)
 │   │   ├── n8n.ts                  # triggerN8nWorkflow() outbound client, triggerN8nWorkflowSync() (Fase 7)
 │   │   ├── permissions.ts          # can(), PLAN_LIMITS, ROLE_PERMISSIONS
 │   │   ├── prisma.ts               # Prisma singleton client
@@ -2693,6 +2695,48 @@ The page also gained a **needs-attention summary** scoped to that one client: au
 (only if `AI_WHATSAPP` is enabled), and open requests (module-agnostic — `Request` isn't gated by
 any module). All three reuse data the page already loads or a single added `count()` query; no new
 models. A green "Todo en orden" card replaces the list when nothing needs attention.
+
+### 8. Real, Module-Aware Onboarding (Fase 10)
+
+`/portal/onboarding` existed since an earlier phase but was a hardcoded 3-step slideshow with no
+persisted state — every step it showed was a fixed string (step 2 literally always said "Configura
+tu Asistente de WhatsApp" and linked to `/portal/whatsapp`, even for an org without `AI_WHATSAPP`
+enabled, which would have just bounced them via `requireModule()`), and there was **no link to it
+anywhere in the app** (confirmed by grepping every `.tsx`/`.ts` file for the route — zero
+references outside the page itself). Clicking "next" through it did nothing but advance local
+`useState`; refreshing the page reset it to step 0 forever.
+
+Fase 10 replaced it with `getOnboardingStatus()` (`src/lib/onboarding.ts`), which builds the
+checklist from real data each time it's loaded — same "module gates the step, real data gates the
+checkmark" combination as Fase 8:
+
+```typescript
+if (hasModule("AI_WHATSAPP")) {
+  steps.push({ id: "whatsapp_assistant", ..., completed: whatsappAssistant?.isActive === true });
+}
+if (hasModule("CRM")) {
+  steps.push({ id: "first_lead", ..., completed: leadCount > 0 });
+}
+if (hasModule("AUTOMATIONS")) {
+  steps.push({ id: "first_automation", ..., completed: automationCount > 0 }); // excludes ARCHIVED
+}
+// Not module-gated — every org can invite teammates.
+steps.push({ id: "invite_team", ..., completed: userCount > 1 });
+```
+
+`Organization.onboardingCompletedAt` (new nullable column) is set two ways: **automatically**, the
+moment `getOnboardingStatus()` finds every applicable step already done (so an org that happened to
+configure everything before ever opening this page doesn't keep getting nudged), or **explicitly**,
+via `skipOnboarding()` (`src/actions/onboarding.ts`) — an opt-out for an org that doesn't want to
+do every step. Both are real, persisted state, not a client-side flag that resets on refresh.
+
+**Wired in, not orphaned:** a "Configuración inicial" item was added to `PortalSidebar` (always
+visible, not module-gated — the page itself decides which steps to show), and `/portal/dashboard`
+shows a dismiss-by-completing nudge banner (`{completedCount} de {totalCount} pasos completados`)
+whenever `onboardingCompletedAt` is still null. Verified live against a genuinely fresh org (Taller
+Automotriz Wolf, 0 leads/automations/assistant/extra-users at the time) walking through real portal
+actions — creating a lead and inviting a teammate through the actual UI — and confirming the
+checklist moved from "0 de 4" to "2 de 4" against the live database, not a mock.
 
 ---
 

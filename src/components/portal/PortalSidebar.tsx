@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
   Calendar, FileText, LogOut, BookOpen, Bot, SlidersHorizontal,
-  Layers, Upload, Loader2, GitBranch, FlaskConical,
+  Layers, Upload, Loader2, GitBranch, FlaskConical, Rocket,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -64,6 +64,7 @@ function useNavItems() {
   const { t } = usePreferences();
   return {
     dashboard: t.dashboard,
+    onboarding: t.onboarding,
     leads: t.leads,
     pipeline: t.pipeline,
     automations: t.automations,
@@ -85,6 +86,7 @@ function useNavItems() {
 // (always shown regardless of what the org has contracted).
 const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule }[] = [
   { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard },
+  { href: "/portal/onboarding", key: "onboarding", icon: Rocket },
   { href: "/portal/leads", key: "leads", icon: Users, module: "CRM" },
   { href: "/portal/pipeline", key: "pipeline", icon: GitBranch, module: "CRM" },
   { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS" },

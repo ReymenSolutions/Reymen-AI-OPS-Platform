@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
-import { Users, Zap, MessageSquare, FileText, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { Users, Zap, MessageSquare, FileText, AlertTriangle, Rocket, ArrowRight } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getServerT } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
+import { getOnboardingStatus } from "@/lib/onboarding";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,9 +54,10 @@ export default async function PortalDashboardPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
 
-  const [t, metrics] = await Promise.all([
+  const [t, metrics, onboarding] = await Promise.all([
     getServerT(),
     getPortalMetrics(session.user.organizationId),
+    getOnboardingStatus(session.user.organizationId),
   ]);
 
   return (
@@ -63,6 +66,24 @@ export default async function PortalDashboardPage() {
         title={t.dashboard}
         description={`${t.welcomeBack}, ${session.user.name ?? session.user.email}`}
       />
+
+      {!onboarding.allDone && !onboarding.onboardingCompletedAt && (
+        <Link
+          href="/portal/onboarding"
+          className="mb-6 flex items-center justify-between rounded-lg border border-brand-200 bg-brand-50 p-4 hover:bg-brand-100 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Rocket className="h-5 w-5 text-brand-600 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-brand-900">
+                Termina de configurar tu cuenta — {onboarding.completedCount} de {onboarding.totalCount} pasos completados
+              </p>
+              <p className="text-xs text-brand-700 mt-0.5">Completa la configuración inicial para aprovechar todo Reymen AI Ops.</p>
+            </div>
+          </div>
+          <ArrowRight className="h-4 w-4 text-brand-600 flex-shrink-0" />
+        </Link>
+      )}
 
       <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-3 xl:grid-cols-6">
         <MetricCard title={t.totalLeads} value={metrics.totalLeads} icon={Users} />

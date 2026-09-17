@@ -25,6 +25,10 @@ model Organization {
   stripeSubscriptionId     String?  @unique
   stripeSubscriptionStatus String?
   n8nWebhookSecret         String   @unique
+  // Set once the org's onboarding checklist (src/lib/onboarding.ts) is
+  // either fully completed or explicitly skipped — null means "still
+  // showing the setup nudge on the dashboard" (Fase 10).
+  onboardingCompletedAt    DateTime?
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
