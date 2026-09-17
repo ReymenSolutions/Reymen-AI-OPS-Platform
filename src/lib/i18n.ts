@@ -322,6 +322,20 @@ export const strings = {
     adminSuccessRate: "tasa de éxito global",
 
     // ── Admin audit ───────────────────────────────────────────
+    // ── Admin client operations center (Fase 8) ──────────────
+    adminNeedsAttention: "Necesita atención",
+    adminAllClear: "Todo en orden",
+    adminAutomationErrorsNote: "automatizaciones con error",
+    adminEscalatedNote: "conversaciones escaladas sin atender",
+    adminOpenRequestsNote: "solicitudes abiertas",
+    adminModuleDisabled: "Módulo no habilitado",
+    adminWhatsAppOperations: "Operación de WhatsApp / IA",
+    adminAssistantConfigured: "Asistente configurado",
+    adminAssistantNotConfigured: "Asistente sin configurar",
+    adminEscalatedConversations: "Conversaciones escaladas",
+    adminPromptsConfigured: "Prompts configurados",
+    adminKbArticlesCount: "Artículos de base de conocimiento",
+
     adminAuditTitle: "Auditoría",
     adminEventsRegistered: "eventos registrados",
     adminActivityLog: "Log de actividad",
@@ -818,6 +832,20 @@ export const strings = {
     adminSuccessRate: "global success rate",
 
     // ── Admin audit ───────────────────────────────────────────
+    // ── Admin client operations center (Fase 8) ──────────────
+    adminNeedsAttention: "Needs attention",
+    adminAllClear: "All clear",
+    adminAutomationErrorsNote: "automations with errors",
+    adminEscalatedNote: "escalated conversations unattended",
+    adminOpenRequestsNote: "open requests",
+    adminModuleDisabled: "Module not enabled",
+    adminWhatsAppOperations: "WhatsApp / AI Operations",
+    adminAssistantConfigured: "Assistant configured",
+    adminAssistantNotConfigured: "Assistant not configured",
+    adminEscalatedConversations: "Escalated conversations",
+    adminPromptsConfigured: "Prompts configured",
+    adminKbArticlesCount: "Knowledge base articles",
+
     adminAuditTitle: "Audit",
     adminEventsRegistered: "events registered",
     adminActivityLog: "Activity log",

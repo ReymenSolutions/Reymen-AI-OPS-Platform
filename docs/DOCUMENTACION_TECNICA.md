@@ -2623,6 +2623,37 @@ export function generateWebhookSecret(): string {
 
 This allows each automation to have an independent secret for per-automation webhook authentication (reserved for future use; the current implementation uses the platform-level `N8N_WEBHOOK_SECRET` for all inbound webhooks).
 
+### 7. Module-Aware Admin Screens (Fase 8)
+
+The commercial module system (§1's `PlatformModule`/`OrganizationModule`, `src/lib/modules.ts`) was
+introduced in Fase 1 for the **portal** side (`requireModule()`/`assertModuleEnabled()` gate portal
+pages and Server Actions) but the **admin** side — `/admin/clients/[clientId]`, the per-client
+"operations center" Reymen staff use — kept showing every section (leads, automations,
+conversations) unconditionally, regardless of which modules that org actually has `ACTIVE`. Fase 8
+closed that gap using the exact same `getEnabledModules(orgId)` helper the portal already relies
+on, with no new module-system code:
+
+```typescript
+const enabledModules = await getEnabledModules(clientId);
+const hasModule = (m: PlatformModule) => enabledModules.includes(m);
+
+{hasModule("CRM") && <LeadsStatCard />}
+{hasModule("AUTOMATIONS") && <AutomationsPanel />}
+{hasModule("AI_WHATSAPP") && <WhatsAppOperationsCard />}
+```
+
+A disabled module's section simply doesn't render — no placeholder, no "module not enabled"
+message — mirroring how `PortalSidebar` already hides nav items for modules the org lacks (§16).
+Verified live by suspending/reactivating each of an org's three modules in turn via
+`OrganizationModule.status` and confirming the corresponding card/panel appeared and disappeared,
+with the other two modules' sections unaffected.
+
+The page also gained a **needs-attention summary** scoped to that one client: automations in
+`ERROR` status (only counted if `AUTOMATIONS` is enabled), escalated conversations awaiting a human
+(only if `AI_WHATSAPP` is enabled), and open requests (module-agnostic — `Request` isn't gated by
+any module). All three reuse data the page already loads or a single added `count()` query; no new
+models. A green "Todo en orden" card replaces the list when nothing needs attention.
+
 ---
 
 ## 18. Extending the Platform
