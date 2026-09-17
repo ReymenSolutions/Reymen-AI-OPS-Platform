@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
   Calendar, FileText, LogOut, BookOpen, Bot, SlidersHorizontal,
-  Layers, Upload, Loader2, GitBranch,
+  Layers, Upload, Loader2, GitBranch, FlaskConical,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -71,6 +71,7 @@ function useNavItems() {
     conversations: t.conversations,
     knowledgeBase: t.knowledgeBase,
     prompts: t.prompts,
+    aiLab: t.aiLab,
     appointments: t.appointments,
     reports: t.reports,
     templates: t.templates,
@@ -91,6 +92,7 @@ const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon
   { href: "/portal/conversations", key: "conversations", icon: MessageSquare, module: "AI_WHATSAPP" },
   { href: "/portal/knowledge-base", key: "knowledgeBase", icon: BookOpen, module: "AI_WHATSAPP" },
   { href: "/portal/prompts", key: "prompts", icon: SlidersHorizontal, module: "AI_WHATSAPP" },
+  { href: "/portal/ai-lab", key: "aiLab", icon: FlaskConical, module: "AI_WHATSAPP" },
   { href: "/portal/appointments", key: "appointments", icon: Calendar },
   { href: "/portal/reports", key: "reports", icon: BarChart3 },
   { href: "/portal/templates", key: "templates", icon: Layers },

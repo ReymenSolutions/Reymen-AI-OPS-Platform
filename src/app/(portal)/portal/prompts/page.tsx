@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PromptDialog } from "@/components/portal/PromptDialog";
 import { ActivatePromptButton } from "@/components/portal/ActivatePromptButton";
+import { PromptVersionHistoryDialog } from "@/components/portal/PromptVersionHistoryDialog";
 import { formatDate } from "@/lib/utils";
 import type { PromptType } from "@prisma/client";
 
@@ -141,6 +142,7 @@ export default async function PromptsPage() {
                                 type={prompt.type}
                                 isActive={prompt.isActive}
                               />
+                              <PromptVersionHistoryDialog promptId={prompt.id} promptName={prompt.name} />
                               <PromptDialog prompt={prompt} mode="edit" />
                             </div>
                           </div>

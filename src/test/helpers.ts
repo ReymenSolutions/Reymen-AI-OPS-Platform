@@ -78,6 +78,14 @@ export async function cleanupOrg(orgId: string) {
   await prisma.lead.deleteMany({ where: { organizationId: orgId } });
   await prisma.pipelineStage.deleteMany({ where: { organizationId: orgId } });
   await prisma.automation.deleteMany({ where: { organizationId: orgId } });
+  // Must run before deleting Prompt (which cascades to PromptVersion):
+  // PromptExperiment.variantA/B restrict deletion of a still-referenced
+  // PromptVersion, so the experiment (and its cascade-deleted samples) has
+  // to go first. PromptTestCaseResult/AiSandboxMessage cascade on their own
+  // parent's delete, so deleting the parent below is enough for those.
+  await prisma.promptExperiment.deleteMany({ where: { organizationId: orgId } });
+  await prisma.promptTestCase.deleteMany({ where: { organizationId: orgId } });
+  await prisma.aiSandboxSession.deleteMany({ where: { organizationId: orgId } });
   await prisma.prompt.deleteMany({ where: { organizationId: orgId } });
   await prisma.knowledgeBase.deleteMany({ where: { organizationId: orgId } });
   await prisma.whatsAppAssistant.deleteMany({ where: { organizationId: orgId } });

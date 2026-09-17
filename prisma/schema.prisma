@@ -49,6 +49,9 @@ model Organization {
   availabilityRules     AvailabilityRule[]
   reminderRules         AppointmentReminderRule[]
   followUpRules         FollowUpRule[]
+  aiSandboxSessions     AiSandboxSession[]
+  promptTestCases       PromptTestCase[]
+  promptExperiments     PromptExperiment[]
 
   @@index([slug])
 }
@@ -685,7 +688,8 @@ model Prompt {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  versions     PromptVersion[]
 
   @@index([organizationId])
   @@index([organizationId, type])
@@ -699,6 +703,156 @@ enum PromptType {
   APPOINTMENT_BOOKING
   FAQ
   ESCALATION
+}
+
+// ─── AI LAB (Fase 7): prompt versioning, sandbox, test cases, A/B ──
+//
+// Every edit to a Prompt's content is snapshotted here instead of being
+// overwritten in place — the same "never destructive" principle as
+// TemplateVersion (§11). `Prompt.content`/`updatedAt` always mirrors the
+// latest version so every existing read path (portal prompts page, the
+// n8n knowledge/prompt pull, etc.) keeps working unchanged; PromptVersion
+// is purely additive history used by rollback, test-case runs, and A/B
+// experiments, which pin an exact version rather than "whatever is live
+// right now".
+model PromptVersion {
+  id        String   @id @default(cuid())
+  promptId  String
+  version   Int
+  content   String   @db.Text
+  changelog String?  @db.Text
+  createdBy String? // userId who authored this version, when known
+  isLatest  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  prompt          Prompt                 @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  testCaseResults PromptTestCaseResult[]
+  experimentsAsA  PromptExperiment[]     @relation("ExperimentVariantA")
+  experimentsAsB  PromptExperiment[]     @relation("ExperimentVariantB")
+
+  @@unique([promptId, version])
+  @@index([promptId])
+}
+
+// An isolated conversation used to try out prompts/knowledge base changes
+// without touching a real Conversation/Lead — nothing here is ever synced
+// to WhatsApp or visible to a real contact.
+model AiSandboxSession {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   @default("Sesión de prueba")
+  // Which draft/version is under test in this session, pinned at creation
+  // for reproducibility — a plain reference (no FK/relation), same
+  // lightweight-pointer convention as Lead.assignedTo, since it's read-only
+  // display data, never joined on.
+  promptVersionId String?
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  messages     AiSandboxMessage[]
+
+  @@index([organizationId])
+}
+
+model AiSandboxMessage {
+  id     String      @id @default(cuid())
+  sessionId String
+  role   MessageRole // USER (tester's turn) | ASSISTANT (n8n's generated reply)
+  content String     @db.Text
+  // KnowledgeBase article ids sent as context for this reply — an honest
+  // "what the assistant had available", not a claim about what it actually
+  // used; ASSISTANT messages only.
+  knowledgeBaseContext String[]
+  latencyMs            Int?
+  createdAt            DateTime @default(now())
+
+  session AiSandboxSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+// A saved input, reusable across prompt versions, so a prompt change can be
+// checked against the same set of messages every time instead of ad hoc
+// sandbox chat.
+model PromptTestCase {
+  id             String     @id @default(cuid())
+  organizationId String
+  promptType     PromptType
+  name           String
+  userMessage    String     @db.Text
+  expectedNotes  String?    @db.Text // human-readable grading criteria, not a fixed string match
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id])
+  results      PromptTestCaseResult[]
+
+  @@index([organizationId])
+  @@index([organizationId, promptType])
+}
+
+model PromptTestCaseResult {
+  id                   String   @id @default(cuid())
+  testCaseId           String
+  promptVersionId      String
+  reply                String   @db.Text
+  knowledgeBaseContext String[]
+  passed               Boolean? // null = ungraded; a human grades it, there's no automatic judge
+  gradedBy             String?
+  latencyMs            Int?
+  createdAt            DateTime @default(now())
+
+  testCase      PromptTestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  promptVersion PromptVersion  @relation(fields: [promptVersionId], references: [id], onDelete: Cascade)
+
+  @@index([testCaseId])
+  @@index([promptVersionId])
+}
+
+// Side-by-side comparison of two versions of the same prompt type. Each
+// sample runs the same user message through both variants; a human picks
+// the winner per sample, then can close out the experiment with an overall
+// winner (which the prompts UI can then offer to activate).
+model PromptExperiment {
+  id             String           @id @default(cuid())
+  organizationId String
+  promptType     PromptType
+  name           String
+  variantAId     String
+  variantBId     String
+  status         ExperimentStatus @default(RUNNING)
+  winnerVariant  String? // "A" | "B" | "TIE"
+  createdAt      DateTime         @default(now())
+  completedAt    DateTime?
+
+  organization Organization             @relation(fields: [organizationId], references: [id])
+  variantA     PromptVersion            @relation("ExperimentVariantA", fields: [variantAId], references: [id])
+  variantB     PromptVersion            @relation("ExperimentVariantB", fields: [variantBId], references: [id])
+  samples      PromptExperimentSample[]
+
+  @@index([organizationId])
+  @@index([organizationId, promptType])
+}
+
+enum ExperimentStatus {
+  RUNNING
+  COMPLETED
+}
+
+model PromptExperimentSample {
+  id           String   @id @default(cuid())
+  experimentId String
+  userMessage  String   @db.Text
+  replyA       String   @db.Text
+  replyB       String   @db.Text
+  preferred    String? // "A" | "B" | "TIE", set when a human judges this sample
+  createdAt    DateTime @default(now())
+
+  experiment PromptExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId])
 }
 
 // ─── TEMPLATE ENGINE ──────────────────────────────────────────────

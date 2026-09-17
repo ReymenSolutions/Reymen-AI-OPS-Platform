@@ -221,6 +221,27 @@ export default function ApiDocsPage() {
               null, 2
             )}</code>
           </pre>
+          <p className="text-sm text-slate-600">
+            <strong>{"{N8N_BASE_URL}/webhook/ai-lab-test"}</strong> (Fase 7 — Laboratorio de IA) funciona igual, pero
+            es <em>síncrono</em>: la plataforma espera la respuesta HTTP real de n8n (hasta 20s) en vez de dispararla
+            y olvidarla, porque el sandbox/casos de prueba/experimentos A/B necesitan mostrar la respuesta generada.
+            El workflow debe configurarse con &quot;Respond&quot; = &quot;Using &apos;Respond to Webhook&apos; Node&quot;
+            (no &quot;Immediately&quot;) y devolver:
+          </p>
+          <pre className="rounded-lg bg-slate-950 p-4 text-xs text-slate-300 overflow-x-auto">
+            <code>{JSON.stringify(
+              { organizationId: "org_xxx", event: "ai_lab.test_message", data: { promptType: "SYSTEM", promptContent: "...", systemContent: null, knowledgeBase: [{ id: "kb_xxx", title: "...", content: "...", category: "faq" }], conversationHistory: [], userMessage: "¿Cuál es el horario?" } },
+              null, 2
+            )}</code>
+          </pre>
+          <p className="text-sm text-slate-600">Respuesta esperada de n8n:</p>
+          <pre className="rounded-lg bg-slate-950 p-4 text-xs text-slate-300 overflow-x-auto">
+            <code>{JSON.stringify({ reply: "Abrimos de 7am a 5pm...", knowledgeBaseContext: ["kb_xxx"] }, null, 2)}</code>
+          </pre>
+          <p className="text-sm text-slate-600">
+            Si este workflow no está configurado para una organización, el Laboratorio de IA muestra un error
+            explícito en vez de una respuesta simulada — nunca inventa texto localmente.
+          </p>
         </CardContent>
       </Card>
 

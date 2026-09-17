@@ -18,16 +18,19 @@ export async function createPrompt(data: z.infer<typeof promptSchema>) {
 
   const parsed = promptSchema.parse(data);
 
-  await prisma.prompt.create({
+  const prompt = await prisma.prompt.create({
     data: {
       ...parsed,
       organizationId: session.user.organizationId,
       isActive: false,
+      versions: {
+        create: { version: 1, content: parsed.content, isLatest: true, createdBy: session.user.id },
+      },
     },
   });
 
   revalidatePath("/portal/prompts");
-  return { success: true };
+  return { success: true, promptId: prompt.id };
 }
 
 export async function updatePrompt(
@@ -41,12 +44,38 @@ export async function updatePrompt(
 
   const prompt = await prisma.prompt.findFirst({
     where: { id, organizationId: session.user.organizationId },
+    include: { versions: { where: { isLatest: true } } },
   });
   if (!prompt) throw new Error("Prompt no encontrado");
 
-  await prisma.prompt.update({ where: { id }, data: parsed });
+  const contentChanged = parsed.content !== undefined && parsed.content !== prompt.content;
+
+  if (!contentChanged) {
+    // Name-only edit: no new history entry needed, the content didn't move.
+    await prisma.prompt.update({ where: { id }, data: parsed });
+  } else {
+    const latest = prompt.versions[0];
+    const nextVersion = (latest?.version ?? 0) + 1;
+
+    await prisma.$transaction([
+      prisma.promptVersion.updateMany({
+        where: { promptId: id },
+        data: { isLatest: false },
+      }),
+      prisma.promptVersion.create({
+        data: {
+          promptId: id,
+          version: nextVersion,
+          content: parsed.content!,
+          createdBy: session.user.id,
+        },
+      }),
+      prisma.prompt.update({ where: { id }, data: parsed }),
+    ]);
+  }
 
   revalidatePath("/portal/prompts");
+  revalidatePath("/portal/ai-lab");
   return { success: true };
 }
 
@@ -87,5 +116,63 @@ export async function deletePrompt(id: string) {
   await prisma.prompt.delete({ where: { id } });
 
   revalidatePath("/portal/prompts");
+  return { success: true };
+}
+
+export async function listPromptVersions(promptId: string) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+
+  const prompt = await prisma.prompt.findFirst({
+    where: { id: promptId, organizationId: session.user.organizationId },
+  });
+  if (!prompt) throw new Error("Prompt no encontrado");
+
+  return prisma.promptVersion.findMany({
+    where: { promptId },
+    orderBy: { version: "desc" },
+  });
+}
+
+// Rollback never deletes or mutates history — it appends a brand-new
+// version whose content matches an older one, exactly like reverting a
+// commit. The prompt's live content then points at that new version.
+export async function rollbackPromptVersion(promptId: string, targetVersionId: string) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+
+  const prompt = await prisma.prompt.findFirst({
+    where: { id: promptId, organizationId: session.user.organizationId },
+    include: { versions: { where: { isLatest: true } } },
+  });
+  if (!prompt) throw new Error("Prompt no encontrado");
+
+  const target = await prisma.promptVersion.findFirst({
+    where: { id: targetVersionId, promptId },
+  });
+  if (!target) throw new Error("Versión no encontrada");
+
+  const latest = prompt.versions[0];
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  await prisma.$transaction([
+    prisma.promptVersion.updateMany({
+      where: { promptId },
+      data: { isLatest: false },
+    }),
+    prisma.promptVersion.create({
+      data: {
+        promptId,
+        version: nextVersion,
+        content: target.content,
+        changelog: `Rollback a la versión ${target.version}`,
+        createdBy: session.user.id,
+      },
+    }),
+    prisma.prompt.update({ where: { id: promptId }, data: { content: target.content } }),
+  ]);
+
+  revalidatePath("/portal/prompts");
+  revalidatePath("/portal/ai-lab");
   return { success: true };
 }

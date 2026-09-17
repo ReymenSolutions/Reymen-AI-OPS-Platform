@@ -737,6 +737,129 @@ enum PromptType {
 
 ---
 
+### Models: AI Lab (Fase 7) — prompt versioning, sandbox, test cases, A/B
+
+Every edit to a Prompt's content is snapshotted instead of overwritten in place — the same
+"never destructive" principle as `TemplateVersion` (§11). `Prompt.content`/`updatedAt` always
+mirrors the latest version, so every pre-existing read path (portal prompts page, n8n's use of
+the active prompt) keeps working unchanged; `PromptVersion` is purely additive history used by
+rollback, test-case runs, and A/B experiments, which pin an exact version rather than "whatever
+is live right now".
+
+```prisma
+model PromptVersion {
+  id        String   @id @default(cuid())
+  promptId  String
+  version   Int
+  content   String   @db.Text
+  changelog String?  @db.Text
+  createdBy String?
+  isLatest  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([promptId, version])
+}
+```
+
+`createPrompt()` creates version 1 atomically with the Prompt row. `updatePrompt()` only creates
+a new version when `content` actually changes (a name-only edit doesn't bump the version) —
+same "demote all, insert new `isLatest`" `$transaction` pattern as `activatePrompt()`/
+`addTemplateVersion()`. `rollbackPromptVersion(promptId, targetVersionId)` **never deletes
+history** — it appends a brand-new version whose content copies an older one (like reverting a
+commit) and points `Prompt.content` at it. The portal's prompts page exposes this via a
+"Historial de versiones" dialog (`PromptVersionHistoryDialog.tsx`) next to each prompt.
+
+An isolated test conversation, never synced to WhatsApp or visible to a real contact:
+
+```prisma
+model AiSandboxSession {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String   @default("Sesión de prueba")
+  promptVersionId String?  // which draft/version is pinned for this session, if any
+  createdBy       String?
+}
+
+model AiSandboxMessage {
+  id                   String      @id @default(cuid())
+  sessionId            String
+  role                 MessageRole // USER (tester's turn) | ASSISTANT (n8n's generated reply)
+  content              String      @db.Text
+  knowledgeBaseContext String[]    // KB article ids sent as context — "available", not a claim of use
+  latencyMs            Int?
+}
+```
+
+A saved input reusable across prompt versions, plus its graded run history:
+
+```prisma
+model PromptTestCase {
+  id            String     @id @default(cuid())
+  organizationId String
+  promptType    PromptType
+  name          String
+  userMessage   String     @db.Text
+  expectedNotes String?    @db.Text // human grading criteria — there is no automatic judge
+}
+
+model PromptTestCaseResult {
+  id                   String   @id @default(cuid())
+  testCaseId           String
+  promptVersionId      String
+  reply                String   @db.Text
+  knowledgeBaseContext String[]
+  passed               Boolean? // null = ungraded; a human grades it via the portal UI
+  gradedBy             String?
+  latencyMs            Int?
+}
+```
+
+Side-by-side comparison of two versions of the same prompt type. Each sample runs the same
+message through both variants; a human judges per-sample and the experiment is closed out with
+an overall winner:
+
+```prisma
+model PromptExperiment {
+  id             String           @id @default(cuid())
+  organizationId String
+  promptType     PromptType
+  name           String
+  variantAId     String           // PromptVersion id
+  variantBId     String           // PromptVersion id
+  status         ExperimentStatus @default(RUNNING) // RUNNING | COMPLETED
+  winnerVariant  String?          // "A" | "B" | "TIE"
+}
+
+model PromptExperimentSample {
+  id           String   @id @default(cuid())
+  experimentId String
+  userMessage  String   @db.Text
+  replyA       String   @db.Text
+  replyB       String   @db.Text
+  preferred    String?  // "A" | "B" | "TIE"
+}
+```
+
+Closing an experiment with a winner is informational only — it does **not** auto-promote a
+version into the live Prompt (variants being compared may belong to different `Prompt` entities
+of the same type, so "promote" is ambiguous by design). The user applies the winner manually via
+the existing prompts page (activate it, or roll back to it).
+
+**Where the actual AI reply comes from:** the platform never calls an LLM provider directly.
+`runAiLabInference()` (`src/lib/ai-lab.ts`) matches KnowledgeBase context the same way
+`/api/v1/knowledge-base` does (substring match on the user message, falling back to the most
+recently updated active articles), then calls **`triggerN8nWorkflowSync()`**
+(`src/lib/n8n.ts`) — a synchronous sibling of `triggerN8nWorkflow()` that, unlike the
+fire-and-forget outbound trigger used everywhere else, awaits n8n's actual HTTP response body
+(20s timeout) because the sandbox/test-case/experiment UI needs the real generated reply to
+display. The org's n8n instance must expose a webhook at `ai-lab-test` configured to **respond**
+(not "respond immediately") with `{ reply: string, knowledgeBaseContext?: string[] }`. If that
+workflow isn't configured yet, `runAiLabInference()` throws a clear, actionable error naming the
+missing route — never mock/fabricated text. This preserves the n8n-invisibility principle (§1):
+the client never sees n8n, but the actual generation still happens there, not in the Node process.
+
+---
+
 ### Model: AutomationTemplate
 
 A reusable automation blueprint managed by Reymen admins. Clients install templates from the marketplace.
@@ -1701,10 +1824,46 @@ All require `isAdmin(session.user.role)`.
 
 | Action | Signature | Description |
 |--------|-----------|-------------|
-| `createPrompt` | `(data: PromptSchema) => Promise<{ success: true }>` | Creates prompt with `isActive: false` |
-| `updatePrompt` | `(id: string, data: Partial<PromptSchema>) => Promise<{ success: true }>` | Updates prompt content/name |
+| `createPrompt` | `(data: PromptSchema) => Promise<{ success: true }>` | Creates prompt with `isActive: false`, and a version-1 `PromptVersion` snapshot |
+| `updatePrompt` | `(id: string, data: Partial<PromptSchema>) => Promise<{ success: true }>` | Updates prompt content/name; a content change appends a new `PromptVersion`, a name-only change doesn't |
 | `activatePrompt` | `(id: string, type: PromptType) => Promise<{ success: true }>` | Atomically deactivates all prompts of the type, activates target |
-| `deletePrompt` | `(id: string) => Promise<{ success: true }>` | Hard-deletes prompt |
+| `deletePrompt` | `(id: string) => Promise<{ success: true }>` | Hard-deletes prompt (cascades to its versions) |
+| `listPromptVersions` | `(promptId: string) => Promise<PromptVersion[]>` | History for the "Historial de versiones" dialog, newest first |
+| `rollbackPromptVersion` | `(promptId, targetVersionId) => Promise<{ success: true }>` | Appends a new version copying an older one's content — never deletes history |
+
+---
+
+### ai-lab.ts (Fase 7)
+
+All actions require `can(role, "prompts:manage")` **and** `assertModuleEnabled(orgId, "AI_WHATSAPP")` —
+the AI Lab is treated as an extension of prompt management, not a separately-permissioned feature.
+
+| Action | Signature | Description |
+|--------|-----------|-------------|
+| `createSandboxSession` | `({ name?, promptVersionId? }) => Promise<{ success: true, sessionId }>` | New isolated test conversation, optionally pinned to a specific prompt version |
+| `listSandboxSessions` / `getSandboxSession` / `deleteSandboxSession` | — | Org-scoped CRUD for sandbox sessions |
+| `sendSandboxMessage` | `(sessionId, content) => Promise<{success:true, message} \| {success:false, error}>` | Persists the USER message, calls `runAiLabInference()`; **on inference failure returns a structured error instead of throwing** (see note below) — the USER message is still persisted either way |
+| `createTestCase` / `listTestCases` / `deleteTestCase` | — | Saved test cases, scoped by `organizationId` + optionally `promptType` |
+| `runTestCase` | `(testCaseId, promptVersionId) => Promise<{success:true, result} \| {success:false, error}>` | Runs the saved message against a specific version; rejects if the version's prompt type doesn't match the test case's |
+| `gradeTestCaseResult` | `(resultId, passed) => Promise<{ success: true }>` | Human grading — there is no automatic judge |
+| `createExperiment` | `({ promptType, name, variantAId, variantBId }) => Promise<{ success: true, experimentId }>` | Both variants must be versions of a prompt of the given type, and must differ |
+| `listExperiments` | — | Includes both variants and all samples |
+| `runExperimentSample` | `(experimentId, userMessage) => Promise<{success:true, sample} \| {success:false, error}>` | Runs the same message through both variants in parallel |
+| `judgeExperimentSample` | `(sampleId, preferred: "A"\|"B"\|"TIE") => Promise<{ success: true }>` | Per-sample human judgement |
+| `completeExperiment` | `(experimentId, winnerVariant) => Promise<{ success: true }>` | Closes the experiment; does not auto-apply the winner (see AI Lab schema note above) |
+
+**Why `sendSandboxMessage`/`runTestCase`/`runExperimentSample` return `{ success: false, error }`
+instead of throwing on an n8n inference failure:** Next.js redacts a thrown Error's `.message`
+from Server Actions in **production** builds (`next build && next start`) — the client only
+receives a generic "an error occurred" digest, never the real text, unless the error is returned
+as data. This was discovered via this phase's own production smoke test (dev mode — `next dev` —
+does not exhibit it, which is why it had gone unnoticed) and affects **every** action in this
+codebase that throws for an expected, user-facing condition, not just the AI Lab's. It was fixed
+here only for the AI Lab's inference-failure path, since that message ("configure the `ai-lab-test`
+n8n workflow") is central to the feature being usable at all; every other action still follows
+the codebase's existing throw-and-catch-in-toast convention. Applying the same `{success, error}`
+pattern platform-wide is a separate, cross-cutting fix outside this phase's scope — flagged for a
+future pass rather than silently patched everywhere.
 
 ---
 
@@ -2204,11 +2363,12 @@ reymen-ai-ops-platform/
 │   │   ├── admin/
 │   │   │   ├── clients.ts          # createClient, changePlan, updateClientStatus, assignAutomation
 │   │   │   └── templates.ts        # createTemplate, publishTemplate, addTemplateVersion, installTemplateForClient
+│   │   ├── ai-lab.ts               # sandbox sessions, test cases, A/B experiments (Fase 7)
 │   │   ├── appointments.ts         # createAppointment, updateAppointmentStatus
 │   │   ├── conversations.ts        # escalateConversation, resolveConversation
 │   │   ├── knowledge-base.ts       # createArticle, updateArticle, deleteArticle, toggleArticle
 │   │   ├── leads.ts                # createLead, updateLeadStatus, deleteLead
-│   │   ├── prompts.ts              # createPrompt, updatePrompt, activatePrompt, deletePrompt
+│   │   ├── prompts.ts              # createPrompt, updatePrompt, activatePrompt, deletePrompt, listPromptVersions, rollbackPromptVersion
 │   │   ├── requests.ts             # createRequest, updateRequestStatus
 │   │   ├── team.ts                 # inviteTeamMember, removeTeamMember
 │   │   ├── templates.ts            # installTemplate, uninstallTemplate (portal)
@@ -2235,6 +2395,7 @@ reymen-ai-ops-platform/
 │   │   │   │   ├── appointments/   # Appointment calendar/list
 │   │   │   │   ├── automations/    # Automation list + [id] detail
 │   │   │   │   ├── conversations/  # Conversation list + [id] thread
+│   │   │   │   ├── ai-lab/         # Sandbox, test cases, A/B experiments (Fase 7)
 │   │   │   │   ├── dashboard/      # Client KPI dashboard
 │   │   │   │   ├── knowledge-base/ # KB article management
 │   │   │   │   ├── leads/          # Lead CRM table
@@ -2306,9 +2467,10 @@ reymen-ai-ops-platform/
 │   │       ├── input.tsx, label.tsx, select.tsx, separator.tsx
 │   │       └── textarea.tsx
 │   ├── lib/
+│   │   ├── ai-lab.ts               # runAiLabInference(), matchKnowledgeBaseContext() (Fase 7)
 │   │   ├── audit.ts                # logAudit() fire-and-forget
 │   │   ├── auth.ts                 # NextAuth config, isAdmin(), isClientRole()
-│   │   ├── n8n.ts                  # triggerN8nWorkflow() outbound client
+│   │   ├── n8n.ts                  # triggerN8nWorkflow() outbound client, triggerN8nWorkflowSync() (Fase 7)
 │   │   ├── permissions.ts          # can(), PLAN_LIMITS, ROLE_PERMISSIONS
 │   │   ├── prisma.ts               # Prisma singleton client
 │   │   ├── tenant.ts               # getOrganizationBySlug/Id(), assertOrgAccess()

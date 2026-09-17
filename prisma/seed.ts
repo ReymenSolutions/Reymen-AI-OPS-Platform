@@ -292,13 +292,7 @@ async function main() {
   console.log("✅ Knowledge base articles created");
 
   // ─── Phase 2: Prompts ─────────────────────────────────────────────
-  await prisma.prompt.create({
-    data: {
-      organizationId: demoOrg.id,
-      name: "Sistema v1 — Clínica San Rafael",
-      type: "SYSTEM",
-      isActive: true,
-      content: `Eres el asistente virtual de Clínica San Rafael, una clínica médica de prestigio en Ciudad de México.
+  const systemPromptV1Content = `Eres el asistente virtual de Clínica San Rafael, una clínica médica de prestigio en Ciudad de México.
 
 Tu nombre es "Dr. Bot" y tu objetivo es:
 1. Agendar citas médicas de forma rápida y eficiente
@@ -311,27 +305,88 @@ REGLAS IMPORTANTES:
 - No proporciones diagnósticos médicos bajo ninguna circunstancia
 - Si el paciente menciona una emergencia, proporciona de inmediato el número de emergencias: 55 1234 0000
 - Cuando no tengas información sobre algo, ofrece escalar con un humano
-- Responde siempre en español`,
+- Responde siempre en español`;
+
+  const systemPrompt = await prisma.prompt.create({
+    data: {
+      organizationId: demoOrg.id,
+      name: "Sistema v1 — Clínica San Rafael",
+      type: "SYSTEM",
+      isActive: true,
+      content: systemPromptV1Content,
+      versions: { create: { version: 1, content: systemPromptV1Content } },
     },
   });
 
-  await prisma.prompt.create({
-    data: {
-      organizationId: demoOrg.id,
-      name: "Calificación de leads v1",
-      type: "LEAD_QUALIFICATION",
-      isActive: true,
-      content: `Para calificar a un lead, obtén la siguiente información:
+  const leadQualificationContent = `Para calificar a un lead, obtén la siguiente información:
 1. Nombre completo
 2. Número de teléfono de contacto
 3. Especialidad o tipo de consulta que necesita
 4. Disponibilidad de horario preferida
 5. Si tiene seguro médico (opcional)
 
-Una vez obtenidos estos datos, confirma la información y ofrece agendar la cita.`,
+Una vez obtenidos estos datos, confirma la información y ofrece agendar la cita.`;
+
+  const leadQualificationPrompt = await prisma.prompt.create({
+    data: {
+      organizationId: demoOrg.id,
+      name: "Calificación de leads v1",
+      type: "LEAD_QUALIFICATION",
+      isActive: true,
+      content: leadQualificationContent,
+      versions: { create: { version: 1, content: leadQualificationContent } },
     },
   });
   console.log("✅ Demo prompts created");
+
+  // ─── Phase 7: AI Lab — prompt version history + saved test cases ──
+  // A second, real edit to the SYSTEM prompt so the version history/rollback
+  // UI has more than one entry to show out of the box. Mirrors exactly what
+  // updatePrompt() does: demote v1, add v2, and mirror v2's content onto
+  // Prompt.content — no separate "seed-only" shortcut.
+  const systemPromptV2Content = `${systemPromptV1Content}
+- Si preguntan por el laboratorio, menciona que abre de 7am a 5pm y requiere 8-12 horas de ayuno para análisis de sangre.`;
+
+  await prisma.$transaction([
+    prisma.promptVersion.updateMany({ where: { promptId: systemPrompt.id }, data: { isLatest: false } }),
+    prisma.promptVersion.create({
+      data: {
+        promptId: systemPrompt.id,
+        version: 2,
+        content: systemPromptV2Content,
+        changelog: "Agrega instrucciones sobre horario y preparación de laboratorio",
+      },
+    }),
+    prisma.prompt.update({ where: { id: systemPrompt.id }, data: { content: systemPromptV2Content } }),
+  ]);
+  console.log("✅ Prompt version history seeded (SYSTEM prompt now at v2)");
+
+  await prisma.promptTestCase.createMany({
+    data: [
+      {
+        organizationId: demoOrg.id,
+        promptType: "SYSTEM",
+        name: "Pregunta de emergencia",
+        userMessage: "¡Es una emergencia, mi hijo se cortó y sangra mucho!",
+        expectedNotes: "Debe dar el número de emergencias (55 1234 0000) de inmediato, sin pedir más datos primero.",
+      },
+      {
+        organizationId: demoOrg.id,
+        promptType: "SYSTEM",
+        name: "Pregunta sobre laboratorio",
+        userMessage: "¿A qué hora abre el laboratorio y necesito estar en ayuno?",
+        expectedNotes: "Debe mencionar el horario 7am-5pm y las 8-12 horas de ayuno para análisis de sangre.",
+      },
+      {
+        organizationId: demoOrg.id,
+        promptType: "LEAD_QUALIFICATION",
+        name: "Lead interesado sin datos",
+        userMessage: "Hola, quiero saber más de sus servicios",
+        expectedNotes: "Debe pedir nombre, teléfono, especialidad y horario preferido antes de ofrecer agendar.",
+      },
+    ],
+  });
+  console.log("✅ AI Lab test cases seeded");
 
   // ─── Phase 2: AI scored lead ──────────────────────────────────────
   await prisma.lead.updateMany({
