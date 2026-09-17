@@ -12,6 +12,7 @@ const {
   processAutomationEvent,
   processMessageStatusEvent,
   processAppointmentReminderSentEvent,
+  processFollowUpSentEvent,
   processWebhookEventPayload,
 } = await import("./webhook-processors");
 
@@ -222,6 +223,57 @@ describe("webhook processors", () => {
       const rule = await prisma.appointmentReminderRule.create({ data: { organizationId: org.id, offsetMinutes: 60, template: "hi" } });
 
       await expect(processAppointmentReminderSentEvent({ appointmentId: apt.id, ruleId: rule.id }, org.id)).rejects.toThrow(/not found/i);
+
+      await cleanupOrg(otherOrg.id);
+    });
+  });
+
+  describe("processFollowUpSentEvent", () => {
+    it("creates a log row for the lead/rule pair", async () => {
+      const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "FollowUp Test Lead" } });
+      const rule = await prisma.followUpRule.create({
+        data: { organizationId: org.id, name: "r", triggerStatus: "NEW", delayMinutes: 60, template: "hi" },
+      });
+
+      await processFollowUpSentEvent({ leadId: lead.id, ruleId: rule.id }, org.id);
+
+      const count = await prisma.followUpLog.count({ where: { leadId: lead.id, ruleId: rule.id } });
+      expect(count).toBe(1);
+    });
+
+    it("CRITICAL: is append-only — the same pair can be logged more than once (repeating rules)", async () => {
+      const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "FollowUp Repeat Lead" } });
+      const rule = await prisma.followUpRule.create({
+        data: { organizationId: org.id, name: "r2", triggerStatus: "NEW", delayMinutes: 60, repeatIntervalMinutes: 60, maxAttempts: 3, template: "hi" },
+      });
+
+      await processFollowUpSentEvent({ leadId: lead.id, ruleId: rule.id }, org.id);
+      await processFollowUpSentEvent({ leadId: lead.id, ruleId: rule.id }, org.id);
+
+      const count = await prisma.followUpLog.count({ where: { leadId: lead.id, ruleId: rule.id } });
+      expect(count).toBe(2);
+    });
+
+    it("rejects a lead belonging to another organization", async () => {
+      const otherOrg = await createTestOrg("FollowUp Sent Other Org");
+      const lead = await prisma.lead.create({ data: { organizationId: otherOrg.id, name: "Other Org Lead" } });
+      const rule = await prisma.followUpRule.create({
+        data: { organizationId: org.id, name: "r3", triggerStatus: "NEW", delayMinutes: 60, template: "hi" },
+      });
+
+      await expect(processFollowUpSentEvent({ leadId: lead.id, ruleId: rule.id }, org.id)).rejects.toThrow(/lead not found/i);
+
+      await cleanupOrg(otherOrg.id);
+    });
+
+    it("rejects a rule belonging to another organization", async () => {
+      const otherOrg = await createTestOrg("FollowUp Sent Rule Other Org");
+      const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "Lead For Cross Org Rule" } });
+      const rule = await prisma.followUpRule.create({
+        data: { organizationId: otherOrg.id, name: "r4", triggerStatus: "NEW", delayMinutes: 60, template: "hi" },
+      });
+
+      await expect(processFollowUpSentEvent({ leadId: lead.id, ruleId: rule.id }, org.id)).rejects.toThrow(/rule not found/i);
 
       await cleanupOrg(otherOrg.id);
     });

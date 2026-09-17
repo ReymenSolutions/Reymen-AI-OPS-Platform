@@ -48,6 +48,7 @@ model Organization {
   services              Service[]
   availabilityRules     AvailabilityRule[]
   reminderRules         AppointmentReminderRule[]
+  followUpRules         FollowUpRule[]
 
   @@index([slug])
 }
@@ -155,6 +156,9 @@ model Lead {
   tags           String[]   @default([])
   metadata       Json?
   assignedTo     String?
+  // Opt-out flag: a lead with this set is never a candidate for automated
+  // follow-ups (see FollowUpRule below), regardless of status or timing.
+  doNotContact   Boolean    @default(false)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   deletedAt      DateTime?
@@ -163,6 +167,7 @@ model Lead {
   opportunities Opportunity[]
   noteHistory   Note[]
   appointments  Appointment[]
+  followUpLogs  FollowUpLog[]
 
   @@unique([organizationId, externalId])
   @@index([organizationId])
@@ -488,6 +493,52 @@ model AppointmentReminderLog {
   appointment Appointment @relation(fields: [appointmentId], references: [id])
 
   @@unique([appointmentId, ruleId])
+}
+
+// ─── AUTOMATED FOLLOW-UPS (Leads) ───────────────────────────────────
+// Same "platform stores config, n8n executes" principle as appointment
+// reminders above — see docs/DOCUMENTACION_TECNICA.md §7. No cron lives
+// inside the platform for this; n8n polls /api/v1/leads/due-followups on
+// its own schedule and reports each send via
+// /api/webhooks/n8n/followup-sent.
+
+model FollowUpRule {
+  id             String     @id @default(cuid())
+  organizationId String
+  name           String
+  // A lead is only a candidate while its status matches this — leaving the
+  // status (e.g. moving to WON/LOST, or being manually re-contacted into
+  // CONTACTED) is itself the "stop" condition; no separate flag needed.
+  triggerStatus  LeadStatus
+  // Minutes since the lead last changed (Lead.updatedAt) before the first
+  // attempt fires.
+  delayMinutes   Int
+  // If set, the rule fires again this many minutes after the previous
+  // attempt, up to maxAttempts. Null means "fire at most once per lead".
+  repeatIntervalMinutes Int?
+  maxAttempts    Int      @default(1)
+  channel        String   @default("whatsapp")
+  template       String   @db.Text
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+// One row per attempt (not unique per lead+rule) — a repeating rule fires
+// more than once, and attempts-so-far is simply a count of these rows.
+model FollowUpLog {
+  id     String   @id @default(cuid())
+  leadId String
+  ruleId String
+  sentAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([leadId, ruleId])
 }
 
 // ─── REQUESTS ─────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LeadActions } from "@/components/portal/LeadActions";
 import { LeadTagsEditor } from "@/components/portal/LeadTagsEditor";
+import { LeadDoNotContactToggle } from "@/components/portal/LeadDoNotContactToggle";
 import { LeadNotesPanel } from "@/components/portal/LeadNotesPanel";
 import { LeadDuplicatesPanel } from "@/components/portal/LeadDuplicatesPanel";
 import { CreateOpportunityDialog } from "@/components/portal/CreateOpportunityDialog";
@@ -132,6 +133,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div className="border-t border-slate-100 pt-3">
                 <p className="mb-1.5 text-xs font-medium text-slate-500">{lang === "es" ? "Etiquetas" : "Tags"}</p>
                 <LeadTagsEditor leadId={lead.id} initialTags={lead.tags} />
+              </div>
+              <div className="border-t border-slate-100 pt-3">
+                <LeadDoNotContactToggle leadId={lead.id} initialDoNotContact={lead.doNotContact} />
               </div>
             </CardContent>
           </Card>

@@ -8,7 +8,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const authMock = vi.fn();
 vi.mock("@/lib/auth", () => ({ auth: () => authMock() }));
 
-const { createLead, updateLeadStatus, deleteLead, updateLeadTags, checkLeadDuplicates, mergeLeads, searchLeads } = await import("./leads");
+const { createLead, updateLeadStatus, deleteLead, updateLeadTags, checkLeadDuplicates, mergeLeads, searchLeads, setLeadDoNotContact } = await import("./leads");
 
 describe("leads actions", () => {
   let orgA: { id: string };
@@ -236,5 +236,37 @@ describe("leads actions", () => {
     authMock.mockResolvedValue(fakeSession({ id: userB.id, role: "OWNER", organizationId: orgB.id }));
 
     await expect(mergeLeads(p1.leadId, p2.leadId)).rejects.toThrow();
+  });
+
+  describe("setLeadDoNotContact", () => {
+    it("toggles the opt-out flag on and off", async () => {
+      authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+      const fd = new FormData();
+      fd.set("name", "Opt Out Target");
+      const { leadId } = await createLead(fd);
+
+      await setLeadDoNotContact(leadId, true);
+      let lead = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
+      expect(lead.doNotContact).toBe(true);
+
+      await setLeadDoNotContact(leadId, false);
+      lead = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
+      expect(lead.doNotContact).toBe(false);
+    });
+
+    it("enforces tenant isolation: org B cannot opt out org A's lead", async () => {
+      authMock.mockResolvedValue(fakeSession({ id: userA.id, role: "OWNER", organizationId: orgA.id }));
+      const fd = new FormData();
+      fd.set("name", "Isolated Opt Out");
+      const { leadId } = await createLead(fd);
+
+      const userB = await createTestUser(orgB.id, "OWNER", "leads-optout-owner-b");
+      authMock.mockResolvedValue(fakeSession({ id: userB.id, role: "OWNER", organizationId: orgB.id }));
+
+      await expect(setLeadDoNotContact(leadId, true)).rejects.toThrow();
+
+      const stillThere = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
+      expect(stillThere.doNotContact).toBe(false);
+    });
   });
 });

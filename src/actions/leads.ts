@@ -131,6 +131,31 @@ export async function updateLeadTags(leadId: string, tags: string[]) {
   return { success: true };
 }
 
+/** Opts a lead in/out of automated follow-ups (see FollowUpRule) — never affects manual outreach. */
+export async function setLeadDoNotContact(leadId: string, doNotContact: boolean) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "CRM");
+
+  const lead = await prisma.lead.findFirst({
+    where: { id: leadId, organizationId: session.user.organizationId },
+  });
+  if (!lead) throw new Error("Lead no encontrado");
+
+  await prisma.lead.update({ where: { id: leadId }, data: { doNotContact } });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: doNotContact ? "lead.opt_out" : "lead.opt_in",
+    resource: "Lead",
+    resourceId: leadId,
+  });
+
+  revalidatePath(`/portal/leads/${leadId}`);
+  return { success: true };
+}
+
 /** Small search used by the "new opportunity" lead picker — not a list page, so a tight limit is fine. */
 export async function searchLeads(query: string) {
   const session = await auth();

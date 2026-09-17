@@ -73,6 +73,8 @@ export async function cleanupOrg(orgId: string) {
   await prisma.request.deleteMany({ where: { organizationId: orgId } });
   await prisma.opportunity.deleteMany({ where: { organizationId: orgId } });
   await prisma.note.deleteMany({ where: { organizationId: orgId } });
+  await prisma.followUpLog.deleteMany({ where: { lead: { organizationId: orgId } } });
+  await prisma.followUpRule.deleteMany({ where: { organizationId: orgId } });
   await prisma.lead.deleteMany({ where: { organizationId: orgId } });
   await prisma.pipelineStage.deleteMany({ where: { organizationId: orgId } });
   await prisma.automation.deleteMany({ where: { organizationId: orgId } });

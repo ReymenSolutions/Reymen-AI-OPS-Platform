@@ -173,6 +173,28 @@ export async function processAppointmentReminderSentEvent(payload: unknown, orgI
   }
 }
 
+/**
+ * n8n reports it sent a follow-up attempt. Unlike appointment reminders,
+ * this is intentionally append-only (no unique constraint) — a repeating
+ * FollowUpRule fires more than once per lead, and "attempts so far" is
+ * simply a count of these rows (see /api/v1/leads/due-followups). A
+ * retried delivery of the *same* webhook call is still only counted once,
+ * via the delivery-level externalEventId dedup in ingestWebhookEvent.
+ */
+export async function processFollowUpSentEvent(payload: unknown, orgId: string): Promise<void> {
+  const body = payload as { leadId: string; ruleId: string };
+  if (!body.leadId || !body.ruleId) throw new Error("Missing leadId or ruleId");
+
+  const [lead, rule] = await Promise.all([
+    prisma.lead.findFirst({ where: { id: body.leadId, organizationId: orgId }, select: { id: true } }),
+    prisma.followUpRule.findFirst({ where: { id: body.ruleId, organizationId: orgId }, select: { id: true } }),
+  ]);
+  if (!lead) throw new Error("Lead not found");
+  if (!rule) throw new Error("Follow-up rule not found");
+
+  await prisma.followUpLog.create({ data: { leadId: body.leadId, ruleId: body.ruleId } });
+}
+
 export async function processAutomationEvent(payload: unknown, orgId: string): Promise<void> {
   const body = payload as {
     automationId: string;
@@ -214,7 +236,8 @@ export type WebhookEventType =
   | "lead.scored"
   | "automation.event"
   | "message.status"
-  | "appointment_reminder.sent";
+  | "appointment_reminder.sent"
+  | "followup.sent";
 
 /** Dispatches a stored WebhookEvent's payload to the processor matching its eventType. */
 export async function processWebhookEventPayload(
@@ -236,6 +259,8 @@ export async function processWebhookEventPayload(
       return processMessageStatusEvent(payload, orgId);
     case "appointment_reminder.sent":
       return processAppointmentReminderSentEvent(payload, orgId);
+    case "followup.sent":
+      return processFollowUpSentEvent(payload, orgId);
     default:
       throw new Error(`Unknown webhook event type: ${eventType}`);
   }

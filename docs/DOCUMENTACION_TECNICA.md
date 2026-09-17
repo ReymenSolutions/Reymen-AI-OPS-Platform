@@ -236,6 +236,7 @@ model Lead {
   notes          String?
   metadata       Json?      // Arbitrary extra data from n8n
   assignedTo     String?    // User ID of assigned agent
+  doNotContact   Boolean    @default(false) // opt-out: excluded from FollowUpRule candidates regardless of status/timing
   deletedAt      DateTime?  // Soft-delete timestamp
 }
 ```
@@ -516,6 +517,42 @@ model AppointmentReminderLog {
   @@unique([appointmentId, ruleId]) // a given rule can only ever fire once per appointment
 }
 ```
+
+---
+
+### Models: FollowUpRule / FollowUpLog
+
+Same "platform stores config, n8n executes" principle as appointment reminders above, applied to automated
+lead follow-ups (the audit's point 5 — previously nonexistent). `Lead.doNotContact` (see above) is the
+opt-out: a lead with it set is never a candidate, regardless of status or timing.
+
+```prisma
+model FollowUpRule {
+  id                    String     @id @default(cuid())
+  organizationId        String
+  name                  String
+  triggerStatus         LeadStatus // a lead is only a candidate while its status matches this
+  delayMinutes          Int        // minutes since Lead.updatedAt before the first attempt fires
+  repeatIntervalMinutes Int?       // null = fire at most once per lead; otherwise re-fire on this cadence
+  maxAttempts           Int        @default(1)
+  channel               String     @default("whatsapp")
+  template              String
+  isActive              Boolean    @default(true)
+}
+
+model FollowUpLog {
+  id     String   @id @default(cuid())
+  leadId String
+  ruleId String
+  sentAt DateTime @default(now())
+}
+```
+
+Unlike `AppointmentReminderLog`, `FollowUpLog` has **no unique constraint** on `(leadId, ruleId)` — a
+repeating rule fires more than once for the same lead, and "attempts so far" is simply a count of these
+rows. Leaving `triggerStatus` (rather than a separate "stop" flag) as the only gate is deliberate: once a
+lead's status changes — moves to `WON`/`LOST`, or is manually re-contacted into `CONTACTED` — it stops
+matching the rule on its own, with no extra bookkeeping required.
 
 ---
 
@@ -952,10 +989,13 @@ if (isPortalRoute && !session.user.organizationId) {
 }
 ```
 
-Public routes (no auth required):
-- `/login` and `/forgot-password`
+Public routes (session not required — each authenticates itself another way, or needs no auth):
+- `/login`, `/forgot-password`, `/reset-password`
 - `/api/webhooks/*` (secured by HMAC instead of session)
+- `/api/v1/*` (the n8n pull endpoints — `/knowledge-base`, `/conversations/status`, `/appointments/due-reminders`, `/leads/due-followups` — each authenticates via `X-Api-Key` matched against the organization's own `n8nWebhookSecret`, falling back to a session only for browser callers, checked inside the route itself; **fixed in Fase 6** — these were previously falling through to the session check below and being 307-redirected to `/login` on every unauthenticated n8n call, which meant none of the pull endpoints actually worked in production, see `src/middleware.test.ts`)
 - `/api/auth/*` (NextAuth handlers)
+- `/api/cron/*` (secured by `CRON_SECRET` instead of session)
+- `/api/health` (must be reachable by load balancers/uptime monitors without a session)
 
 ### Why n8n URLs are never exposed to clients
 
@@ -1039,7 +1079,7 @@ This ensures:
 - Failed events are logged with error messages for debugging.
 - The system can audit all events received from n8n.
 
-### All 6 Inbound Webhook Routes
+### All 7 Inbound Webhook Routes
 
 #### POST `/api/webhooks/n8n/leads`
 
@@ -1208,6 +1248,40 @@ that rule yet — i.e. every reminder that is due right now and hasn't been sent
 `template` string and the appointment's `contactName`/`contactPhone` (via its `Lead`, when linked) for n8n to
 interpolate and send; the platform does not render the final message itself.
 
+#### POST `/api/webhooks/n8n/followup-sent`
+
+Reports that a follow-up attempt from `/api/v1/leads/due-followups` (below) was actually sent.
+
+**Request body:**
+```json
+{ "leadId": "lead_xxx", "ruleId": "rule_xxx" }
+```
+
+**Behavior:**
+- Verifies both the lead and the rule belong to the calling organization.
+- Inserts a `FollowUpLog` row — **not** idempotent at the domain level like `appointment-reminder-sent`,
+  since a repeating rule is expected to log more than one attempt for the same lead. A retried delivery of
+  the *same* webhook call is still only counted once, via the delivery-level `externalEventId` dedup in
+  `ingestWebhookEvent` (§8) — the two dedup layers protect against different failure modes, same as
+  elsewhere in this integration.
+
+### Pull endpoint: `/api/v1/leads/due-followups`
+
+Same pull pattern as the two endpoints above. The follow-ups automation in n8n polls this on its own
+schedule and sends the actual message for each row returned:
+
+```
+GET /api/v1/leads/due-followups?orgId=org_xxx
+Header: X-Api-Key: {organization's n8nWebhookSecret}
+```
+
+For every active `FollowUpRule`, returns each lead in the organization whose `status` matches
+`rule.triggerStatus`, `doNotContact` is `false`, `deletedAt` is null, and `updatedAt` is at least
+`delayMinutes` in the past — filtered further by attempt count and, for a repeating rule, by how long ago
+its last logged attempt was (`repeatIntervalMinutes`). A lead already at `rule.maxAttempts` is never
+returned again for that rule. Each row carries the raw `template` string, the lead's contact info, and
+`attemptNumber` for n8n to interpolate and send.
+
 ---
 
 ## 8. Webhook Security
@@ -1233,7 +1307,7 @@ security review — inbound authentication is now **per-organization**:
 
 ### HMAC-SHA256 Verification
 
-Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring,automations,message-status,appointment-reminder-sent}`) use
+Inbound webhook endpoints (`/api/webhooks/n8n/{leads,conversations,scoring,automations,message-status,appointment-reminder-sent,followup-sent}`) use
 HMAC-SHA256 signing via `src/lib/webhook-validator.ts`, verified against the
 **target organization's own** `n8nWebhookSecret` (or, for `/automations`, that specific
 automation's own `webhookSecret`):

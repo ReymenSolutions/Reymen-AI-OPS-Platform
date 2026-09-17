@@ -1,16 +1,19 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
 import { requireModule } from "@/lib/modules";
+import { can } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { CreateLeadDialog } from "@/components/portal/CreateLeadDialog";
 import { ExportLeadsButton } from "@/components/portal/ExportLeadsButton";
 import { LeadTableClient } from "@/components/portal/LeadTableClient";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Users } from "lucide-react";
-import type { LeadStatus, Prisma } from "@prisma/client";
+import { Users, Settings } from "lucide-react";
+import type { LeadStatus, Prisma, UserRole } from "@prisma/client";
 
 const PAGE_SIZE = 50;
 
@@ -66,10 +69,13 @@ export default async function PortalLeadsPage({
   const page = Math.max(1, Number(pageParam) || 1);
   const status = parseStatus(statusParam);
 
-  const [t, { leads, total, totalUnfiltered }] = await Promise.all([
+  const [t, lang, { leads, total, totalUnfiltered }] = await Promise.all([
     getServerT(),
+    getServerLang(),
     getLeads(session.user.organizationId, { query: q, status, page }),
   ]);
+
+  const canManageSettings = can(session.user.role as UserRole, "settings:manage");
 
   return (
     <div>
@@ -78,6 +84,14 @@ export default async function PortalLeadsPage({
         description={`${totalUnfiltered} ${t.totalLeadsCount}`}
         actions={
           <div className="flex items-center gap-2">
+            {canManageSettings && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/portal/leads/settings">
+                  <Settings className="h-4 w-4" />
+                  {lang === "es" ? "Configurar seguimientos" : "Configure follow-ups"}
+                </Link>
+              </Button>
+            )}
             {totalUnfiltered > 0 && <ExportLeadsButton />}
             <CreateLeadDialog />
           </div>

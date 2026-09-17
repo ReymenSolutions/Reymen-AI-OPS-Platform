@@ -59,6 +59,15 @@ const ENDPOINTS = [
     ),
   },
   {
+    method: "POST",
+    path: "/api/webhooks/n8n/followup-sent",
+    description: "Registra que se envió un intento de seguimiento automático (ver /due-followups abajo). A diferencia de los recordatorios de citas, esto es acumulativo: una regla con repetición puede reportar varios envíos para el mismo lead, hasta su máximo de intentos. Misma autenticación que /leads.",
+    body: JSON.stringify(
+      { leadId: "lead_xxx", ruleId: "rule_xxx" },
+      null, 2
+    ),
+  },
+  {
     method: "GET",
     path: "/api/v1/knowledge-base",
     description: "Retorna artículos de la base de conocimiento. Autenticación: header X-Api-Key con el secreto propio de la organización. Parámetros: ?orgId=xxx&q=búsqueda&category=categoria.",
@@ -74,6 +83,12 @@ const ENDPOINTS = [
     method: "GET",
     path: "/api/v1/appointments/due-reminders",
     description: "Retorna las citas que necesitan un recordatorio enviado ahora, según las reglas configuradas en Agenda → Configuración. La automatización de recordatorios debe llamar esto periódicamente (no hay cron dentro de la plataforma) y reportar cada envío con /appointment-reminder-sent. Autenticación: X-Api-Key. Parámetros: ?orgId=xxx.",
+    body: null,
+  },
+  {
+    method: "GET",
+    path: "/api/v1/leads/due-followups",
+    description: "Retorna los leads que necesitan un seguimiento automático enviado ahora, según las reglas configuradas en Leads → Configurar seguimientos. Excluye leads con doNotContact activo y respeta el máximo de intentos y el intervalo de repetición de cada regla. La automatización debe llamar esto periódicamente y reportar cada envío con /followup-sent. Autenticación: X-Api-Key. Parámetros: ?orgId=xxx.",
     body: null,
   },
 ];

@@ -20,15 +20,19 @@ export default auth((req) => {
   const isAdminRoute = pathname.startsWith("/admin");
   const isPortalRoute = pathname.startsWith("/portal");
   const isWebhookRoute = pathname.startsWith("/api/webhooks");
+  const isApiV1Route = pathname.startsWith("/api/v1");
   const isAuthApiRoute = pathname.startsWith("/api/auth");
   const isCronRoute = pathname.startsWith("/api/cron");
   const isHealthRoute = pathname.startsWith("/api/health");
 
   // Public routes — webhook and cron routes authenticate themselves
-  // (HMAC signature / CRON_SECRET) rather than via session, and the
-  // health check must be reachable by load balancers/uptime monitors
+  // (HMAC signature / CRON_SECRET) rather than via session, /api/v1/* routes
+  // authenticate via X-Api-Key matched against the org's own n8nWebhookSecret
+  // (falling back to session only for browser callers, checked inside each
+  // route) so n8n's pull requests must not be redirected to /login here, and
+  // the health check must be reachable by load balancers/uptime monitors
   // without a session
-  if (isAuthPage || isWebhookRoute || isAuthApiRoute || isCronRoute || isHealthRoute) {
+  if (isAuthPage || isWebhookRoute || isApiV1Route || isAuthApiRoute || isCronRoute || isHealthRoute) {
     return NextResponse.next();
   }
 
