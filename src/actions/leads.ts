@@ -8,6 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { assertPlanCapacity } from "@/lib/plan-limits";
 import { assertModuleEnabled } from "@/lib/modules";
 import { findPotentialDuplicateLeads } from "@/lib/duplicate-detection";
+import { recordMetric, METRIC_KEYS } from "@/lib/metrics";
 import type { LeadStatus } from "@prisma/client";
 
 const createLeadSchema = z.object({
@@ -51,6 +52,7 @@ export async function createLead(formData: FormData) {
     resourceId: lead.id,
     metadata: { name: lead.name, source: lead.source },
   });
+  await recordMetric(session.user.organizationId, METRIC_KEYS.LEADS_CAPTURED);
 
   revalidatePath("/portal/leads");
 

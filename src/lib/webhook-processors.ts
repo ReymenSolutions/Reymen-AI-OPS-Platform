@@ -3,6 +3,7 @@ import { prisma } from "./prisma";
 import { notifyAdmins } from "./admin-notifications";
 import { automationFailureEmail } from "./email-templates";
 import { assertPlanCapacity } from "./plan-limits";
+import { recordMetric, METRIC_KEYS } from "./metrics";
 
 /**
  * Processing logic for each n8n webhook event type, shared between the
@@ -59,6 +60,8 @@ export async function processLeadEvent(payload: unknown, orgId: string): Promise
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return;
     throw err;
   }
+
+  await recordMetric(orgId, METRIC_KEYS.LEADS_CAPTURED);
 }
 
 export async function processConversationEvent(payload: unknown, orgId: string): Promise<{ conversationId: string }> {
@@ -110,6 +113,13 @@ export async function processConversationEvent(payload: unknown, orgId: string):
     });
   } catch (err) {
     if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+    return { conversationId: conversation.id };
+  }
+
+  if (body.message.role === "USER") {
+    await recordMetric(orgId, METRIC_KEYS.MESSAGES_RECEIVED);
+  } else if (body.message.role === "ASSISTANT") {
+    await recordMetric(orgId, METRIC_KEYS.MESSAGES_SENT);
   }
 
   return { conversationId: conversation.id };
@@ -217,7 +227,10 @@ export async function processAutomationEvent(payload: unknown, orgId: string): P
     },
   });
 
+  await recordMetric(orgId, METRIC_KEYS.AUTOMATION_EXECUTIONS);
+
   if (body.status === "FAILED") {
+    await recordMetric(orgId, METRIC_KEYS.AUTOMATION_FAILURES);
     const automation = await prisma.automation.update({
       where: { id: body.automationId },
       data: { status: "ERROR" },

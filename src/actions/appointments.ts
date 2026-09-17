@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { isWithinAvailability } from "@/lib/availability";
 import { logAudit } from "@/lib/audit";
+import { recordMetric, METRIC_KEYS } from "@/lib/metrics";
 import type { AppointmentStatus } from "@prisma/client";
 
 // Only these statuses represent a live, upcoming commitment that occupies a
@@ -161,6 +162,7 @@ export async function createAppointment(data: z.infer<typeof createSchema>) {
     start,
     end,
   });
+  await recordMetric(organizationId, METRIC_KEYS.APPOINTMENTS_BOOKED);
 
   revalidatePath("/portal/appointments");
   return { success: true };

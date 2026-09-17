@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestOrg, createTestUser, fakeSession, cleanupOrg } from "@/test/helpers";
+import { monthPeriod, METRIC_KEYS } from "@/lib/metrics";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
@@ -53,6 +54,11 @@ describe("conversations actions", () => {
     const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
     expect(updated.status).toBe("ESCALATED");
     expect(updated.escalatedAt).not.toBeNull();
+
+    const metric = await prisma.metric.findUnique({
+      where: { organizationId_key_period: { organizationId: org.id, key: METRIC_KEYS.CONVERSATIONS_ESCALATED, period: monthPeriod() } },
+    });
+    expect(metric?.value).toBeGreaterThanOrEqual(1);
 
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -176,6 +182,11 @@ describe("conversations actions", () => {
         "whatsapp-outbound",
         expect.objectContaining({ event: "message.send", data: expect.objectContaining({ conversationId: conv.id }) })
       );
+
+      const metric = await prisma.metric.findUnique({
+        where: { organizationId_key_period: { organizationId: org.id, key: METRIC_KEYS.MESSAGES_SENT, period: monthPeriod() } },
+      });
+      expect(metric?.value).toBeGreaterThanOrEqual(1);
     });
 
     it("marks the message FAILED when the outbound trigger fails", async () => {

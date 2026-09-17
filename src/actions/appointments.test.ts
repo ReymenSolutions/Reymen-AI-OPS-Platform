@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestOrg, createTestUser, fakeSession, cleanupOrg } from "@/test/helpers";
 import { toLocalDayAndMinute } from "@/lib/availability";
+import { monthPeriod, METRIC_KEYS } from "@/lib/metrics";
 
 /** Finds the next UTC instant whose America/Mexico_City local time is `localHour`:00 on the given local weekday. */
 function nextLocalDateTime(dayOfWeek: number, localHour: number): Date {
@@ -46,6 +47,11 @@ describe("appointments actions", () => {
       endTime: end.toISOString(),
     });
     expect(result.success).toBe(true);
+
+    const metric = await prisma.metric.findUnique({
+      where: { organizationId_key_period: { organizationId: org.id, key: METRIC_KEYS.APPOINTMENTS_BOOKED, period: monthPeriod() } },
+    });
+    expect(metric?.value).toBeGreaterThanOrEqual(1);
   });
 
   it("rejects an end time at or before the start time", async () => {

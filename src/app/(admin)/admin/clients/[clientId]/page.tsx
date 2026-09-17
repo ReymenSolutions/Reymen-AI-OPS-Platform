@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Zap, Users, FileText, Layers, AlertTriangle, CheckCircle2, Bot, MessageSquare, SlidersHorizontal, BookOpen } from "lucide-react";
+import { ArrowLeft, Zap, Users, FileText, Layers, AlertTriangle, CheckCircle2, Bot, MessageSquare, SlidersHorizontal, BookOpen, BarChart3 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getServerT } from "@/lib/i18n-server";
 import { getEnabledModules } from "@/lib/modules";
+import { METRIC_KEYS, monthPeriod } from "@/lib/metrics";
+import { PLAN_LIMITS } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +14,41 @@ import { ChangePlanDialog } from "@/components/admin/ChangePlanDialog";
 import { ToggleClientStatusButton } from "@/components/admin/ToggleClientStatusButton";
 import { OrgWebhookInfoDialog } from "@/components/admin/OrgWebhookInfoDialog";
 import { OrganizationModulesPanel } from "@/components/admin/OrganizationModulesPanel";
+import { ConsumptionChart } from "@/components/charts/ConsumptionChart";
 import { getOrganizationModules } from "@/actions/admin/modules";
 import { formatDate } from "@/lib/utils";
 import type { PlatformModule } from "@prisma/client";
+
+const CONSUMPTION_MONTHS = 6;
+
+function lastNPeriods(n: number): string[] {
+  const periods: string[] = [];
+  const cursor = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(cursor.getUTCFullYear(), cursor.getUTCMonth() - i, 1);
+    periods.push(monthPeriod(d));
+  }
+  return periods;
+}
+
+async function getConsumption(clientId: string) {
+  const periods = lastNPeriods(CONSUMPTION_MONTHS);
+  const rows = await prisma.metric.findMany({
+    where: { organizationId: clientId, period: { in: periods } },
+    select: { key: true, period: true, value: true },
+  });
+
+  return periods.map((period) => {
+    const forPeriod = rows.filter((r) => r.period === period);
+    const sum = (key: string) => forPeriod.filter((r) => r.key === key).reduce((acc, r) => acc + r.value, 0);
+    return {
+      period,
+      leads: sum(METRIC_KEYS.LEADS_CAPTURED),
+      messages: sum(METRIC_KEYS.MESSAGES_SENT) + sum(METRIC_KEYS.MESSAGES_RECEIVED),
+      automations: sum(METRIC_KEYS.AUTOMATION_EXECUTIONS),
+    };
+  });
+}
 
 async function getClientDetail(clientId: string) {
   const [client, escalatedConversations, openRequestsCount] = await Promise.all([
@@ -52,13 +86,16 @@ async function getClientDetail(clientId: string) {
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
-  const [t, { client, escalatedConversations, openRequestsCount }, moduleEntitlements, enabledModules] = await Promise.all([
+  const [t, { client, escalatedConversations, openRequestsCount }, moduleEntitlements, enabledModules, consumption] = await Promise.all([
     getServerT(),
     getClientDetail(clientId),
     getOrganizationModules(clientId),
     getEnabledModules(clientId),
+    getConsumption(clientId),
   ]);
   if (!client) notFound();
+
+  const leadsLimit = (PLAN_LIMITS[client.plan] ?? PLAN_LIMITS.starter).leads;
 
   const hasModule = (m: PlatformModule) => enabledModules.includes(m);
   const automationErrors = client.automations.filter((a) => a.status === "ERROR").length;
@@ -130,6 +167,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
             <CardContent className="p-4 text-center">
               <p className="text-2xl font-bold text-slate-900">{client._count.leads}</p>
               <p className="text-xs text-slate-500 mt-1">{t.totalLeads}</p>
+              <p className={`text-xs mt-0.5 ${client._count.leads >= leadsLimit ? "text-red-500 font-medium" : "text-slate-400"}`}>
+                {client._count.leads} / {leadsLimit} ({t.plan})
+              </p>
             </CardContent>
           </Card>
         )}
@@ -292,6 +332,16 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
         </Card>
 
         <OrganizationModulesPanel orgId={client.id} modules={moduleEntitlements} />
+
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>{t.adminConsumptionTitle}</CardTitle>
+            <BarChart3 className="h-4 w-4 text-slate-400" />
+          </CardHeader>
+          <CardContent>
+            <ConsumptionChart data={consumption} />
+          </CardContent>
+        </Card>
 
         {hasModule("AUTOMATIONS") && (
           <Card className="lg:col-span-2">

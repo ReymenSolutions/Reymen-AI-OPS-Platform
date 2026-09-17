@@ -606,6 +606,45 @@ model Metric {
 
 The compound unique constraint prevents duplicate metric entries for the same organization, key, and period.
 
+**Fase 9 — this table is now actually written.** Earlier phases defined the model but nothing ever
+called `prisma.metric.create`/`upsert` — `recordMetric()` (`src/lib/metrics.ts`) closed that gap.
+It's a thin, fire-and-forget helper (same principle as `logAudit()`: a metrics write must never
+fail the real operation it's counting) that upserts a monthly bucket (`period` = `"YYYY-MM"`,
+`monthPeriod()`) with an atomic `{ value: { increment } }`, so concurrent events in the same
+org/key/month accumulate correctly instead of racing on a read-then-write.
+
+```typescript
+export const METRIC_KEYS = {
+  LEADS_CAPTURED: "leads_captured",
+  MESSAGES_SENT: "messages_sent",
+  MESSAGES_RECEIVED: "messages_received",
+  AUTOMATION_EXECUTIONS: "automation_executions",
+  AUTOMATION_FAILURES: "automation_failures",
+  APPOINTMENTS_BOOKED: "appointments_booked",
+  CONVERSATIONS_ESCALATED: "conversations_escalated",
+} as const;
+```
+
+It's called from the exact points where each of these events already durably happens — never a
+new polling/aggregation job, consistent with §7's "no new internal cron" rule:
+
+| Metric key | Written from |
+|---|---|
+| `leads_captured` | `processLeadEvent()` (n8n `/leads` webhook, only on an actual new row — never on a deduped/no-op delivery) and `createLead()` (manual portal creation) |
+| `messages_received` / `messages_sent` | `processConversationEvent()` (n8n `/conversations` webhook — `USER`→received, `ASSISTANT`→sent; `SYSTEM` messages aren't counted) and `sendManualMessage()` (portal AGENT reply→sent) |
+| `automation_executions` / `automation_failures` | `processAutomationEvent()` (n8n `/automations` webhook) — executions on every event, failures only when `status === "FAILED"` |
+| `appointments_booked` | `createAppointment()` (portal) — not `rescheduleAppointment()`, which moves an existing booking rather than creating a new one |
+| `conversations_escalated` | `escalateConversation()` (portal) |
+
+**Where it's read:** the admin per-client operations center (§17's Fase 8 pattern) gained a
+"Consumo (últimos 6 meses)" chart (`ConsumptionChart.tsx`) plotting `leads_captured`,
+`messages_sent + messages_received`, and `automation_executions` per month, plus a
+leads-vs-plan-limit indicator next to the leads stat card. That indicator intentionally compares
+the **total** lead count (`Lead` rows, matching `assertPlanCapacity()`'s own semantics in
+`src/lib/plan-limits.ts` — the plan's `leads` cap is a lifetime ceiling, not a monthly one) rather
+than a monthly `leads_captured` metric, to avoid comparing two different things that happen to
+share a word.
+
 ---
 
 ### Model: WebhookEvent
@@ -2470,6 +2509,7 @@ reymen-ai-ops-platform/
 │   │   ├── ai-lab.ts               # runAiLabInference(), matchKnowledgeBaseContext() (Fase 7)
 │   │   ├── audit.ts                # logAudit() fire-and-forget
 │   │   ├── auth.ts                 # NextAuth config, isAdmin(), isClientRole()
+│   │   ├── metrics.ts              # recordMetric(), METRIC_KEYS, monthPeriod() (Fase 9)
 │   │   ├── n8n.ts                  # triggerN8nWorkflow() outbound client, triggerN8nWorkflowSync() (Fase 7)
 │   │   ├── permissions.ts          # can(), PLAN_LIMITS, ROLE_PERMISSIONS
 │   │   ├── prisma.ts               # Prisma singleton client

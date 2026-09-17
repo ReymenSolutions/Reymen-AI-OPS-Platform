@@ -9,6 +9,7 @@ import { assertModuleEnabled } from "@/lib/modules";
 import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { triggerN8nWorkflow } from "@/lib/n8n";
+import { recordMetric, METRIC_KEYS } from "@/lib/metrics";
 import type { UserRole } from "@prisma/client";
 
 async function requireOrgAndWhatsapp() {
@@ -35,6 +36,7 @@ export async function escalateConversation(conversationId: string) {
     where: { id: conversationId },
     data: { status: "ESCALATED", escalatedAt: new Date(), aiHandled: false },
   });
+  await recordMetric(session.user.organizationId, METRIC_KEYS.CONVERSATIONS_ESCALATED);
 
   const adminUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin/escalations`;
   const email = escalationAlertEmail(conv.organization.name, conv.contactName ?? conv.contactPhone ?? "Un contacto", adminUrl);
@@ -152,6 +154,7 @@ export async function sendManualMessage(data: {
     where: { id: conv.id },
     data: { aiHandled: false, assignedToId: conv.assignedToId ?? session.user.id },
   });
+  await recordMetric(session.user.organizationId!, METRIC_KEYS.MESSAGES_SENT);
 
   const trigger = await triggerN8nWorkflow("whatsapp-outbound", {
     organizationId: session.user.organizationId!,

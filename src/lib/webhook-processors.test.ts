@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestOrg, createTestUser, cleanupOrg, generateWebhookSecret } from "@/test/helpers";
+import { monthPeriod, METRIC_KEYS } from "@/lib/metrics";
 
 vi.mock("@/lib/email", () => ({ sendEmail: vi.fn().mockResolvedValue({ sent: true }) }));
 
@@ -276,6 +277,69 @@ describe("webhook processors", () => {
       await expect(processFollowUpSentEvent({ leadId: lead.id, ruleId: rule.id }, org.id)).rejects.toThrow(/rule not found/i);
 
       await cleanupOrg(otherOrg.id);
+    });
+  });
+
+  describe("metric recording (Fase 9)", () => {
+    let metricsOrg: { id: string };
+
+    beforeAll(async () => {
+      metricsOrg = await createTestOrg("Webhook Metrics Org");
+    });
+
+    afterAll(async () => {
+      await cleanupOrg(metricsOrg.id);
+    });
+
+    async function metricValue(key: string) {
+      const row = await prisma.metric.findUnique({
+        where: { organizationId_key_period: { organizationId: metricsOrg.id, key, period: monthPeriod() } },
+      });
+      return row?.value ?? 0;
+    }
+
+    it("processLeadEvent records a leads_captured metric", async () => {
+      await processLeadEvent({ name: "Metric Lead" }, metricsOrg.id);
+      expect(await metricValue(METRIC_KEYS.LEADS_CAPTURED)).toBe(1);
+    });
+
+    it("processLeadEvent does not record a metric for a deduped (no-op) delivery", async () => {
+      const before = await metricValue(METRIC_KEYS.LEADS_CAPTURED);
+      const payload = { name: "Metric Dedup Lead", externalId: "metric-dedup-1" };
+      await processLeadEvent(payload, metricsOrg.id);
+      await processLeadEvent(payload, metricsOrg.id); // retried delivery — should not double-count
+      expect(await metricValue(METRIC_KEYS.LEADS_CAPTURED)).toBe(before + 1);
+    });
+
+    it("processConversationEvent records messages_received for a USER message and messages_sent for ASSISTANT", async () => {
+      await processConversationEvent(
+        { contactPhone: "+15550001111", channel: "whatsapp", message: { role: "USER", content: "hola" } },
+        metricsOrg.id
+      );
+      await processConversationEvent(
+        { contactPhone: "+15550001111", channel: "whatsapp", message: { role: "ASSISTANT", content: "hola de vuelta" } },
+        metricsOrg.id
+      );
+
+      expect(await metricValue(METRIC_KEYS.MESSAGES_RECEIVED)).toBe(1);
+      expect(await metricValue(METRIC_KEYS.MESSAGES_SENT)).toBe(1);
+    });
+
+    it("processAutomationEvent records automation_executions always, and automation_failures only on FAILED", async () => {
+      const automation = await prisma.automation.create({
+        data: { organizationId: metricsOrg.id, name: "Metric Automation", type: "custom", webhookSecret: generateWebhookSecret() },
+      });
+
+      await processAutomationEvent({ automationId: automation.id, type: "run", status: "SUCCESS" }, metricsOrg.id);
+      expect(await metricValue(METRIC_KEYS.AUTOMATION_EXECUTIONS)).toBe(1);
+      expect(await metricValue(METRIC_KEYS.AUTOMATION_FAILURES)).toBe(0);
+
+      await processAutomationEvent({ automationId: automation.id, type: "run", status: "FAILED", errorMessage: "x" }, metricsOrg.id);
+      expect(await metricValue(METRIC_KEYS.AUTOMATION_EXECUTIONS)).toBe(2);
+      expect(await metricValue(METRIC_KEYS.AUTOMATION_FAILURES)).toBe(1);
+
+      await prisma.automationEvent.deleteMany({ where: { automationId: automation.id } });
+      await prisma.automation.delete({ where: { id: automation.id } });
     });
   });
 });

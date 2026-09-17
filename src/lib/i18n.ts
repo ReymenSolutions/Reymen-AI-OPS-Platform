@@ -335,6 +335,7 @@ export const strings = {
     adminEscalatedConversations: "Conversaciones escaladas",
     adminPromptsConfigured: "Prompts configurados",
     adminKbArticlesCount: "Artículos de base de conocimiento",
+    adminConsumptionTitle: "Consumo (últimos 6 meses)",
 
     adminAuditTitle: "Auditoría",
     adminEventsRegistered: "eventos registrados",
@@ -845,6 +846,7 @@ export const strings = {
     adminEscalatedConversations: "Escalated conversations",
     adminPromptsConfigured: "Prompts configured",
     adminKbArticlesCount: "Knowledge base articles",
+    adminConsumptionTitle: "Consumption (last 6 months)",
 
     adminAuditTitle: "Audit",
     adminEventsRegistered: "events registered",

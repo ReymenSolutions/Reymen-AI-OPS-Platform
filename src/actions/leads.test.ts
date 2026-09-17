@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestOrg, createTestUser, fakeSession, cleanupOrg } from "@/test/helpers";
+import { monthPeriod, METRIC_KEYS } from "@/lib/metrics";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
@@ -44,6 +45,11 @@ describe("leads actions", () => {
     const lead = await prisma.lead.findUnique({ where: { id: result.leadId } });
     expect(lead?.organizationId).toBe(orgA.id);
     expect(lead?.name).toBe("Ana García");
+
+    const metric = await prisma.metric.findUnique({
+      where: { organizationId_key_period: { organizationId: orgA.id, key: METRIC_KEYS.LEADS_CAPTURED, period: monthPeriod() } },
+    });
+    expect(metric?.value).toBeGreaterThanOrEqual(1);
   });
 
   it("rejects an empty name", async () => {
