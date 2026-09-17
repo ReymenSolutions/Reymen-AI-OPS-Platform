@@ -97,7 +97,7 @@ const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon
   { href: "/portal/ai-lab", key: "aiLab", icon: FlaskConical, module: "AI_WHATSAPP" },
   { href: "/portal/appointments", key: "appointments", icon: Calendar },
   { href: "/portal/reports", key: "reports", icon: BarChart3 },
-  { href: "/portal/templates", key: "templates", icon: Layers },
+  { href: "/portal/templates", key: "templates", icon: Layers, module: "AUTOMATIONS" },
   { href: "/portal/requests", key: "requests", icon: FileText },
   { href: "/portal/settings", key: "settings", icon: Settings },
 ];

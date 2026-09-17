@@ -18,6 +18,7 @@ import {
   Upload,
   Loader2,
   Webhook,
+  Package,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -99,6 +100,7 @@ export function AdminSidebar({
     { href: "/admin/escalations", label: t.adminNavEscalations, icon: AlertTriangle },
     { href: "/admin/requests", label: t.requests, icon: MessageSquare },
     { href: "/admin/templates", label: t.templates, icon: Layers },
+    { href: "/admin/template-packages", label: t.adminNavPackages, icon: Package },
     { href: "/admin/metrics", label: t.adminNavMetrics, icon: BarChart3 },
     { href: "/admin/audit", label: t.adminNavAudit, icon: Shield },
     { href: "/admin/webhooks", label: t.adminNavWebhooks, icon: Webhook },

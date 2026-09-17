@@ -878,9 +878,48 @@ model AutomationTemplate {
 
   versions      TemplateVersion[]
   installations TemplateInstallation[]
+  packageItems  TemplatePackageItem[]
 
   @@index([industry])
   @@index([isPublished])
+}
+
+// A curated, one-click bundle of existing AutomationTemplates for one
+// industry — e.g. "Paquete inicial de Clínica" = 3 templates a clinic
+// typically wants installed together. Doesn't duplicate anything about the
+// templates themselves (workflow JSON, versions) — it's just an ordered
+// grouping; installing a package installs each member template through the
+// exact same code path (and the exact same module/plan-capacity checks) as
+// installing one template individually.
+model TemplatePackage {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @db.Text
+  industry    String // same domain as AutomationTemplate.industry
+  iconEmoji   String   @default("📦")
+  isPublished Boolean  @default(false)
+  createdBy   String? // userId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items TemplatePackageItem[]
+
+  @@index([industry])
+  @@index([isPublished])
+}
+
+model TemplatePackageItem {
+  id         String @id @default(cuid())
+  packageId  String
+  templateId String
+  order      Int    @default(0)
+
+  package  TemplatePackage    @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  template AutomationTemplate @relation(fields: [templateId], references: [id])
+
+  @@unique([packageId, templateId])
+  @@index([packageId])
+  @@index([templateId])
 }
 
 model TemplateVersion {

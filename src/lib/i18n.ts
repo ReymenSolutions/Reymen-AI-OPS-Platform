@@ -250,6 +250,7 @@ export const strings = {
     adminNavMetrics: "Métricas",
     adminNavAudit: "Auditoría",
     adminNavWebhooks: "Webhooks",
+    adminNavPackages: "Paquetes",
 
     // ── Admin webhooks ────────────────────────────────────────
     adminWebhooksTitle: "Eventos de Webhook",
@@ -767,6 +768,7 @@ export const strings = {
     adminNavMetrics: "Metrics",
     adminNavAudit: "Audit",
     adminNavWebhooks: "Webhooks",
+    adminNavPackages: "Packages",
 
     // ── Admin webhooks ────────────────────────────────────────
     adminWebhooksTitle: "Webhook Events",

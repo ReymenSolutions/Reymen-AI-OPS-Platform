@@ -2028,6 +2028,51 @@ await prisma.$transaction([
 ]);
 ```
 
+### Template Packages (Fase 12)
+
+`TemplatePackage` + `TemplatePackageItem` group existing `AutomationTemplate`s into a curated,
+industry-tagged bundle — e.g. "Paquete inicial de Clínica" = the 2 templates a clinic typically wants
+on day one. A package doesn't duplicate anything about its member templates (no separate workflow
+JSON, no separate versioning); it's an ordered join table (`TemplatePackageItem.order`) an admin
+curates via `/admin/template-packages`, the same create/edit/publish lifecycle as a single template
+(`createTemplatePackage()` / `updateTemplatePackageItems()` / `publishTemplatePackage()` in
+`src/actions/admin/template-packages.ts`).
+
+Installing a package (`installTemplatePackage()`, `src/actions/templates.ts`) loops its items through
+the **exact same** `installTemplateCore()` helper `installTemplate()` itself calls — extracted
+specifically so a bulk install can never diverge from a single install's module/plan-capacity checks
+or the `TemplateInstallation` row it produces:
+
+```typescript
+for (const item of pkg.items) {
+  if (!item.template.isPublished) continue; // an unpublished member is silently skipped, not installed
+  const existing = await prisma.templateInstallation.findUnique(...);
+  if (existing?.status === "ACTIVE") { skippedCount++; continue; }
+  try {
+    await installTemplateCore(orgId, session.user.id, item.template.id);
+    installedCount++;
+  } catch {
+    limitReached = true; // assertPlanCapacity() is the only thing that throws here
+    break;
+  }
+}
+```
+
+Hitting the plan's automation limit mid-package **stops rather than throws** — the caller gets back
+`{installedCount, skippedCount, limitReached}` and the client sees exactly how many templates made it
+in, never a half-applied bulk action reported as a hard failure. `/portal/templates` sorts published
+packages so ones matching the org's own `Organization.industry` lead the row (badge: "Tu industria"),
+matching the roadmap's "paquetes **por industria**" — the client sees their own bundle first, not a
+generic list mixed across every industry Reymen sells to.
+
+**Closing a real module-gating gap:** `/portal/templates` had no `requireModule()` call at all before
+Fase 12, despite every install always requiring `AUTOMATIONS` (enforced only inside the action) — an
+org without that module could browse the whole marketplace and get nothing but a thrown-error toast on
+install. Fase 12 added `requireModule(orgId, "AUTOMATIONS")` to the page and `module: "AUTOMATIONS"`
+to its `PortalSidebar` nav entry, the same gate every other `AUTOMATIONS`-scoped page already has.
+Verified live by suspending `AUTOMATIONS` for a real org and confirming both the nav link disappeared
+and a direct hit on `/portal/templates` redirected to `/portal/dashboard`.
+
 ---
 
 ## 12. Audit System
@@ -2801,6 +2846,44 @@ empty state to a real `$4,200` revenue figure and a real ROI percentage against 
 Starter plan price — then deleted the test opportunity and stages to restore the org to its prior
 state (it had no pipeline stages configured before this test, which is itself pre-existing state
 across every seeded org, not something Fase 11 introduced or needed to fix).
+
+### 10. Industry Packages Reusing the Single-Install Code Path (Fase 12)
+
+`AutomationTemplate` has always been one workflow per template — there was no way to hand a client
+several templates as one curated bundle, and `/portal/templates` had zero `PlatformModule` gating at
+all (see §11's Fase 12 subsection for the module-gating gap this closed). Fase 12 added
+`TemplatePackage`/`TemplatePackageItem` (§11) and, critically, made `installTemplatePackage()` share
+its actual install logic with the pre-existing `installTemplate()` rather than reimplementing it — the
+same trap `src/actions/admin/templates.ts`'s `installTemplateForClient()` already fell into by
+duplicating `installTemplate()`'s body instead of calling it (a pre-existing inconsistency, not
+touched here — out of scope for Fase 12). `installTemplateCore()` was pulled out specifically so this
+wouldn't happen a third time:
+
+```typescript
+async function installTemplateCore(orgId, userId, templateId, config?) {
+  // find template, check existing installation, assertPlanCapacity(), create Automation,
+  // upsert TemplateInstallation, logAudit() — the one place this logic lives.
+}
+
+export async function installTemplate({ templateId, config }) {
+  await assertModuleEnabled(orgId, "AUTOMATIONS");
+  return installTemplateCore(orgId, userId, templateId, config); // single template
+}
+
+export async function installTemplatePackage(packageId) {
+  await assertModuleEnabled(orgId, "AUTOMATIONS");
+  for (const item of pkg.items) { /* ... */ await installTemplateCore(orgId, userId, item.template.id); }
+}
+```
+
+A package install can partially succeed — the loop stops the moment `assertPlanCapacity()` throws
+inside `installTemplateCore()`, and the action reports `{installedCount, skippedCount, limitReached}`
+instead of losing the templates that did make it in behind a thrown error. Verified live end-to-end
+as an admin (created a package through `/admin/template-packages`'s real create dialog, toggled it
+published) and as a client (`/portal/templates` showed the org's own-industry package first with a
+"Tu industria" badge, clicking "Instalar paquete" installed both member templates in one action) —
+then reverted the installations and deleted the test package to restore both orgs to their seeded
+baseline.
 
 ---
 

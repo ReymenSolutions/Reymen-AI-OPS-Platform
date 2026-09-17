@@ -2,8 +2,10 @@ import { redirect } from "next/navigation";
 import { Zap } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { TemplateFilters } from "@/components/portal/TemplateFilters";
+import { TemplatePackages } from "@/components/portal/TemplatePackages";
 
 const INDUSTRY_LABELS: Record<string, string> = {
   clinic:      "Clínica / Salud",
@@ -28,7 +30,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 async function getTemplateMarketplace(orgId: string) {
-  const [templates, installations] = await Promise.all([
+  const [templates, installations, packages, org] = await Promise.all([
     prisma.automationTemplate.findMany({
       where: { isPublished: true },
       orderBy: [{ industry: "asc" }, { name: "asc" }],
@@ -50,17 +52,40 @@ async function getTemplateMarketplace(orgId: string) {
       where: { organizationId: orgId, status: "ACTIVE" },
       select: { templateId: true },
     }),
+    prisma.templatePackage.findMany({
+      where: { isPublished: true },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        industry: true,
+        iconEmoji: true,
+        items: {
+          orderBy: { order: "asc" },
+          where: { template: { isPublished: true } },
+          select: { template: { select: { id: true, name: true, iconEmoji: true } } },
+        },
+      },
+    }),
+    prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { industry: true } }),
   ]);
 
   const installedIds = installations.map((i) => i.templateId);
-  return { templates, installedIds };
+  return { templates, installedIds, packages, orgIndustry: org.industry };
 }
 
 export default async function PortalTemplatesPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
+  const orgId = session.user.organizationId;
 
-  const { templates, installedIds } = await getTemplateMarketplace(session.user.organizationId);
+  // Installing a template (individually or via a package) always creates an
+  // Automation — the whole marketplace is a AUTOMATIONS-module experience,
+  // same gate the install action itself already enforces server-side.
+  await requireModule(orgId, "AUTOMATIONS");
+
+  const { templates, installedIds, packages, orgIndustry } = await getTemplateMarketplace(orgId);
 
   return (
     <div>
@@ -81,6 +106,15 @@ export default async function PortalTemplatesPage() {
           </div>
         </div>
       </div>
+
+      {packages.length > 0 && (
+        <TemplatePackages
+          packages={packages}
+          installedTemplateIds={installedIds}
+          orgIndustry={orgIndustry}
+          industryLabels={INDUSTRY_LABELS}
+        />
+      )}
 
       <TemplateFilters
         templates={templates}

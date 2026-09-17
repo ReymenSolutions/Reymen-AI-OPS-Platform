@@ -489,6 +489,18 @@ Una vez obtenidos estos datos, confirma la información y ofrece agendar la cita
       n8nWorkflowId: "tmpl-wf-workshop-followup",
     },
     {
+      id: "tmpl-clinic-reminders",
+      name: "Recordatorio de Citas — Clínica",
+      description: "Envía recordatorio automático 24h antes de cada cita y confirma asistencia por WhatsApp, reduciendo inasistencias.",
+      longDescription: "24 horas antes de cada cita agendada, el sistema envía un recordatorio por WhatsApp pidiendo confirmación. Si el paciente no confirma en 4 horas, notifica a recepción para que llame. Reduce inasistencias en clínicas hasta un 30%.",
+      industry: "clinic",
+      category: "appointments",
+      iconEmoji: "📅",
+      isPublished: true,
+      currentVersion: "1.0.0",
+      n8nWorkflowId: "tmpl-wf-clinic-reminders",
+    },
+    {
       id: "tmpl-ecommerce-abandoned",
       name: "Recuperación de Carritos — E-commerce",
       description: "Detecta carritos abandonados y activa una secuencia de 3 mensajes en 48h para recuperar la venta con descuento progresivo.",
@@ -535,6 +547,41 @@ Una vez obtenidos estos datos, confirma la información y ofrece agendar la cita
       },
     });
     console.log(`✅ Template created: ${template.name}`);
+  }
+
+  // ─── Phase 3b: Template Packages (industry bundles) ──────────────
+  const packageDefs = [
+    {
+      id: "pkg-clinic-starter",
+      name: "Paquete inicial de Clínica",
+      description: "Lo esencial para arrancar una clínica con Reymen AI Ops: captura de leads por WhatsApp y recordatorios de citas, en un clic.",
+      industry: "clinic",
+      iconEmoji: "🏥",
+      isPublished: true,
+      templateIds: ["tmpl-clinic-leads", "tmpl-clinic-reminders"],
+    },
+    {
+      id: "pkg-real-estate-starter",
+      name: "Paquete inicial Inmobiliaria",
+      description: "Califica automáticamente cada prospecto que llega por WhatsApp antes de que un agente le dedique tiempo.",
+      industry: "real_estate",
+      iconEmoji: "🏠",
+      isPublished: true,
+      templateIds: ["tmpl-real-estate-leads"],
+    },
+  ];
+
+  for (const def of packageDefs) {
+    const { templateIds, ...packageData } = def;
+    const pkg = await prisma.templatePackage.upsert({
+      where: { id: def.id },
+      update: {},
+      create: {
+        ...packageData,
+        items: { create: templateIds.map((templateId, order) => ({ templateId, order })) },
+      },
+    });
+    console.log(`✅ Template package created: ${pkg.name}`);
   }
 
   // Install the clinic leads template on the demo org

@@ -8,7 +8,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const authMock = vi.fn();
 vi.mock("@/lib/auth", () => ({ auth: () => authMock() }));
 
-const { installTemplate, uninstallTemplate } = await import("./templates");
+const { installTemplate, uninstallTemplate, installTemplatePackage } = await import("./templates");
 
 describe("templates actions", () => {
   let org: { id: string };
@@ -102,5 +102,126 @@ describe("templates actions", () => {
     await expect(installTemplate({ templateId: template.id })).rejects.toThrow(/módulo/i);
 
     await cleanupOrg(noModuleOrg.id);
+  });
+});
+
+describe("installTemplatePackage", () => {
+  let org: { id: string };
+  let owner: { id: string };
+  let templateA: { id: string };
+  let templateB: { id: string };
+  let unpublishedTemplate: { id: string };
+  let pkg: { id: string };
+
+  beforeAll(async () => {
+    org = await createTestOrg("Template Package Test Org");
+    await prisma.organization.update({ where: { id: org.id }, data: { plan: "professional" } });
+    owner = await createTestUser(org.id, "OWNER", "package-owner");
+
+    templateA = await prisma.automationTemplate.create({
+      data: {
+        name: "Captura de leads WhatsApp", description: "Captura leads", industry: "clinic",
+        category: "lead_capture", isPublished: true,
+        versions: { create: { version: "1.0.0", n8nWorkflowJson: {}, isLatest: true } },
+      },
+    });
+    templateB = await prisma.automationTemplate.create({
+      data: {
+        name: "Recordatorio de citas", description: "Recuerda citas", industry: "clinic",
+        category: "appointments", isPublished: true,
+        versions: { create: { version: "1.0.0", n8nWorkflowJson: {}, isLatest: true } },
+      },
+    });
+    unpublishedTemplate = await prisma.automationTemplate.create({
+      data: {
+        name: "Borrador sin publicar", description: "No listo", industry: "clinic",
+        category: "retention", isPublished: false,
+        versions: { create: { version: "1.0.0", n8nWorkflowJson: {}, isLatest: true } },
+      },
+    });
+
+    pkg = await prisma.templatePackage.create({
+      data: {
+        name: "Paquete Clínica Test", description: "Paquete de prueba", industry: "clinic",
+        isPublished: true,
+        items: {
+          create: [
+            { templateId: templateA.id, order: 0 },
+            { templateId: templateB.id, order: 1 },
+            { templateId: unpublishedTemplate.id, order: 2 },
+          ],
+        },
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.templatePackageItem.deleteMany({ where: { packageId: pkg.id } });
+    await prisma.templatePackage.delete({ where: { id: pkg.id } });
+    for (const t of [templateA, templateB, unpublishedTemplate]) {
+      await prisma.templateInstallation.deleteMany({ where: { templateId: t.id } });
+      await prisma.templateVersion.deleteMany({ where: { templateId: t.id } });
+      await prisma.automationTemplate.delete({ where: { id: t.id } });
+    }
+    await cleanupOrg(org.id);
+  });
+
+  it("installs every published template in the package, skipping the unpublished one", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    const result = await installTemplatePackage(pkg.id);
+    expect(result.success).toBe(true);
+    expect(result.installedCount).toBe(2);
+    expect(result.skippedCount).toBe(0);
+    expect(result.limitReached).toBe(false);
+
+    const installations = await prisma.templateInstallation.findMany({
+      where: { organizationId: org.id, templateId: { in: [templateA.id, templateB.id] }, status: "ACTIVE" },
+    });
+    expect(installations).toHaveLength(2);
+  });
+
+  it("skips templates already installed and reports them as skipped", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    const result = await installTemplatePackage(pkg.id);
+    expect(result.installedCount).toBe(0);
+    expect(result.skippedCount).toBe(2);
+  });
+
+  it("blocks package install when the org's AUTOMATIONS module isn't enabled", async () => {
+    const noModuleOrg = await createTestOrg("Package No Module Org");
+    await prisma.organizationModule.update({
+      where: { organizationId_module: { organizationId: noModuleOrg.id, module: "AUTOMATIONS" } },
+      data: { status: "CANCELLED" },
+    });
+    const noModuleOwner = await createTestUser(noModuleOrg.id, "OWNER", "package-no-module-owner");
+    authMock.mockResolvedValue(fakeSession({ id: noModuleOwner.id, role: "OWNER", organizationId: noModuleOrg.id }));
+
+    await expect(installTemplatePackage(pkg.id)).rejects.toThrow(/módulo/i);
+
+    await cleanupOrg(noModuleOrg.id);
+  });
+
+  it("stops gracefully once the org's plan capacity for automations is reached, reporting a partial install", async () => {
+    const limitedOrg = await createTestOrg("Package Plan Limit Org");
+    await prisma.organization.update({ where: { id: limitedOrg.id }, data: { plan: "starter" } });
+    const limitedOwner = await createTestUser(limitedOrg.id, "OWNER", "package-limited-owner");
+    authMock.mockResolvedValue(fakeSession({ id: limitedOwner.id, role: "OWNER", organizationId: limitedOrg.id }));
+
+    // Starter plan caps automations at 3 — pre-fill 2 so exactly 1 of the
+    // package's 2 templates fits before the limit is hit.
+    await prisma.automation.createMany({
+      data: Array.from({ length: 2 }, (_, i) => ({
+        organizationId: limitedOrg.id,
+        name: `Existing ${i}`,
+        type: "custom",
+        webhookSecret: generateWebhookSecret(),
+      })),
+    });
+
+    const result = await installTemplatePackage(pkg.id);
+    expect(result.installedCount).toBe(1);
+    expect(result.limitReached).toBe(true);
+
+    await cleanupOrg(limitedOrg.id);
   });
 });
