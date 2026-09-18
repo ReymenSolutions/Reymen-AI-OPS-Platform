@@ -5,6 +5,7 @@ import { Loader2, Globe, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { publishTemplatePackage } from "@/actions/admin/template-packages";
+import { usePreferences } from "@/context/preferences";
 
 interface PublishPackageButtonProps {
   packageId: string;
@@ -12,6 +13,7 @@ interface PublishPackageButtonProps {
 }
 
 export function PublishPackageButton({ packageId, isPublished }: PublishPackageButtonProps) {
+  const { lang } = usePreferences();
   const [loading, setLoading] = useState(false);
   const [published, setPublished] = useState(isPublished);
 
@@ -20,7 +22,11 @@ export function PublishPackageButton({ packageId, isPublished }: PublishPackageB
     try {
       await publishTemplatePackage(packageId, !published);
       setPublished(!published);
-      toast.success(published ? "Paquete despublicado" : "Paquete publicado — visible para clientes");
+      toast.success(
+        published
+          ? (lang === "es" ? "Paquete despublicado" : "Package unpublished")
+          : (lang === "es" ? "Paquete publicado — visible para clientes" : "Package published — visible to clients")
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error");
     } finally {
@@ -42,7 +48,7 @@ export function PublishPackageButton({ packageId, isPublished }: PublishPackageB
       ) : (
         <Globe className="h-4 w-4" />
       )}
-      {published ? "Despublicar" : "Publicar"}
+      {published ? (lang === "es" ? "Despublicar" : "Unpublish") : (lang === "es" ? "Publicar" : "Publish")}
     </Button>
   );
 }

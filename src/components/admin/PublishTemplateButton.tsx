@@ -5,6 +5,7 @@ import { Loader2, Globe, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { publishTemplate } from "@/actions/admin/templates";
+import { usePreferences } from "@/context/preferences";
 
 interface PublishTemplateButtonProps {
   templateId: string;
@@ -12,6 +13,7 @@ interface PublishTemplateButtonProps {
 }
 
 export function PublishTemplateButton({ templateId, isPublished }: PublishTemplateButtonProps) {
+  const { lang } = usePreferences();
   const [loading, setLoading] = useState(false);
   const [published, setPublished] = useState(isPublished);
 
@@ -20,7 +22,11 @@ export function PublishTemplateButton({ templateId, isPublished }: PublishTempla
     try {
       await publishTemplate(templateId, !published);
       setPublished(!published);
-      toast.success(published ? "Template despublicado" : "Template publicado — visible para clientes");
+      toast.success(
+        published
+          ? (lang === "es" ? "Template despublicado" : "Template unpublished")
+          : (lang === "es" ? "Template publicado — visible para clientes" : "Template published — visible to clients")
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error");
     } finally {
@@ -42,7 +48,7 @@ export function PublishTemplateButton({ templateId, isPublished }: PublishTempla
       ) : (
         <Globe className="h-4 w-4" />
       )}
-      {published ? "Despublicar" : "Publicar"}
+      {published ? (lang === "es" ? "Despublicar" : "Unpublish") : (lang === "es" ? "Publicar" : "Publish")}
     </Button>
   );
 }

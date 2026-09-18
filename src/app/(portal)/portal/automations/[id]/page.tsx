@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatDateTime } from "@/lib/utils";
+import { getServerLang } from "@/lib/i18n-server";
 
 const EVENT_STATUS_ICON: Record<string, typeof CheckCircle2> = {
   SUCCESS: CheckCircle2,
@@ -38,7 +39,10 @@ export default async function AutomationDetailPage({
   await requireModule(session.user.organizationId, "AUTOMATIONS");
 
   const { id } = await params;
-  const automation = await getAutomationDetail(id, session.user.organizationId);
+  const [automation, lang] = await Promise.all([
+    getAutomationDetail(id, session.user.organizationId),
+    getServerLang(),
+  ]);
   if (!automation) notFound();
 
   const successCount = automation.events.filter((e) => e.status === "SUCCESS").length;
@@ -51,7 +55,7 @@ export default async function AutomationDetailPage({
     <div>
       <div className="mb-4">
         <Link href="/portal/automations" className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
-          <ArrowLeft className="h-4 w-4" /> Volver a automatizaciones
+          <ArrowLeft className="h-4 w-4" /> {lang === "es" ? "Volver a automatizaciones" : "Back to automations"}
         </Link>
       </div>
 
@@ -64,10 +68,10 @@ export default async function AutomationDetailPage({
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4">
         {[
-          { label: "Total eventos", value: automation._count.events },
-          { label: "Exitosos", value: successCount },
-          { label: "Fallidos", value: failedCount },
-          { label: "Tasa de éxito", value: successRate !== null ? `${successRate}%` : "—" },
+          { label: lang === "es" ? "Total eventos" : "Total events", value: automation._count.events },
+          { label: lang === "es" ? "Exitosos" : "Successful", value: successCount },
+          { label: lang === "es" ? "Fallidos" : "Failed", value: failedCount },
+          { label: lang === "es" ? "Tasa de éxito" : "Success rate", value: successRate !== null ? `${successRate}%` : "—" },
         ].map(({ label, value }) => (
           <Card key={label}>
             <CardContent className="p-4 text-center">
@@ -84,15 +88,15 @@ export default async function AutomationDetailPage({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Zap className="h-4 w-4" />
-              Configuración
+              {lang === "es" ? "Configuración" : "Configuration"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {[
-              { label: "Tipo", value: automation.type },
-              { label: "Estado", value: <StatusBadge status={automation.status} /> },
-              { label: "ID de workflow n8n", value: automation.n8nWorkflowId ?? "—" },
-            { label: "ID de automatización", value: automation.id.slice(-12) },
+              { label: lang === "es" ? "Tipo" : "Type", value: automation.type },
+              { label: lang === "es" ? "Estado" : "Status", value: <StatusBadge status={automation.status} /> },
+              { label: lang === "es" ? "ID de workflow n8n" : "n8n workflow ID", value: automation.n8nWorkflowId ?? "—" },
+            { label: lang === "es" ? "ID de automatización" : "Automation ID", value: automation.id.slice(-12) },
             ].map(({ label, value }) => (
               <div key={label} className="flex items-center justify-between text-sm">
                 <span className="text-slate-500">{label}</span>
@@ -107,14 +111,14 @@ export default async function AutomationDetailPage({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-4 w-4" />
-              Historial de eventos ({automation._count.events})
+              {lang === "es" ? "Historial de eventos" : "Event history"} ({automation._count.events})
             </CardTitle>
           </CardHeader>
           <CardContent>
             {automation.events.length === 0 ? (
               <div className="py-8 text-center">
                 <Activity className="mx-auto h-8 w-8 text-slate-200 mb-2" />
-                <p className="text-sm text-slate-400">Sin eventos registrados aún</p>
+                <p className="text-sm text-slate-400">{lang === "es" ? "Sin eventos registrados aún" : "No events recorded yet"}</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto pr-1">

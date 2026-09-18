@@ -14,8 +14,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { INDUSTRIES } from "@/components/admin/CreateTemplateDialog";
+import { getIndustries } from "@/components/admin/CreateTemplateDialog";
 import { createTemplatePackage } from "@/actions/admin/template-packages";
+import { usePreferences } from "@/context/preferences";
 
 interface TemplateOption {
   id: string;
@@ -35,6 +36,8 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export function CreateTemplatePackageDialog({ templates }: { templates: TemplateOption[] }) {
+  const { lang } = usePreferences();
+  const industries = getIndustries(lang);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedEmoji, setSelectedEmoji] = useState("📦");
@@ -57,19 +60,19 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
 
   async function onSubmit(data: FormData) {
     if (selectedTemplateIds.length === 0) {
-      setItemsError("Selecciona al menos un template");
+      setItemsError(lang === "es" ? "Selecciona al menos un template" : "Select at least one template");
       return;
     }
     setItemsError(null);
     setLoading(true);
     try {
       await createTemplatePackage({ ...data, iconEmoji: selectedEmoji, templateIds: selectedTemplateIds });
-      toast.success("Paquete creado exitosamente");
+      toast.success(lang === "es" ? "Paquete creado exitosamente" : "Package created successfully");
       reset();
       setSelectedTemplateIds([]);
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al crear paquete");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear paquete" : "Error creating package"));
     } finally {
       setLoading(false);
     }
@@ -78,13 +81,13 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button><Plus className="h-4 w-4" />Nuevo paquete</Button>
+        <Button><Plus className="h-4 w-4" />{lang === "es" ? "Nuevo paquete" : "New package"}</Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Crear paquete por industria</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{lang === "es" ? "Crear paquete por industria" : "Create industry package"}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label>Ícono</Label>
+            <Label>{lang === "es" ? "Ícono" : "Icon"}</Label>
             <div className="flex flex-wrap gap-1.5">
               {EMOJIS.map((e) => (
                 <button
@@ -102,17 +105,17 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
           </div>
 
           <div className="space-y-2">
-            <Label>Nombre *</Label>
-            <Input placeholder="Paquete inicial de Clínica" {...register("name")} />
+            <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
+            <Input placeholder={lang === "es" ? "Paquete inicial de Clínica" : "Starter Clinic package"} {...register("name")} />
             {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label>Industria *</Label>
+            <Label>{lang === "es" ? "Industria *" : "Industry *"}</Label>
             <Select onValueChange={(v) => setValue("industry", v)}>
-              <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={lang === "es" ? "Seleccionar" : "Select"} /></SelectTrigger>
               <SelectContent>
-                {INDUSTRIES.map((i) => (
+                {industries.map((i) => (
                   <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -121,15 +124,15 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
           </div>
 
           <div className="space-y-2">
-            <Label>Descripción *</Label>
-            <Textarea placeholder="Lo esencial para arrancar una clínica con Reymen AI Ops" rows={2} {...register("description")} />
+            <Label>{lang === "es" ? "Descripción *" : "Description *"}</Label>
+            <Textarea placeholder={lang === "es" ? "Lo esencial para arrancar una clínica con Reymen AI Ops" : "The essentials to get a clinic started with Reymen AI Ops"} rows={2} {...register("description")} />
             {errors.description && <p className="text-xs text-red-500">{errors.description.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label>Templates incluidos *</Label>
+            <Label>{lang === "es" ? "Templates incluidos *" : "Included templates *"}</Label>
             {templates.length === 0 ? (
-              <p className="text-xs text-slate-400">No hay templates publicados todavía. Publica al menos uno primero.</p>
+              <p className="text-xs text-slate-400">{lang === "es" ? "No hay templates publicados todavía. Publica al menos uno primero." : "No published templates yet. Publish at least one first."}</p>
             ) : (
               <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2">
                 {orderedTemplates.map((t) => (
@@ -153,10 +156,10 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Crear paquete
+              {lang === "es" ? "Crear paquete" : "Create package"}
             </Button>
           </DialogFooter>
         </form>

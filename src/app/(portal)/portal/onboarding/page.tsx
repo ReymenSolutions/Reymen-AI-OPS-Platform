@@ -6,26 +6,30 @@ import { getOnboardingStatus } from "@/lib/onboarding";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { SkipOnboardingButton } from "@/components/portal/SkipOnboardingButton";
+import { getServerLang } from "@/lib/i18n-server";
 
 export default async function OnboardingPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
 
-  const status = await getOnboardingStatus(session.user.organizationId);
+  const [status, lang] = await Promise.all([
+    getOnboardingStatus(session.user.organizationId),
+    getServerLang(),
+  ]);
   const progressPct = status.totalCount > 0 ? Math.round((status.completedCount / status.totalCount) * 100) : 100;
 
   return (
     <div>
       <PageHeader
-        title="Configuración inicial"
-        description={`${status.completedCount} de ${status.totalCount} pasos completados`}
+        title={lang === "es" ? "Configuración inicial" : "Initial setup"}
+        description={lang === "es" ? `${status.completedCount} de ${status.totalCount} pasos completados` : `${status.completedCount} of ${status.totalCount} steps completed`}
       />
 
       {status.allDone ? (
         <Card className="mb-6 border-emerald-200 bg-emerald-50">
           <CardContent className="flex items-center gap-2 p-4 text-sm font-semibold text-emerald-800">
             <PartyPopper className="h-4 w-4" />
-            ¡Todo listo! Tu organización completó la configuración inicial.
+            {lang === "es" ? "¡Todo listo! Tu organización completó la configuración inicial." : "All set! Your organization completed the initial setup."}
           </CardContent>
         </Card>
       ) : (
@@ -40,7 +44,7 @@ export default async function OnboardingPage() {
       {status.steps.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-slate-400">
-            Tu organización aún no tiene módulos habilitados — contacta a tu representante de Reymen.
+            {lang === "es" ? "Tu organización aún no tiene módulos habilitados — contacta a tu representante de Reymen." : "Your organization doesn't have any modules enabled yet — contact your Reymen representative."}
           </CardContent>
         </Card>
       ) : (

@@ -47,7 +47,7 @@ export function AssistantConfigForm({ assistant }: AssistantConfigFormProps) {
     resolver: zodResolver(schema),
     defaultValues: {
       name: assistant?.name ?? t.assistantNamePlaceholder,
-      greeting: assistant?.greeting ?? "¡Hola! Soy el asistente virtual. ¿En qué puedo ayudarte?",
+      greeting: assistant?.greeting ?? t.assistantGreetingDefault,
       personality: assistant?.personality ?? "",
       phoneNumber: assistant?.phoneNumber ?? "",
     },

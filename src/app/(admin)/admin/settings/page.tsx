@@ -72,7 +72,7 @@ export default async function AdminSettingsPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle>Autenticación en dos pasos</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t.adminTwoFactorAuth}</CardTitle></CardHeader>
           <CardContent>
             <TwoFactorSettings initialEnabled={totpEnabled} />
           </CardContent>

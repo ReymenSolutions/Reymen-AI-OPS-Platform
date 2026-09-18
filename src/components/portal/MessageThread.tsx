@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getOlderMessages } from "@/actions/conversations";
 import { MessageComposer } from "@/components/portal/MessageComposer";
 import { formatDateTime } from "@/lib/utils";
+import { usePreferences } from "@/context/preferences";
 import type { Message, MessageDeliveryStatus } from "@prisma/client";
 
 type MessageWithSender = Message & { sender: { name: string | null; email: string } | null };
@@ -27,19 +28,20 @@ function DeliveryStatusIcon({ status }: { status: MessageDeliveryStatus | null }
   return <AlertCircle className="h-3 w-3 text-red-500" />;
 }
 
-function Attachment({ url, type }: { url: string; type: string | null }) {
+function Attachment({ url, type, lang }: { url: string; type: string | null; lang: string }) {
   if (type?.startsWith("image/")) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={url} alt="Adjunto" className="mt-2 max-h-48 rounded-md border border-slate-200" />;
+    return <img src={url} alt={lang === "es" ? "Adjunto" : "Attachment"} className="mt-2 max-h-48 rounded-md border border-slate-200" />;
   }
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs text-brand-600 hover:underline">
-      Ver adjunto
+      {lang === "es" ? "Ver adjunto" : "View attachment"}
     </a>
   );
 }
 
 export function MessageThread({ conversationId, contactName, initialMessages, hasMoreInitially, canReply }: MessageThreadProps) {
+  const { lang } = usePreferences();
   const [messages, setMessages] = useState(initialMessages);
   const [hasMore, setHasMore] = useState(hasMoreInitially);
   const [isPending, startTransition] = useTransition();
@@ -54,7 +56,7 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
         setMessages((prev) => [...result.messages, ...prev]);
         setHasMore(result.hasMore);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Error al cargar mensajes anteriores");
+        setError(e instanceof Error ? e.message : (lang === "es" ? "Error al cargar mensajes anteriores" : "Error loading older messages"));
       }
     });
   }
@@ -64,7 +66,7 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
       <CardContent className="p-0">
         {messages.length === 0 ? (
           <div className="py-16 text-center text-sm text-slate-400">
-            Sin mensajes en esta conversación
+            {lang === "es" ? "Sin mensajes en esta conversación" : "No messages in this conversation"}
           </div>
         ) : (
           <div className="divide-y divide-slate-50">
@@ -76,7 +78,7 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50"
                 >
                   {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                  Cargar mensajes anteriores
+                  {lang === "es" ? "Cargar mensajes anteriores" : "Load older messages"}
                 </button>
                 {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
               </div>
@@ -116,12 +118,12 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-medium text-slate-700">
                       {msg.role === "USER"
-                        ? contactName ?? "Usuario"
+                        ? contactName ?? (lang === "es" ? "Usuario" : "User")
                         : msg.role === "ASSISTANT"
-                        ? "Asistente AI"
+                        ? (lang === "es" ? "Asistente AI" : "AI Assistant")
                         : msg.role === "AGENT"
-                        ? msg.sender?.name ?? msg.sender?.email ?? "Agente"
-                        : "Sistema"}
+                        ? msg.sender?.name ?? msg.sender?.email ?? (lang === "es" ? "Agente" : "Agent")
+                        : (lang === "es" ? "Sistema" : "System")}
                     </span>
                     <span className="text-xs text-slate-400">
                       {formatDateTime(msg.createdAt)}
@@ -131,7 +133,7 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
                   <p className="text-sm text-slate-900 whitespace-pre-wrap leading-relaxed">
                     {msg.content}
                   </p>
-                  {msg.attachmentUrl && <Attachment url={msg.attachmentUrl} type={msg.attachmentType} />}
+                  {msg.attachmentUrl && <Attachment url={msg.attachmentUrl} type={msg.attachmentType} lang={lang} />}
                 </div>
               </div>
             ))}

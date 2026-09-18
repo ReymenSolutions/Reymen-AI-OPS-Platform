@@ -15,7 +15,7 @@ import { PipelineStagesPanel } from "@/components/portal/PipelineStagesPanel";
 import { formatDate } from "@/lib/utils";
 import { can } from "@/lib/permissions";
 import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
-import { MODULE_LABEL } from "@/lib/modules";
+import { getModuleLabel } from "@/lib/modules";
 import { isStripeConfigured } from "@/lib/stripe";
 import type { UserRole } from "@prisma/client";
 
@@ -99,7 +99,7 @@ export default async function PortalSettingsPage() {
               ))}
             </div>
             <p className="text-xs text-slate-400">
-              {lang === "es" ? "Tu plan incluye" : "Your plan includes"}: {planModules.map((m) => MODULE_LABEL[m]).join(", ")}
+              {lang === "es" ? "Tu plan incluye" : "Your plan includes"}: {planModules.map((m) => getModuleLabel(lang)[m]).join(", ")}
             </p>
             {stripeEnabled && canManageBilling ? (
               <BillingActions hasActiveSubscription={hasActiveSubscription} />

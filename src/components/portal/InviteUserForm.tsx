@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { inviteTeamMember } from "@/actions/team";
+import { usePreferences } from "@/context/preferences";
 
 const schema = z.object({
   name: z.string().min(2, "Mínimo 2 caracteres"),
@@ -24,13 +25,21 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-const ROLE_LABELS: Record<string, string> = {
+const ROLE_LABELS_ES: Record<string, string> = {
   MANAGER: "Manager — Gestión completa",
   AGENT: "Agente — Conversaciones y leads",
   VIEWER: "Viewer — Solo lectura",
 };
 
+const ROLE_LABELS_EN: Record<string, string> = {
+  MANAGER: "Manager — Full management",
+  AGENT: "Agent — Conversations and leads",
+  VIEWER: "Viewer — Read only",
+};
+
 export function InviteUserForm() {
+  const { lang } = usePreferences();
+  const ROLE_LABELS = lang === "es" ? ROLE_LABELS_ES : ROLE_LABELS_EN;
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -43,11 +52,11 @@ export function InviteUserForm() {
     setLoading(true);
     try {
       await inviteTeamMember(data);
-      toast.success("Usuario invitado exitosamente");
+      toast.success(lang === "es" ? "Usuario invitado exitosamente" : "User invited successfully");
       reset();
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al invitar usuario");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al invitar usuario" : "Error inviting user"));
     } finally {
       setLoading(false);
     }
@@ -58,17 +67,17 @@ export function InviteUserForm() {
       <DialogTrigger asChild>
         <Button size="sm">
           <UserPlus className="h-4 w-4" />
-          Invitar usuario
+          {lang === "es" ? "Invitar usuario" : "Invite user"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Invitar miembro al equipo</DialogTitle>
+          <DialogTitle>{lang === "es" ? "Invitar miembro al equipo" : "Invite team member"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label>Nombre completo *</Label>
-            <Input placeholder="Ana Martínez" {...register("name")} />
+            <Label>{lang === "es" ? "Nombre completo *" : "Full name *"}</Label>
+            <Input placeholder={lang === "es" ? "Ana Martínez" : "Jane Doe"} {...register("name")} />
             {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
           </div>
           <div className="space-y-2">
@@ -77,7 +86,7 @@ export function InviteUserForm() {
             {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
           </div>
           <div className="space-y-2">
-            <Label>Rol *</Label>
+            <Label>{lang === "es" ? "Rol *" : "Role *"}</Label>
             <Select defaultValue="AGENT" onValueChange={(v) => setValue("role", v as FormData["role"])}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -88,16 +97,16 @@ export function InviteUserForm() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Contraseña temporal *</Label>
-            <Input type="password" placeholder="Mínimo 8 caracteres" {...register("password")} />
+            <Label>{lang === "es" ? "Contraseña temporal *" : "Temporary password *"}</Label>
+            <Input type="password" placeholder={lang === "es" ? "Mínimo 8 caracteres" : "At least 8 characters"} {...register("password")} />
             {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Invitar
+              {lang === "es" ? "Invitar" : "Invite"}
             </Button>
           </DialogFooter>
         </form>

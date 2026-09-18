@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { SandboxPanel } from "./SandboxPanel";
 import { TestCasesPanel } from "./TestCasesPanel";
 import { ExperimentsPanel } from "./ExperimentsPanel";
+import { usePreferences } from "@/context/preferences";
 import type {
   Prompt, PromptVersion, AiSandboxSession, PromptTestCase, PromptTestCaseResult,
   PromptExperiment, PromptExperimentSample,
@@ -29,13 +30,21 @@ interface AiLabWorkspaceProps {
 
 type Tab = "sandbox" | "test-cases" | "experiments";
 
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+const TABS_ES: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "sandbox", label: "Sandbox", icon: MessageSquare },
   { id: "test-cases", label: "Casos de prueba", icon: FlaskConical },
   { id: "experiments", label: "Experimentos A/B", icon: Split },
 ];
 
+const TABS_EN: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: "sandbox", label: "Sandbox", icon: MessageSquare },
+  { id: "test-cases", label: "Test cases", icon: FlaskConical },
+  { id: "experiments", label: "A/B experiments", icon: Split },
+];
+
 export function AiLabWorkspace({ prompts, initialSessions, initialTestCases, initialExperiments }: AiLabWorkspaceProps) {
+  const { lang } = usePreferences();
+  const TABS = lang === "es" ? TABS_ES : TABS_EN;
   const [tab, setTab] = useState<Tab>("sandbox");
 
   return (

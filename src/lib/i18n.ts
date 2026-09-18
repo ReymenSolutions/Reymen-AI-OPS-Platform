@@ -381,6 +381,7 @@ export const strings = {
     adminRoleLabel: "Rol",
     adminRequiredEnvVars: "Variables de entorno requeridas",
     adminEnvVarInfo: "Configura estas variables en tu archivo .env o en tu proveedor de hosting.",
+    adminTwoFactorAuth: "Autenticación en dos pasos",
 
     // ── Admin automations ─────────────────────────────────────
     adminAutoTotalCount: "total",
@@ -481,6 +482,7 @@ export const strings = {
     // ── WhatsApp assistant form ───────────────────────────────────
     assistantName: "Nombre del asistente",
     assistantNamePlaceholder: "Asistente AI",
+    assistantGreetingDefault: "¡Hola! Soy el asistente virtual. ¿En qué puedo ayudarte?",
     whatsappBusinessNumber: "Número de WhatsApp Business",
     initialGreeting: "Saludo inicial",
     greetingPlaceholder: "¡Hola! Soy el asistente virtual de [empresa]...",
@@ -899,6 +901,7 @@ export const strings = {
     adminRoleLabel: "Role",
     adminRequiredEnvVars: "Required environment variables",
     adminEnvVarInfo: "Configure these variables in your .env file or hosting provider.",
+    adminTwoFactorAuth: "Two-factor authentication",
 
     // ── Admin automations ─────────────────────────────────────
     adminAutoTotalCount: "total",
@@ -999,6 +1002,7 @@ export const strings = {
     // ── WhatsApp assistant form ───────────────────────────────────
     assistantName: "Assistant name",
     assistantNamePlaceholder: "AI Assistant",
+    assistantGreetingDefault: "Hi! I'm the virtual assistant. How can I help you?",
     whatsappBusinessNumber: "WhatsApp Business number",
     initialGreeting: "Initial greeting",
     greetingPlaceholder: "Hi! I'm the virtual assistant for [company]...",

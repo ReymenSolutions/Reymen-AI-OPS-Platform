@@ -10,12 +10,21 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { setOrganizationModule, syncModulesToPlan, type ModuleEntitlementView } from "@/actions/admin/modules";
+import { usePreferences } from "@/context/preferences";
 import type { ModuleSource, ModuleStatus, PlatformModule } from "@prisma/client";
 
-const MODULE_LABEL: Record<PlatformModule, string> = {
+const MODULE_LABEL_ES: Record<PlatformModule, string> = {
   CRM: "CRM",
   AI_WHATSAPP: "Asistente IA / WhatsApp",
   AUTOMATIONS: "Automatizaciones",
+  NFC_QR: "Smart Cards NFC/QR",
+  MARKETING_ADS: "Marketing / Ads",
+};
+
+const MODULE_LABEL_EN: Record<PlatformModule, string> = {
+  CRM: "CRM",
+  AI_WHATSAPP: "AI Assistant / WhatsApp",
+  AUTOMATIONS: "Automations",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
 };
@@ -24,10 +33,16 @@ const MODULE_LABEL: Record<PlatformModule, string> = {
 // exists behind them yet, so they're shown but can't be toggled on here.
 const RESERVED_MODULES: PlatformModule[] = ["NFC_QR", "MARKETING_ADS"];
 
-const STATUS_BADGE: Record<ModuleStatus, { variant: "success" | "secondary" | "destructive"; icon: typeof Check; label: string }> = {
+const STATUS_BADGE_ES: Record<ModuleStatus, { variant: "success" | "secondary" | "destructive"; icon: typeof Check; label: string }> = {
   ACTIVE: { variant: "success", icon: Check, label: "Activo" },
   SUSPENDED: { variant: "secondary", icon: Clock3, label: "Suspendido" },
   CANCELLED: { variant: "destructive", icon: Ban, label: "Cancelado" },
+};
+
+const STATUS_BADGE_EN: Record<ModuleStatus, { variant: "success" | "secondary" | "destructive"; icon: typeof Check; label: string }> = {
+  ACTIVE: { variant: "success", icon: Check, label: "Active" },
+  SUSPENDED: { variant: "secondary", icon: Clock3, label: "Suspended" },
+  CANCELLED: { variant: "destructive", icon: Ban, label: "Cancelled" },
 };
 
 export function OrganizationModulesPanel({
@@ -41,6 +56,9 @@ export function OrganizationModulesPanel({
   planLabel: string;
   planModules: PlatformModule[];
 }) {
+  const { lang } = usePreferences();
+  const MODULE_LABEL = lang === "es" ? MODULE_LABEL_ES : MODULE_LABEL_EN;
+  const STATUS_BADGE = lang === "es" ? STATUS_BADGE_ES : STATUS_BADGE_EN;
   const [editing, setEditing] = useState<PlatformModule | null>(null);
   const [status, setStatus] = useState<ModuleStatus>("ACTIVE");
   const [source, setSource] = useState<ModuleSource>("SUBSCRIBED");
@@ -58,12 +76,12 @@ export function OrganizationModulesPanel({
       try {
         const result = await syncModulesToPlan(orgId);
         if (result.activatedModules.length === 0) {
-          toast.success("Los módulos ya coinciden con el plan actual");
+          toast.success(lang === "es" ? "Los módulos ya coinciden con el plan actual" : "Modules already match the current plan");
         } else {
-          toast.success(`Activado: ${result.activatedModules.join(", ")}`);
+          toast.success(lang === "es" ? `Activado: ${result.activatedModules.join(", ")}` : `Activated: ${result.activatedModules.join(", ")}`);
         }
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Error al sincronizar módulos");
+        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al sincronizar módulos" : "Error syncing modules"));
       } finally {
         setSyncing(false);
       }
@@ -82,10 +100,10 @@ export function OrganizationModulesPanel({
     startTransition(async () => {
       try {
         await setOrganizationModule({ orgId, module: editing, status, source, notes: notes || undefined });
-        toast.success(`Módulo "${MODULE_LABEL[editing]}" actualizado`);
+        toast.success(lang === "es" ? `Módulo "${MODULE_LABEL[editing]}" actualizado` : `Module "${MODULE_LABEL[editing]}" updated`);
         setEditing(null);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Error al actualizar el módulo");
+        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar el módulo" : "Error updating the module"));
       }
     });
   }
@@ -95,16 +113,16 @@ export function OrganizationModulesPanel({
       <Card className="lg:col-span-2">
         <CardHeader className="flex-row items-center justify-between">
           <div>
-            <CardTitle>Módulos contratados</CardTitle>
+            <CardTitle>{lang === "es" ? "Módulos contratados" : "Contracted modules"}</CardTitle>
             <p className="mt-0.5 text-xs text-slate-400">
-              Plan {planLabel} incluye: {planModules.map((m) => MODULE_LABEL[m]).join(", ")}
+              {lang === "es" ? "Plan" : "Plan"} {planLabel} {lang === "es" ? "incluye" : "includes"}: {planModules.map((m) => MODULE_LABEL[m]).join(", ")}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {missingFromPlan.length > 0 && (
               <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
                 {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Sincronizar con plan
+                {lang === "es" ? "Sincronizar con plan" : "Sync with plan"}
               </Button>
             )}
             <Layers className="h-4 w-4 text-slate-400" />
@@ -122,14 +140,18 @@ export function OrganizationModulesPanel({
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-slate-900">{MODULE_LABEL[m.module]}</p>
                       {includedInPlan && !reserved && (
-                        <Badge variant="info" className="text-xs">Incluido en el plan</Badge>
+                        <Badge variant="info" className="text-xs">{lang === "es" ? "Incluido en el plan" : "Included in plan"}</Badge>
                       )}
                     </div>
                     {reserved ? (
-                      <p className="text-xs text-slate-400">Reservado — sin funcionalidad propia todavía</p>
+                      <p className="text-xs text-slate-400">{lang === "es" ? "Reservado — sin funcionalidad propia todavía" : "Reserved — no functionality of its own yet"}</p>
                     ) : (
                       <p className="text-xs text-slate-400">
-                        {m.source === "ADMIN_GRANTED" ? "Asignado por Reymen" : m.source === "SUBSCRIBED" ? "Suscrito" : "Sin habilitar"}
+                        {m.source === "ADMIN_GRANTED"
+                          ? (lang === "es" ? "Asignado por Reymen" : "Granted by Reymen")
+                          : m.source === "SUBSCRIBED"
+                          ? (lang === "es" ? "Suscrito" : "Subscribed")
+                          : (lang === "es" ? "Sin habilitar" : "Not enabled")}
                       </p>
                     )}
                   </div>
@@ -137,7 +159,7 @@ export function OrganizationModulesPanel({
                     {badge ? (
                       <Badge variant={badge.variant} className="text-xs">{badge.label}</Badge>
                     ) : (
-                      <Badge variant="secondary" className="text-xs">Sin habilitar</Badge>
+                      <Badge variant="secondary" className="text-xs">{lang === "es" ? "Sin habilitar" : "Not enabled"}</Badge>
                     )}
                     <Button
                       variant="outline"
@@ -145,7 +167,7 @@ export function OrganizationModulesPanel({
                       disabled={reserved}
                       onClick={() => openDialog(m)}
                     >
-                      Gestionar
+                      {lang === "es" ? "Gestionar" : "Manage"}
                     </Button>
                   </div>
                 </div>
@@ -163,7 +185,7 @@ export function OrganizationModulesPanel({
 
           <div className="space-y-4 py-2">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">{lang === "es" ? "Estado" : "Status"}</label>
               <div className="flex gap-2">
                 {(["ACTIVE", "SUSPENDED", "CANCELLED"] as const).map((s) => (
                   <button
@@ -181,7 +203,7 @@ export function OrganizationModulesPanel({
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Origen</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">{lang === "es" ? "Origen" : "Source"}</label>
               <div className="flex gap-2">
                 {(["SUBSCRIBED", "ADMIN_GRANTED"] as const).map((s) => (
                   <button
@@ -192,7 +214,9 @@ export function OrganizationModulesPanel({
                       source === s ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-600 hover:border-slate-300"
                     }`}
                   >
-                    {s === "SUBSCRIBED" ? "Suscrito (plan pago)" : "Asignado por Reymen"}
+                    {s === "SUBSCRIBED"
+                      ? (lang === "es" ? "Suscrito (plan pago)" : "Subscribed (paid plan)")
+                      : (lang === "es" ? "Asignado por Reymen" : "Granted by Reymen")}
                   </button>
                 ))}
               </div>
@@ -200,7 +224,7 @@ export function OrganizationModulesPanel({
 
             <div>
               <label htmlFor="module-notes" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Notas internas (solo visible para admins)
+                {lang === "es" ? "Notas internas (solo visible para admins)" : "Internal notes (only visible to admins)"}
               </label>
               <textarea
                 id="module-notes"
@@ -208,16 +232,16 @@ export function OrganizationModulesPanel({
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
                 className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                placeholder="Ej: cortesía de prueba por 30 días, suspendido por falta de pago…"
+                placeholder={lang === "es" ? "Ej: cortesía de prueba por 30 días, suspendido por falta de pago…" : "E.g.: 30-day trial courtesy, suspended for non-payment…"}
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setEditing(null)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button onClick={handleSave} disabled={isPending}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Guardar
+              {lang === "es" ? "Guardar" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

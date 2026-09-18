@@ -9,6 +9,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { updateTemplatePackageItems } from "@/actions/admin/template-packages";
+import { usePreferences } from "@/context/preferences";
 
 interface TemplateOption {
   id: string;
@@ -26,6 +27,7 @@ export function EditPackageItemsDialog({
   templates: TemplateOption[];
   currentTemplateIds: string[];
 }) {
+  const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>(currentTemplateIds);
@@ -37,17 +39,17 @@ export function EditPackageItemsDialog({
 
   async function handleSave() {
     if (selectedTemplateIds.length === 0) {
-      setItemsError("Selecciona al menos un template");
+      setItemsError(lang === "es" ? "Selecciona al menos un template" : "Select at least one template");
       return;
     }
     setItemsError(null);
     setLoading(true);
     try {
       await updateTemplatePackageItems(packageId, { templateIds: selectedTemplateIds });
-      toast.success("Templates del paquete actualizados");
+      toast.success(lang === "es" ? "Templates del paquete actualizados" : "Package templates updated");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al actualizar");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar" : "Error updating"));
     } finally {
       setLoading(false);
     }
@@ -56,14 +58,14 @@ export function EditPackageItemsDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) setSelectedTemplateIds(currentTemplateIds); }}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm"><Pencil className="h-4 w-4" />Editar templates</Button>
+        <Button variant="outline" size="sm"><Pencil className="h-4 w-4" />{lang === "es" ? "Editar templates" : "Edit templates"}</Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Editar templates del paquete</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{lang === "es" ? "Editar templates del paquete" : "Edit package templates"}</DialogTitle></DialogHeader>
         <div className="space-y-2">
-          <Label>Templates incluidos *</Label>
+          <Label>{lang === "es" ? "Templates incluidos *" : "Included templates *"}</Label>
           {templates.length === 0 ? (
-            <p className="text-xs text-slate-400">No hay templates publicados todavía.</p>
+            <p className="text-xs text-slate-400">{lang === "es" ? "No hay templates publicados todavía." : "No published templates yet."}</p>
           ) : (
             <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2">
               {templates.map((t) => (
@@ -86,10 +88,10 @@ export function EditPackageItemsDialog({
           {itemsError && <p className="text-xs text-red-500">{itemsError}</p>}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
           <Button type="button" onClick={handleSave} disabled={loading}>
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Guardar
+            {lang === "es" ? "Guardar" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

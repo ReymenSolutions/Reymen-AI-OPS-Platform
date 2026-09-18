@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createClient } from "@/actions/admin/clients";
+import { usePreferences } from "@/context/preferences";
 
 const schema = z.object({
   orgName: z.string().min(2, "Mínimo 2 caracteres"),
@@ -30,7 +31,7 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-const INDUSTRIES = [
+const INDUSTRIES_ES = [
   { value: "clinic", label: "Clínica / Salud" },
   { value: "real_estate", label: "Inmobiliaria" },
   { value: "gym", label: "Gimnasio / Fitness" },
@@ -40,7 +41,19 @@ const INDUSTRIES = [
   { value: "other", label: "Otro" },
 ];
 
+const INDUSTRIES_EN = [
+  { value: "clinic", label: "Clinic / Health" },
+  { value: "real_estate", label: "Real Estate" },
+  { value: "gym", label: "Gym / Fitness" },
+  { value: "legal", label: "Legal" },
+  { value: "workshop", label: "Workshop / Automotive" },
+  { value: "ecommerce", label: "E-commerce" },
+  { value: "other", label: "Other" },
+];
+
 export function CreateClientDialog() {
+  const { lang } = usePreferences();
+  const INDUSTRIES = lang === "es" ? INDUSTRIES_ES : INDUSTRIES_EN;
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -54,11 +67,11 @@ export function CreateClientDialog() {
     Object.entries(data).forEach(([k, v]) => v && fd.append(k, v));
     try {
       await createClient(fd);
-      toast.success("Cliente creado exitosamente");
+      toast.success(lang === "es" ? "Cliente creado exitosamente" : "Client created successfully");
       reset();
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al crear cliente");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear cliente" : "Error creating client"));
     } finally {
       setLoading(false);
     }
@@ -69,25 +82,25 @@ export function CreateClientDialog() {
       <DialogTrigger asChild>
         <Button>
           <Plus className="h-4 w-4" />
-          Nuevo cliente
+          {lang === "es" ? "Nuevo cliente" : "New client"}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Crear nuevo cliente</DialogTitle>
+          <DialogTitle>{lang === "es" ? "Crear nuevo cliente" : "Create new client"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label>Nombre de empresa</Label>
-            <Input placeholder="Clínica San Rafael" {...register("orgName")} />
+            <Label>{lang === "es" ? "Nombre de empresa" : "Company name"}</Label>
+            <Input placeholder={lang === "es" ? "Clínica San Rafael" : "San Rafael Clinic"} {...register("orgName")} />
             {errors.orgName && <p className="text-xs text-red-500">{errors.orgName.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label>Industria</Label>
+            <Label>{lang === "es" ? "Industria" : "Industry"}</Label>
             <Select onValueChange={(v) => setValue("orgIndustry", v)}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar industria" />
+                <SelectValue placeholder={lang === "es" ? "Seleccionar industria" : "Select industry"} />
               </SelectTrigger>
               <SelectContent>
                 {INDUSTRIES.map((ind) => (
@@ -100,28 +113,28 @@ export function CreateClientDialog() {
           <hr className="border-slate-200" />
 
           <div className="space-y-2">
-            <Label>Nombre del administrador</Label>
-            <Input placeholder="Juan García" {...register("userName")} />
+            <Label>{lang === "es" ? "Nombre del administrador" : "Administrator name"}</Label>
+            <Input placeholder={lang === "es" ? "Juan García" : "John Smith"} {...register("userName")} />
             {errors.userName && <p className="text-xs text-red-500">{errors.userName.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label>Email de acceso</Label>
+            <Label>{lang === "es" ? "Email de acceso" : "Login email"}</Label>
             <Input type="email" placeholder="juan@empresa.com" {...register("userEmail")} />
             {errors.userEmail && <p className="text-xs text-red-500">{errors.userEmail.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label>Contraseña inicial</Label>
-            <Input type="password" placeholder="Mínimo 8 caracteres" {...register("password")} />
+            <Label>{lang === "es" ? "Contraseña inicial" : "Initial password"}</Label>
+            <Input type="password" placeholder={lang === "es" ? "Mínimo 8 caracteres" : "At least 8 characters"} {...register("password")} />
             {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Crear cliente
+              {lang === "es" ? "Crear cliente" : "Create client"}
             </Button>
           </DialogFooter>
         </form>

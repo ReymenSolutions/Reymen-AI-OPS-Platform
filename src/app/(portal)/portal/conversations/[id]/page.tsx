@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireModule } from "@/lib/modules";
 import { can } from "@/lib/permissions";
+import { getServerLang } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ export default async function ConversationDetailPage({
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
   await requireModule(session.user.organizationId, "AI_WHATSAPP");
+  const lang = await getServerLang();
 
   const [conv, teamUsers] = await Promise.all([
     getConversation(id, session.user.organizationId),
@@ -68,13 +70,13 @@ export default async function ConversationDetailPage({
           href="/portal/conversations"
           className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"
         >
-          <ArrowLeft className="h-4 w-4" /> Volver a conversaciones
+          <ArrowLeft className="h-4 w-4" /> {lang === "es" ? "Volver a conversaciones" : "Back to conversations"}
         </Link>
       </div>
 
       <PageHeader
-        title={conv.contactName ?? conv.contactPhone ?? "Conversación"}
-        description={`${conv.channel} · ${conv._count.messages} mensajes`}
+        title={conv.contactName ?? conv.contactPhone ?? (lang === "es" ? "Conversación" : "Conversation")}
+        description={`${conv.channel} · ${conv._count.messages} ${lang === "es" ? "mensajes" : "messages"}`}
         actions={
           <ConversationActions
             conversationId={conv.id}
@@ -94,21 +96,21 @@ export default async function ConversationDetailPage({
         <Badge variant="secondary" className="capitalize">{conv.channel}</Badge>
         {conv.aiHandled ? (
           <span className="flex items-center gap-1 text-xs text-slate-500">
-            <Bot className="h-3 w-3" /> Manejado por IA
+            <Bot className="h-3 w-3" /> {lang === "es" ? "Manejado por IA" : "Handled by AI"}
           </span>
         ) : (
           <span className="text-xs text-slate-500">
-            Control humano{conv.assignedTo ? ` · ${conv.assignedTo.name ?? conv.assignedTo.email}` : " · sin asignar"}
+            {lang === "es" ? "Control humano" : "Human control"}{conv.assignedTo ? ` · ${conv.assignedTo.name ?? conv.assignedTo.email}` : (lang === "es" ? " · sin asignar" : " · unassigned")}
           </span>
         )}
         {conv.escalatedAt && (
           <span className="text-xs text-amber-600">
-            Escalado {formatDateTime(conv.escalatedAt)}
+            {lang === "es" ? "Escalado" : "Escalated"} {formatDateTime(conv.escalatedAt)}
           </span>
         )}
         {conv.resolvedAt && (
           <span className="text-xs text-emerald-600">
-            Resuelto {formatDateTime(conv.resolvedAt)}
+            {lang === "es" ? "Resuelto" : "Resolved"} {formatDateTime(conv.resolvedAt)}
           </span>
         )}
       </div>

@@ -3,6 +3,7 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
+import { usePreferences } from "@/context/preferences";
 
 interface FunnelItem {
   label: string;
@@ -15,10 +16,12 @@ interface LeadFunnelChartProps {
 }
 
 export function LeadFunnelChart({ data }: LeadFunnelChartProps) {
+  const { lang } = usePreferences();
+
   if (data.length === 0) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <p className="text-sm text-slate-400">Sin datos de leads</p>
+        <p className="text-sm text-slate-400">{lang === "es" ? "Sin datos de leads" : "No lead data"}</p>
       </div>
     );
   }

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateTeamMember } from "@/actions/team";
+import { usePreferences } from "@/context/preferences";
 
 const schema = z.object({
   name: z.string().min(2, "Mínimo 2 caracteres"),
@@ -22,10 +23,16 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-const ROLE_LABELS: Record<string, string> = {
+const ROLE_LABELS_ES: Record<string, string> = {
   MANAGER: "Manager — Gestión completa",
   AGENT: "Agente — Conversaciones y leads",
   VIEWER: "Viewer — Solo lectura",
+};
+
+const ROLE_LABELS_EN: Record<string, string> = {
+  MANAGER: "Manager — Full management",
+  AGENT: "Agent — Conversations and leads",
+  VIEWER: "Viewer — Read only",
 };
 
 interface EditUserDialogProps {
@@ -35,6 +42,8 @@ interface EditUserDialogProps {
 }
 
 export function EditUserDialog({ userId, userName, userRole }: EditUserDialogProps) {
+  const { lang } = usePreferences();
+  const roleLabels = lang === "es" ? ROLE_LABELS_ES : ROLE_LABELS_EN;
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -54,10 +63,10 @@ export function EditUserDialog({ userId, userName, userRole }: EditUserDialogPro
     setLoading(true);
     try {
       await updateTeamMember(userId, data);
-      toast.success("Usuario actualizado");
+      toast.success(lang === "es" ? "Usuario actualizado" : "User updated");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al actualizar usuario");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar usuario" : "Error updating user"));
     } finally {
       setLoading(false);
     }
@@ -72,29 +81,29 @@ export function EditUserDialog({ userId, userName, userRole }: EditUserDialogPro
         className="gap-1.5 text-slate-600 hover:text-brand-600 hover:border-brand-300"
       >
         <Pencil className="h-3.5 w-3.5" />
-        Editar
+        {lang === "es" ? "Editar" : "Edit"}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar miembro del equipo</DialogTitle>
+            <DialogTitle>{lang === "es" ? "Editar miembro del equipo" : "Edit team member"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Nombre completo *</Label>
+              <Label>{lang === "es" ? "Nombre completo *" : "Full name *"}</Label>
               <Input placeholder="Ana Martínez" {...register("name")} />
               {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Rol *</Label>
+              <Label>{lang === "es" ? "Rol *" : "Role *"}</Label>
               <Select
                 defaultValue={safeRole}
                 onValueChange={(v) => setValue("role", v as FormData["role"])}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                  {Object.entries(roleLabels).map(([value, label]) => (
                     <SelectItem key={value} value={value}>{label}</SelectItem>
                   ))}
                 </SelectContent>
@@ -102,11 +111,11 @@ export function EditUserDialog({ userId, userName, userRole }: EditUserDialogPro
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancelar
+                {lang === "es" ? "Cancelar" : "Cancel"}
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                Guardar cambios
+                {lang === "es" ? "Guardar cambios" : "Save changes"}
               </Button>
             </DialogFooter>
           </form>

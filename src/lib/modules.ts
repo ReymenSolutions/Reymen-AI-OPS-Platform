@@ -9,6 +9,9 @@ import type { PlatformModule } from "@prisma/client";
  * answers "does this organization's account have access to this line of
  * business at all."
  */
+// Kept in Spanish — used as-is in thrown error messages (assertModuleEnabled
+// below), which aren't routed through the UI lang toggle. UI code that
+// displays module names to the user should use getModuleLabel(lang) instead.
 export const MODULE_LABEL: Record<PlatformModule, string> = {
   CRM: "CRM",
   AI_WHATSAPP: "Asistente IA / WhatsApp",
@@ -16,6 +19,18 @@ export const MODULE_LABEL: Record<PlatformModule, string> = {
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
 };
+
+const MODULE_LABEL_EN: Record<PlatformModule, string> = {
+  CRM: "CRM",
+  AI_WHATSAPP: "AI Assistant / WhatsApp",
+  AUTOMATIONS: "Automations",
+  NFC_QR: "Smart Cards NFC/QR",
+  MARKETING_ADS: "Marketing / Ads",
+};
+
+export function getModuleLabel(lang: "es" | "en"): Record<PlatformModule, string> {
+  return lang === "es" ? MODULE_LABEL : MODULE_LABEL_EN;
+}
 
 export async function hasModule(organizationId: string, module: PlatformModule): Promise<boolean> {
   const entitlement = await prisma.organizationModule.findUnique({

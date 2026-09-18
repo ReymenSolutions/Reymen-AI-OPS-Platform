@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { removeTeamMember } from "@/actions/team";
+import { usePreferences } from "@/context/preferences";
 
 interface RemoveUserButtonProps {
   userId: string;
@@ -15,6 +16,7 @@ interface RemoveUserButtonProps {
 }
 
 export function RemoveUserButton({ userId, userName }: RemoveUserButtonProps) {
+  const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +24,7 @@ export function RemoveUserButton({ userId, userName }: RemoveUserButtonProps) {
     setLoading(true);
     try {
       await removeTeamMember(userId);
-      toast.success("Usuario desactivado");
+      toast.success(lang === "es" ? "Usuario desactivado" : "User deactivated");
       setOpen(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error");
@@ -45,7 +47,7 @@ export function RemoveUserButton({ userId, userName }: RemoveUserButtonProps) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Desactivar usuario</DialogTitle>
+            <DialogTitle>{lang === "es" ? "Desactivar usuario" : "Deactivate user"}</DialogTitle>
           </DialogHeader>
           <div className="flex items-start gap-3 py-2">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50">
@@ -54,17 +56,19 @@ export function RemoveUserButton({ userId, userName }: RemoveUserButtonProps) {
             <div>
               <p className="text-sm font-medium text-slate-900">{userName}</p>
               <p className="mt-1 text-sm text-slate-500">
-                Este usuario ya no podrá acceder a la plataforma. Puedes reactivarlo contactando al soporte.
+                {lang === "es"
+                  ? "Este usuario ya no podrá acceder a la plataforma. Puedes reactivarlo contactando al soporte."
+                  : "This user will no longer be able to access the platform. You can reactivate them by contacting support."}
               </p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
-              Cancelar
+              {lang === "es" ? "Cancelar" : "Cancel"}
             </Button>
             <Button variant="destructive" onClick={handleConfirm} disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Desactivar
+              {lang === "es" ? "Desactivar" : "Deactivate"}
             </Button>
           </DialogFooter>
         </DialogContent>

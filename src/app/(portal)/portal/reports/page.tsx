@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
 import { getEnabledModules } from "@/lib/modules";
 import { getRoiData } from "@/lib/roi";
@@ -97,11 +97,12 @@ export default async function PortalReportsPage() {
   if (!session?.user.organizationId) return redirect("/login");
   const orgId = session.user.organizationId;
 
-  const [t, data, enabledModules, org] = await Promise.all([
+  const [t, data, enabledModules, org, lang] = await Promise.all([
     getServerT(),
     getReportData(orgId),
     getEnabledModules(orgId),
     prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { plan: true } }),
+    getServerLang(),
   ]);
   const roi = await getRoiData(orgId, org.plan);
 
@@ -202,7 +203,7 @@ export default async function PortalReportsPage() {
         )}
       </div>
 
-      {hasModule("CRM") && <RoiCalculator data={roi} planLabel={planLabel} />}
+      {hasModule("CRM") && <RoiCalculator data={roi} planLabel={planLabel} lang={lang} />}
     </div>
   );
 }

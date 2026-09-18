@@ -10,6 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { listPromptVersions, rollbackPromptVersion } from "@/actions/prompts";
+import { usePreferences } from "@/context/preferences";
 import type { PromptVersion } from "@prisma/client";
 
 interface PromptVersionHistoryDialogProps {
@@ -18,6 +19,7 @@ interface PromptVersionHistoryDialogProps {
 }
 
 export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersionHistoryDialogProps) {
+  const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [versions, setVersions] = useState<PromptVersion[]>([]);
@@ -30,7 +32,7 @@ export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersi
       try {
         setVersions(await listPromptVersions(promptId));
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Error al cargar el historial");
+        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al cargar el historial" : "Error loading history"));
       } finally {
         setLoading(false);
       }
@@ -42,9 +44,9 @@ export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersi
     try {
       await rollbackPromptVersion(promptId, versionId);
       setVersions(await listPromptVersions(promptId));
-      toast.success("Prompt restaurado a esa versión");
+      toast.success(lang === "es" ? "Prompt restaurado a esa versión" : "Prompt restored to that version");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al restaurar la versión");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al restaurar la versión" : "Error restoring version"));
     } finally {
       setRollingBack(null);
     }
@@ -53,13 +55,13 @@ export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersi
   return (
     <Dialog open={open} onOpenChange={handleOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8" title="Historial de versiones">
+        <Button variant="ghost" size="icon" className="h-8 w-8" title={lang === "es" ? "Historial de versiones" : "Version history"}>
           <History className="h-4 w-4" />
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Historial de versiones — {promptName}</DialogTitle>
+          <DialogTitle>{lang === "es" ? "Historial de versiones" : "Version history"} — {promptName}</DialogTitle>
         </DialogHeader>
         {loading ? (
           <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
@@ -71,7 +73,7 @@ export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersi
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-slate-900">v{v.version}</span>
-                      {v.isLatest && <Badge variant="success" className="text-[10px]">Actual</Badge>}
+                      {v.isLatest && <Badge variant="success" className="text-[10px]">{lang === "es" ? "Actual" : "Current"}</Badge>}
                     </div>
                     {v.changelog && <p className="mt-0.5 text-xs text-slate-500">{v.changelog}</p>}
                     <p className="mt-1 text-xs text-slate-400 font-mono line-clamp-2">{v.content}</p>
@@ -86,7 +88,7 @@ export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersi
                       onClick={() => handleRollback(v.id)}
                     >
                       {rollingBack === v.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                      Restaurar
+                      {lang === "es" ? "Restaurar" : "Restore"}
                     </Button>
                   )}
                 </div>

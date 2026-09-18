@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createLead } from "@/actions/leads";
+import { usePreferences } from "@/context/preferences";
 
 const schema = z.object({
   name: z.string().min(1, "Nombre requerido"),
@@ -27,6 +28,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export function CreateLeadDialog() {
+  const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -40,11 +42,11 @@ export function CreateLeadDialog() {
     Object.entries(data).forEach(([k, v]) => v !== undefined && fd.append(k, v));
     try {
       await createLead(fd);
-      toast.success("Lead creado exitosamente");
+      toast.success(lang === "es" ? "Lead creado exitosamente" : "Lead created successfully");
       reset();
       setOpen(false);
     } catch {
-      toast.error("Error al crear lead");
+      toast.error(lang === "es" ? "Error al crear lead" : "Error creating lead");
     } finally {
       setLoading(false);
     }
@@ -55,17 +57,17 @@ export function CreateLeadDialog() {
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="h-4 w-4" />
-          Nuevo lead
+          {lang === "es" ? "Nuevo lead" : "New lead"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Agregar lead manualmente</DialogTitle>
+          <DialogTitle>{lang === "es" ? "Agregar lead manualmente" : "Add lead manually"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label>Nombre *</Label>
-            <Input placeholder="María López" {...register("name")} />
+            <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
+            <Input placeholder={lang === "es" ? "María López" : "Jane Doe"} {...register("name")} />
             {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -74,12 +76,12 @@ export function CreateLeadDialog() {
               <Input type="email" placeholder="maria@email.com" {...register("email")} />
             </div>
             <div className="space-y-2">
-              <Label>Teléfono</Label>
+              <Label>{lang === "es" ? "Teléfono" : "Phone"}</Label>
               <Input placeholder="+52 55 1234 5678" {...register("phone")} />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Fuente</Label>
+            <Label>{lang === "es" ? "Fuente" : "Source"}</Label>
             <Select onValueChange={(v) => setValue("source", v)} defaultValue="manual">
               <SelectTrigger>
                 <SelectValue />
@@ -88,20 +90,20 @@ export function CreateLeadDialog() {
                 <SelectItem value="manual">Manual</SelectItem>
                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
                 <SelectItem value="web">Web</SelectItem>
-                <SelectItem value="referral">Referido</SelectItem>
-                <SelectItem value="other">Otro</SelectItem>
+                <SelectItem value="referral">{lang === "es" ? "Referido" : "Referral"}</SelectItem>
+                <SelectItem value="other">{lang === "es" ? "Otro" : "Other"}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Notas</Label>
-            <Textarea placeholder="Información adicional..." rows={3} {...register("notes")} />
+            <Label>{lang === "es" ? "Notas" : "Notes"}</Label>
+            <Textarea placeholder={lang === "es" ? "Información adicional..." : "Additional information..."} rows={3} {...register("notes")} />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Crear lead
+              {lang === "es" ? "Crear lead" : "Create lead"}
             </Button>
           </DialogFooter>
         </form>

@@ -3,13 +3,21 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { updateRequestStatus } from "@/actions/requests";
+import { usePreferences } from "@/context/preferences";
 import type { RequestStatus } from "@prisma/client";
 
-const OPTIONS: { value: RequestStatus; label: string }[] = [
+const OPTIONS_ES: { value: RequestStatus; label: string }[] = [
   { value: "OPEN", label: "Abierta" },
   { value: "IN_PROGRESS", label: "En progreso" },
   { value: "RESOLVED", label: "Resuelta" },
   { value: "CLOSED", label: "Cerrada" },
+];
+
+const OPTIONS_EN: { value: RequestStatus; label: string }[] = [
+  { value: "OPEN", label: "Open" },
+  { value: "IN_PROGRESS", label: "In progress" },
+  { value: "RESOLVED", label: "Resolved" },
+  { value: "CLOSED", label: "Closed" },
 ];
 
 export function UpdateRequestStatusSelect({
@@ -19,6 +27,8 @@ export function UpdateRequestStatusSelect({
   requestId: string;
   currentStatus: RequestStatus;
 }) {
+  const { lang } = usePreferences();
+  const OPTIONS = lang === "es" ? OPTIONS_ES : OPTIONS_EN;
   const [status, setStatus] = useState<RequestStatus>(currentStatus);
   const [loading, setLoading] = useState(false);
 
@@ -28,7 +38,7 @@ export function UpdateRequestStatusSelect({
     try {
       await updateRequestStatus(requestId, newStatus);
       setStatus(newStatus);
-      toast.success("Estado actualizado");
+      toast.success(lang === "es" ? "Estado actualizado" : "Status updated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error");
     } finally {

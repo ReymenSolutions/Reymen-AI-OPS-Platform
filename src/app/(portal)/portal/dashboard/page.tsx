@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Users, Zap, MessageSquare, FileText, AlertTriangle, CheckCircle2, Rocket, ArrowRight } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
 import { getOnboardingStatus } from "@/lib/onboarding";
 import { getEnabledModules } from "@/lib/modules";
@@ -58,8 +58,9 @@ export default async function PortalDashboardPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
 
-  const [t, metrics, onboarding, enabledModules] = await Promise.all([
+  const [t, lang, metrics, onboarding, enabledModules] = await Promise.all([
     getServerT(),
+    getServerLang(),
     getPortalMetrics(session.user.organizationId),
     getOnboardingStatus(session.user.organizationId),
     getEnabledModules(session.user.organizationId),
@@ -97,9 +98,15 @@ export default async function PortalDashboardPage() {
             <Rocket className="info-box-icon h-5 w-5 text-brand-600 flex-shrink-0" />
             <div>
               <p className="info-box-title text-sm font-medium text-brand-900">
-                Termina de configurar tu cuenta — {onboarding.completedCount} de {onboarding.totalCount} pasos completados
+                {lang === "es"
+                  ? `Termina de configurar tu cuenta — ${onboarding.completedCount} de ${onboarding.totalCount} pasos completados`
+                  : `Finish setting up your account — ${onboarding.completedCount} of ${onboarding.totalCount} steps completed`}
               </p>
-              <p className="info-box-text text-xs text-brand-700 mt-0.5">Completa la configuración inicial para aprovechar todo Reymen AI Ops.</p>
+              <p className="info-box-text text-xs text-brand-700 mt-0.5">
+                {lang === "es"
+                  ? "Completa la configuración inicial para aprovechar todo Reymen AI Ops."
+                  : "Complete the initial setup to get the most out of Reymen AI Ops."}
+              </p>
             </div>
           </div>
           <ArrowRight className="info-box-icon h-4 w-4 text-brand-600 flex-shrink-0" />

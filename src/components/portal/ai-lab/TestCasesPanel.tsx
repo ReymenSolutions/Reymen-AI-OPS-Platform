@@ -18,10 +18,11 @@ import { createTestCase, deleteTestCase, runTestCase, gradeTestCaseResult } from
 import type { PromptTestCase, PromptTestCaseResult, PromptType } from "@prisma/client";
 import type { PromptWithVersions } from "./AiLabWorkspace";
 import { versionOptionsForType } from "./version-options";
+import { usePreferences } from "@/context/preferences";
 
 type TestCaseWithResults = PromptTestCase & { results: PromptTestCaseResult[] };
 
-const PROMPT_TYPE_LABELS: Record<PromptType, string> = {
+const PROMPT_TYPE_LABELS_ES: Record<PromptType, string> = {
   SYSTEM: "Sistema",
   GREETING: "Saludo",
   LEAD_QUALIFICATION: "Calificación de leads",
@@ -30,12 +31,23 @@ const PROMPT_TYPE_LABELS: Record<PromptType, string> = {
   ESCALATION: "Escalación",
 };
 
+const PROMPT_TYPE_LABELS_EN: Record<PromptType, string> = {
+  SYSTEM: "System",
+  GREETING: "Greeting",
+  LEAD_QUALIFICATION: "Lead qualification",
+  APPOINTMENT_BOOKING: "Appointment booking",
+  FAQ: "FAQ",
+  ESCALATION: "Escalation",
+};
+
 interface TestCasesPanelProps {
   prompts: PromptWithVersions[];
   initialTestCases: TestCaseWithResults[];
 }
 
 export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProps) {
+  const { lang } = usePreferences();
+  const PROMPT_TYPE_LABELS = lang === "es" ? PROMPT_TYPE_LABELS_ES : PROMPT_TYPE_LABELS_EN;
   const [testCases, setTestCases] = useState(initialTestCases);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, startCreating] = useTransition();
@@ -54,9 +66,9 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
         ]);
         setCreateOpen(false);
         setForm({ promptType: "SYSTEM", name: "", userMessage: "", expectedNotes: "" });
-        toast.success("Caso de prueba creado");
+        toast.success(lang === "es" ? "Caso de prueba creado" : "Test case created");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Error al crear el caso de prueba");
+        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear el caso de prueba" : "Error creating the test case"));
       }
     });
   }
@@ -66,13 +78,13 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
       await deleteTestCase(id);
       setTestCases((prev) => prev.filter((t) => t.id !== id));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al eliminar");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al eliminar" : "Error deleting"));
     }
   }
 
   async function handleRun(testCase: TestCaseWithResults) {
     const versionId = runVersion[testCase.id];
-    if (!versionId) { toast.error("Elige qué versión probar"); return; }
+    if (!versionId) { toast.error(lang === "es" ? "Elige qué versión probar" : "Choose which version to test"); return; }
     setRunningId(testCase.id);
     try {
       const outcome = await runTestCase(testCase.id, versionId);
@@ -84,7 +96,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
         prev.map((t) => (t.id === testCase.id ? { ...t, results: [outcome.result, ...t.results].slice(0, 5) } : t))
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al ejecutar el caso de prueba");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al ejecutar el caso de prueba" : "Error running the test case"));
     } finally {
       setRunningId(null);
     }
@@ -101,7 +113,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
         )
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al calificar");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al calificar" : "Error grading"));
     }
   }
 
@@ -110,13 +122,13 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
       <div className="mb-3 flex justify-end">
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" variant="outline"><Plus className="h-4 w-4" />Nuevo caso de prueba</Button>
+            <Button size="sm" variant="outline"><Plus className="h-4 w-4" />{lang === "es" ? "Nuevo caso de prueba" : "New test case"}</Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Nuevo caso de prueba</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{lang === "es" ? "Nuevo caso de prueba" : "New test case"}</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label>Tipo de prompt</Label>
+                <Label>{lang === "es" ? "Tipo de prompt" : "Prompt type"}</Label>
                 <Select value={form.promptType} onValueChange={(v) => setForm((f) => ({ ...f, promptType: v as PromptType }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -127,23 +139,23 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Nombre</Label>
-                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Pregunta por horario de laboratorio" />
+                <Label>{lang === "es" ? "Nombre" : "Name"}</Label>
+                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={lang === "es" ? "Pregunta por horario de laboratorio" : "Asks about lab hours"} />
               </div>
               <div className="space-y-1.5">
-                <Label>Mensaje del usuario</Label>
+                <Label>{lang === "es" ? "Mensaje del usuario" : "User message"}</Label>
                 <Textarea rows={3} value={form.userMessage} onChange={(e) => setForm((f) => ({ ...f, userMessage: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
-                <Label>Qué debería responder (criterio de calificación, opcional)</Label>
+                <Label>{lang === "es" ? "Qué debería responder (criterio de calificación, opcional)" : "What it should reply (grading criteria, optional)"}</Label>
                 <Textarea rows={2} value={form.expectedNotes} onChange={(e) => setForm((f) => ({ ...f, expectedNotes: e.target.value }))} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
               <Button onClick={handleCreate} disabled={creating}>
                 {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-                Crear
+                {lang === "es" ? "Crear" : "Create"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -152,7 +164,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
 
       {testCases.length === 0 ? (
         <Card><CardContent className="py-0">
-          <EmptyState icon={Play} title="Sin casos de prueba" description="Guarda un mensaje de prueba para volver a correrlo contra cada nueva versión de un prompt." />
+          <EmptyState icon={Play} title={lang === "es" ? "Sin casos de prueba" : "No test cases"} description={lang === "es" ? "Guarda un mensaje de prueba para volver a correrlo contra cada nueva versión de un prompt." : "Save a test message to re-run it against each new version of a prompt."} />
         </CardContent></Card>
       ) : (
         <div className="space-y-3">
@@ -168,21 +180,21 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
                         <Badge variant="secondary" className="text-[10px]">{PROMPT_TYPE_LABELS[tc.promptType]}</Badge>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">&ldquo;{tc.userMessage}&rdquo;</p>
-                      {tc.expectedNotes && <p className="mt-1 text-xs text-slate-400">Esperado: {tc.expectedNotes}</p>}
+                      {tc.expectedNotes && <p className="mt-1 text-xs text-slate-400">{lang === "es" ? "Esperado" : "Expected"}: {tc.expectedNotes}</p>}
                     </div>
                     <Trash2 className="h-4 w-4 flex-shrink-0 text-slate-300 hover:text-red-500 cursor-pointer" onClick={() => handleDelete(tc.id)} />
                   </div>
 
                   <div className="mt-3 flex items-center gap-2">
                     <Select value={runVersion[tc.id]} onValueChange={(v) => setRunVersion((prev) => ({ ...prev, [tc.id]: v }))}>
-                      <SelectTrigger className="h-8 w-64"><SelectValue placeholder="Elegir versión a probar" /></SelectTrigger>
+                      <SelectTrigger className="h-8 w-64"><SelectValue placeholder={lang === "es" ? "Elegir versión a probar" : "Choose version to test"} /></SelectTrigger>
                       <SelectContent>
                         {options.map((o) => <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <Button size="sm" variant="outline" onClick={() => handleRun(tc)} disabled={runningId === tc.id}>
                       {runningId === tc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                      Ejecutar
+                      {lang === "es" ? "Ejecutar" : "Run"}
                     </Button>
                   </div>
 
@@ -194,7 +206,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
                           <div className="mt-1.5 flex items-center gap-2">
                             {r.latencyMs != null && <Badge variant="secondary" className="text-[10px]">{r.latencyMs} ms</Badge>}
                             {r.knowledgeBaseContext.length > 0 && (
-                              <Badge variant="info" className="text-[10px]"><BookOpen className="mr-1 h-3 w-3" />{r.knowledgeBaseContext.length} fuente(s)</Badge>
+                              <Badge variant="info" className="text-[10px]"><BookOpen className="mr-1 h-3 w-3" />{r.knowledgeBaseContext.length} {lang === "es" ? "fuente(s)" : "source(s)"}</Badge>
                             )}
                             <div className="ml-auto flex items-center gap-1">
                               <button

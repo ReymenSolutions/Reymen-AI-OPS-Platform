@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { installTemplateForClient } from "@/actions/admin/templates";
+import { usePreferences } from "@/context/preferences";
 
 interface Client {
   id: string;
@@ -35,6 +36,7 @@ export function InstallForClientDialog({
   clients,
   versions,
 }: InstallForClientDialogProps) {
+  const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState("");
@@ -44,16 +46,16 @@ export function InstallForClientDialog({
 
   async function handleInstall() {
     if (!selectedOrg || !selectedVersion) {
-      toast.error("Selecciona un cliente y una versión");
+      toast.error(lang === "es" ? "Selecciona un cliente y una versión" : "Select a client and a version");
       return;
     }
     setLoading(true);
     try {
       await installTemplateForClient(selectedOrg, templateId, selectedVersion);
-      toast.success(`Template instalado para el cliente`);
+      toast.success(lang === "es" ? "Template instalado para el cliente" : "Template installed for the client");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al instalar");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al instalar" : "Error installing"));
     } finally {
       setLoading(false);
     }
@@ -64,20 +66,20 @@ export function InstallForClientDialog({
       <DialogTrigger asChild>
         <Button size="sm">
           <Download className="h-4 w-4" />
-          Instalar para cliente
+          {lang === "es" ? "Instalar para cliente" : "Install for client"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Instalar: {templateName}</DialogTitle>
+          <DialogTitle>{lang === "es" ? "Instalar" : "Install"}: {templateName}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label>Cliente</Label>
+            <Label>{lang === "es" ? "Cliente" : "Client"}</Label>
             <Select onValueChange={setSelectedOrg}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar cliente" />
+                <SelectValue placeholder={lang === "es" ? "Seleccionar cliente" : "Select client"} />
               </SelectTrigger>
               <SelectContent>
                 {clients.map((c) => (
@@ -88,7 +90,7 @@ export function InstallForClientDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Versión</Label>
+            <Label>{lang === "es" ? "Versión" : "Version"}</Label>
             <Select value={selectedVersion} onValueChange={setSelectedVersion}>
               <SelectTrigger>
                 <SelectValue />
@@ -96,7 +98,7 @@ export function InstallForClientDialog({
               <SelectContent>
                 {versions.map((v) => (
                   <SelectItem key={v.id} value={v.id}>
-                    v{v.version} {v.isLatest ? "— última" : ""}
+                    v{v.version} {v.isLatest ? (lang === "es" ? "— última" : "— latest") : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -105,10 +107,10 @@ export function InstallForClientDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
           <Button onClick={handleInstall} disabled={loading || !selectedOrg}>
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Instalar
+            {lang === "es" ? "Instalar" : "Install"}
           </Button>
         </DialogFooter>
       </DialogContent>

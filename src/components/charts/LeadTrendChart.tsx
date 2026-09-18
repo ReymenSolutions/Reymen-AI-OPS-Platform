@@ -3,6 +3,7 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { usePreferences } from "@/context/preferences";
 
 interface DataPoint {
   date: string;
@@ -14,10 +15,11 @@ interface LeadTrendChartProps {
 }
 
 export function LeadTrendChart({ data }: LeadTrendChartProps) {
+  const { lang } = usePreferences();
   if (data.length === 0) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <p className="text-sm text-slate-400">Sin datos de leads en los últimos 30 días</p>
+        <p className="text-sm text-slate-400">{lang === "es" ? "Sin datos de leads en los últimos 30 días" : "No lead data in the last 30 days"}</p>
       </div>
     );
   }

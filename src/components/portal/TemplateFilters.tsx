@@ -5,6 +5,7 @@ import { Search, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { InstallTemplateButton } from "@/components/portal/InstallTemplateButton";
+import { usePreferences } from "@/context/preferences";
 
 interface Template {
   id: string;
@@ -24,7 +25,7 @@ interface TemplateFiltersProps {
   categoryLabels: Record<string, string>;
 }
 
-const CATEGORY_OPTIONS = [
+const CATEGORY_OPTIONS_ES = [
   { value: "lead_capture",  label: "Captura de leads" },
   { value: "appointments",  label: "Agendamiento" },
   { value: "follow_up",     label: "Seguimiento" },
@@ -34,7 +35,19 @@ const CATEGORY_OPTIONS = [
   { value: "onboarding",    label: "Onboarding" },
 ];
 
+const CATEGORY_OPTIONS_EN = [
+  { value: "lead_capture",  label: "Lead capture" },
+  { value: "appointments",  label: "Appointments" },
+  { value: "follow_up",     label: "Follow-up" },
+  { value: "retention",     label: "Retention" },
+  { value: "crm",           label: "CRM" },
+  { value: "notifications", label: "Notifications" },
+  { value: "onboarding",    label: "Onboarding" },
+];
+
 export function TemplateFilters({ templates, installedIds, industryLabels, categoryLabels }: TemplateFiltersProps) {
+  const { lang } = usePreferences();
+  const categoryOptions = lang === "es" ? CATEGORY_OPTIONS_ES : CATEGORY_OPTIONS_EN;
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const installedSet = useMemo(() => new Set(installedIds), [installedIds]);
@@ -73,7 +86,7 @@ export function TemplateFilters({ templates, installedIds, industryLabels, categ
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar templates..."
+            placeholder={lang === "es" ? "Buscar templates..." : "Search templates..."}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm focus:border-brand-500 focus:outline-none"
@@ -95,9 +108,9 @@ export function TemplateFilters({ templates, installedIds, industryLabels, categ
               !selectedCategory ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}
           >
-            Todos
+            {lang === "es" ? "Todos" : "All"}
           </button>
-          {CATEGORY_OPTIONS.map((opt) => (
+          {categoryOptions.map((opt) => (
             <button
               key={opt.value}
               onClick={() => setSelectedCategory(selectedCategory === opt.value ? null : opt.value)}
@@ -115,12 +128,12 @@ export function TemplateFilters({ templates, installedIds, industryLabels, categ
 
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-200 py-12 text-center">
-          <p className="text-sm text-slate-400">No se encontraron templates con esos filtros</p>
+          <p className="text-sm text-slate-400">{lang === "es" ? "No se encontraron templates con esos filtros" : "No templates found with those filters"}</p>
           <button
             onClick={() => { setQuery(""); setSelectedCategory(null); }}
             className="mt-2 text-xs text-brand-600 hover:underline"
           >
-            Limpiar filtros
+            {lang === "es" ? "Limpiar filtros" : "Clear filters"}
           </button>
         </div>
       ) : (
@@ -152,7 +165,7 @@ export function TemplateFilters({ templates, installedIds, industryLabels, categ
                           <div className="flex items-start justify-between mb-3">
                             <span className="text-2xl leading-none">{t.iconEmoji}</span>
                             {isInstalled && (
-                              <Badge variant="success" className="text-xs">Instalado</Badge>
+                              <Badge variant="success" className="text-xs">{lang === "es" ? "Instalado" : "Installed"}</Badge>
                             )}
                           </div>
                           <h3 className="font-semibold text-slate-900 mb-1 leading-tight text-sm">{t.name}</h3>
@@ -165,7 +178,7 @@ export function TemplateFilters({ templates, installedIds, industryLabels, categ
                               <Badge variant="outline" className="text-xs">v{latestVersion}</Badge>
                             )}
                             {t._count.installations > 0 && (
-                              <span className="text-xs text-slate-400">{t._count.installations} instalaciones</span>
+                              <span className="text-xs text-slate-400">{t._count.installations} {lang === "es" ? "instalaciones" : "installs"}</span>
                             )}
                           </div>
                           <InstallTemplateButton templateId={t.id} isInstalled={isInstalled} />

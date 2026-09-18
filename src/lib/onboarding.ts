@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { getEnabledModules } from "./modules";
+import { getServerLang } from "./i18n-server";
 import type { PlatformModule } from "@prisma/client";
 
 export interface OnboardingStep {
@@ -29,7 +30,7 @@ export interface OnboardingStatus {
  * everything before ever opening this page doesn't keep seeing the nudge.
  */
 export async function getOnboardingStatus(organizationId: string): Promise<OnboardingStatus> {
-  const [org, enabledModules, userCount, leadCount, automationCount, whatsappAssistant] = await Promise.all([
+  const [org, enabledModules, userCount, leadCount, automationCount, whatsappAssistant, lang] = await Promise.all([
     prisma.organization.findUniqueOrThrow({
       where: { id: organizationId },
       select: { onboardingCompletedAt: true },
@@ -39,18 +40,22 @@ export async function getOnboardingStatus(organizationId: string): Promise<Onboa
     prisma.lead.count({ where: { organizationId, deletedAt: null } }),
     prisma.automation.count({ where: { organizationId, status: { not: "ARCHIVED" } } }),
     prisma.whatsAppAssistant.findUnique({ where: { organizationId }, select: { isActive: true } }),
+    getServerLang(),
   ]);
 
   const hasModule = (m: PlatformModule) => enabledModules.includes(m);
   const steps: OnboardingStep[] = [];
+  const isEs = lang === "es";
 
   if (hasModule("AI_WHATSAPP")) {
     steps.push({
       id: "whatsapp_assistant",
-      title: "Configura tu Asistente de WhatsApp",
-      description: "Define el saludo y la personalidad del asistente que atenderá a tus clientes por WhatsApp.",
+      title: isEs ? "Configura tu Asistente de WhatsApp" : "Set up your WhatsApp Assistant",
+      description: isEs
+        ? "Define el saludo y la personalidad del asistente que atenderá a tus clientes por WhatsApp."
+        : "Define the greeting and personality of the assistant that will handle your customers on WhatsApp.",
       href: "/portal/whatsapp",
-      ctaLabel: "Configurar asistente",
+      ctaLabel: isEs ? "Configurar asistente" : "Set up assistant",
       completed: whatsappAssistant?.isActive === true,
     });
   }
@@ -58,10 +63,12 @@ export async function getOnboardingStatus(organizationId: string): Promise<Onboa
   if (hasModule("CRM")) {
     steps.push({
       id: "first_lead",
-      title: "Agrega tu primer lead",
-      description: "Registra manualmente un prospecto, o deja que tus automatizaciones los capturen por ti.",
+      title: isEs ? "Agrega tu primer lead" : "Add your first lead",
+      description: isEs
+        ? "Registra manualmente un prospecto, o deja que tus automatizaciones los capturen por ti."
+        : "Manually register a prospect, or let your automations capture them for you.",
       href: "/portal/leads",
-      ctaLabel: "Ir a Leads",
+      ctaLabel: isEs ? "Ir a Leads" : "Go to Leads",
       completed: leadCount > 0,
     });
   }
@@ -69,10 +76,12 @@ export async function getOnboardingStatus(organizationId: string): Promise<Onboa
   if (hasModule("AUTOMATIONS")) {
     steps.push({
       id: "first_automation",
-      title: "Instala tu primera automatización",
-      description: "Elige un template del marketplace para activar tu primer flujo automatizado.",
+      title: isEs ? "Instala tu primera automatización" : "Install your first automation",
+      description: isEs
+        ? "Elige un template del marketplace para activar tu primer flujo automatizado."
+        : "Choose a template from the marketplace to activate your first automated flow.",
       href: "/portal/templates",
-      ctaLabel: "Ver templates",
+      ctaLabel: isEs ? "Ver templates" : "View templates",
       completed: automationCount > 0,
     });
   }
@@ -80,10 +89,12 @@ export async function getOnboardingStatus(organizationId: string): Promise<Onboa
   // Not gated by any module — every organization can invite teammates.
   steps.push({
     id: "invite_team",
-    title: "Invita a tu equipo",
-    description: "Agrega managers y agentes para que gestionen leads, conversaciones y citas contigo.",
+    title: isEs ? "Invita a tu equipo" : "Invite your team",
+    description: isEs
+      ? "Agrega managers y agentes para que gestionen leads, conversaciones y citas contigo."
+      : "Add managers and agents to help you manage leads, conversations and appointments.",
     href: "/portal/settings",
-    ctaLabel: "Gestionar equipo",
+    ctaLabel: isEs ? "Gestionar equipo" : "Manage team",
     completed: userCount > 1,
   });
 

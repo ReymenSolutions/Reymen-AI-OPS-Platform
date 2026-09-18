@@ -6,8 +6,9 @@ import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { TemplateFilters } from "@/components/portal/TemplateFilters";
 import { TemplatePackages } from "@/components/portal/TemplatePackages";
+import { getServerLang } from "@/lib/i18n-server";
 
-const INDUSTRY_LABELS: Record<string, string> = {
+const INDUSTRY_LABELS_ES: Record<string, string> = {
   clinic:      "Clínica / Salud",
   real_estate: "Inmobiliaria",
   gym:         "Gimnasio",
@@ -19,13 +20,35 @@ const INDUSTRY_LABELS: Record<string, string> = {
   general:     "General",
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
+const INDUSTRY_LABELS_EN: Record<string, string> = {
+  clinic:      "Clinic / Health",
+  real_estate: "Real Estate",
+  gym:         "Gym",
+  legal:       "Legal",
+  workshop:    "Workshop",
+  ecommerce:   "E-commerce",
+  restaurant:  "Restaurant",
+  education:   "Education",
+  general:     "General",
+};
+
+const CATEGORY_LABELS_ES: Record<string, string> = {
   lead_capture:  "Captura de leads",
   appointments:  "Agendamiento",
   follow_up:     "Seguimiento",
   crm:           "CRM",
   retention:     "Retención",
   notifications: "Notificaciones",
+  onboarding:    "Onboarding",
+};
+
+const CATEGORY_LABELS_EN: Record<string, string> = {
+  lead_capture:  "Lead capture",
+  appointments:  "Appointments",
+  follow_up:     "Follow-up",
+  crm:           "CRM",
+  retention:     "Retention",
+  notifications: "Notifications",
   onboarding:    "Onboarding",
 };
 
@@ -85,23 +108,29 @@ export default async function PortalTemplatesPage() {
   // same gate the install action itself already enforces server-side.
   await requireModule(orgId, "AUTOMATIONS");
 
-  const { templates, installedIds, packages, orgIndustry } = await getTemplateMarketplace(orgId);
+  const [{ templates, installedIds, packages, orgIndustry }, lang] = await Promise.all([
+    getTemplateMarketplace(orgId),
+    getServerLang(),
+  ]);
+  const INDUSTRY_LABELS = lang === "es" ? INDUSTRY_LABELS_ES : INDUSTRY_LABELS_EN;
+  const CATEGORY_LABELS = lang === "es" ? CATEGORY_LABELS_ES : CATEGORY_LABELS_EN;
 
   return (
     <div>
       <PageHeader
-        title="Templates de Automatización"
-        description={`${templates.length} templates disponibles · ${installedIds.length} instalados`}
+        title={lang === "es" ? "Templates de Automatización" : "Automation Templates"}
+        description={lang === "es" ? `${templates.length} templates disponibles · ${installedIds.length} instalados` : `${templates.length} templates available · ${installedIds.length} installed`}
       />
 
       <div className="info-box mb-5 rounded-lg border border-brand-100 bg-brand-50 p-4">
         <div className="flex items-start gap-3">
           <Zap className="info-box-icon h-5 w-5 text-brand-600 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="info-box-title text-sm font-medium text-brand-900">Templates pre-construidos por Reymen</p>
+            <p className="info-box-title text-sm font-medium text-brand-900">{lang === "es" ? "Templates pre-construidos por Reymen" : "Pre-built templates by Reymen"}</p>
             <p className="info-box-text text-sm text-brand-700 mt-0.5">
-              Instala un template en un clic y activa automatizaciones probadas para tu industria.
-              Usa el buscador o los filtros de categoría para encontrar el template adecuado.
+              {lang === "es"
+                ? "Instala un template en un clic y activa automatizaciones probadas para tu industria. Usa el buscador o los filtros de categoría para encontrar el template adecuado."
+                : "Install a template in one click and activate proven automations for your industry. Use the search or category filters to find the right template."}
             </p>
           </div>
         </div>
@@ -113,6 +142,7 @@ export default async function PortalTemplatesPage() {
           installedTemplateIds={installedIds}
           orgIndustry={orgIndustry}
           industryLabels={INDUSTRY_LABELS}
+          lang={lang}
         />
       )}
 

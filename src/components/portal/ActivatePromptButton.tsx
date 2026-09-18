@@ -5,6 +5,7 @@ import { Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { activatePrompt } from "@/actions/prompts";
+import { usePreferences } from "@/context/preferences";
 import type { PromptType } from "@prisma/client";
 
 interface ActivatePromptButtonProps {
@@ -14,6 +15,7 @@ interface ActivatePromptButtonProps {
 }
 
 export function ActivatePromptButton({ id, type, isActive }: ActivatePromptButtonProps) {
+  const { lang } = usePreferences();
   const [loading, setLoading] = useState(false);
 
   async function handleActivate() {
@@ -21,9 +23,9 @@ export function ActivatePromptButton({ id, type, isActive }: ActivatePromptButto
     setLoading(true);
     try {
       await activatePrompt(id, type);
-      toast.success("Prompt activado");
+      toast.success(lang === "es" ? "Prompt activado" : "Prompt activated");
     } catch {
-      toast.error("Error al activar prompt");
+      toast.error(lang === "es" ? "Error al activar prompt" : "Error activating prompt");
     } finally {
       setLoading(false);
     }
@@ -33,7 +35,7 @@ export function ActivatePromptButton({ id, type, isActive }: ActivatePromptButto
     return (
       <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
         <CheckCircle2 className="h-3.5 w-3.5" />
-        Activo
+        {lang === "es" ? "Activo" : "Active"}
       </span>
     );
   }
@@ -47,7 +49,7 @@ export function ActivatePromptButton({ id, type, isActive }: ActivatePromptButto
       className="text-xs h-7"
     >
       {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-      Activar
+      {lang === "es" ? "Activar" : "Activate"}
     </Button>
   );
 }

@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { createArticle, updateArticle } from "@/actions/knowledge-base";
+import { usePreferences } from "@/context/preferences";
 import type { KnowledgeBase } from "@prisma/client";
 
 const schema = z.object({
@@ -30,6 +31,7 @@ interface ArticleDialogProps {
 }
 
 export function ArticleDialog({ article, mode = "create" }: ArticleDialogProps) {
+  const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -45,15 +47,15 @@ export function ArticleDialog({ article, mode = "create" }: ArticleDialogProps) 
     try {
       if (mode === "edit" && article) {
         await updateArticle(article.id, { ...data, category: data.category || undefined });
-        toast.success("Artículo actualizado");
+        toast.success(lang === "es" ? "Artículo actualizado" : "Article updated");
       } else {
         await createArticle({ ...data, category: data.category || undefined });
-        toast.success("Artículo creado");
+        toast.success(lang === "es" ? "Artículo creado" : "Article created");
         reset();
       }
       setOpen(false);
     } catch {
-      toast.error("Error al guardar artículo");
+      toast.error(lang === "es" ? "Error al guardar artículo" : "Error saving article");
     } finally {
       setLoading(false);
     }
@@ -65,7 +67,7 @@ export function ArticleDialog({ article, mode = "create" }: ArticleDialogProps) 
         {mode === "create" ? (
           <Button size="sm">
             <Plus className="h-4 w-4" />
-            Nuevo artículo
+            {lang === "es" ? "Nuevo artículo" : "New article"}
           </Button>
         ) : (
           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -76,38 +78,38 @@ export function ArticleDialog({ article, mode = "create" }: ArticleDialogProps) 
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {mode === "create" ? "Crear artículo" : "Editar artículo"}
+            {mode === "create" ? (lang === "es" ? "Crear artículo" : "Create article") : (lang === "es" ? "Editar artículo" : "Edit article")}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2 space-y-2">
-              <Label>Título *</Label>
-              <Input placeholder="¿Cuáles son los horarios de atención?" {...register("title")} />
+              <Label>{lang === "es" ? "Título *" : "Title *"}</Label>
+              <Input placeholder={lang === "es" ? "¿Cuáles son los horarios de atención?" : "What are your business hours?"} {...register("title")} />
               {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Categoría</Label>
-              <Input placeholder="faq, precios, servicios..." {...register("category")} />
+              <Label>{lang === "es" ? "Categoría" : "Category"}</Label>
+              <Input placeholder={lang === "es" ? "faq, precios, servicios..." : "faq, pricing, services..."} {...register("category")} />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Contenido *</Label>
+            <Label>{lang === "es" ? "Contenido *" : "Content *"}</Label>
             <Textarea
-              placeholder="Escribe el contenido que el asistente usará para responder..."
+              placeholder={lang === "es" ? "Escribe el contenido que el asistente usará para responder..." : "Write the content the assistant will use to reply..."}
               rows={8}
               {...register("content")}
             />
             {errors.content && <p className="text-xs text-red-500">{errors.content.message}</p>}
             <p className="text-xs text-slate-400">
-              Este contenido es consultado por el asistente AI para responder preguntas de los clientes.
+              {lang === "es" ? "Este contenido es consultado por el asistente AI para responder preguntas de los clientes." : "This content is consulted by the AI assistant to answer customer questions."}
             </p>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === "create" ? "Crear artículo" : "Guardar cambios"}
+              {mode === "create" ? (lang === "es" ? "Crear artículo" : "Create article") : (lang === "es" ? "Guardar cambios" : "Save changes")}
             </Button>
           </DialogFooter>
         </form>

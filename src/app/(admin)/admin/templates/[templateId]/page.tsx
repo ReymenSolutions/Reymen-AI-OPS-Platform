@@ -10,19 +10,34 @@ import { AddVersionDialog } from "@/components/admin/AddVersionDialog";
 import { PublishTemplateButton } from "@/components/admin/PublishTemplateButton";
 import { InstallForClientDialog } from "@/components/admin/InstallForClientDialog";
 import { formatDate } from "@/lib/utils";
+import { getServerLang } from "@/lib/i18n-server";
 
-const INDUSTRY_LABELS: Record<string, string> = {
+const INDUSTRY_LABELS_ES: Record<string, string> = {
   clinic: "Clínica / Salud", real_estate: "Inmobiliaria", gym: "Gimnasio",
   legal: "Legal", workshop: "Taller", ecommerce: "E-commerce",
   restaurant: "Restaurante", education: "Educación", general: "General",
 };
 
-const INSTALL_STATUS_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2 }> = {
+const INDUSTRY_LABELS_EN: Record<string, string> = {
+  clinic: "Clinic / Health", real_estate: "Real Estate", gym: "Gym",
+  legal: "Legal", workshop: "Workshop", ecommerce: "E-commerce",
+  restaurant: "Restaurant", education: "Education", general: "General",
+};
+
+const INSTALL_STATUS_CONFIG_ES: Record<string, { label: string; icon: typeof CheckCircle2 }> = {
   ACTIVE: { label: "Activo", icon: CheckCircle2 },
   PENDING: { label: "Pendiente", icon: AlertCircle },
   FAILED: { label: "Fallido", icon: AlertCircle },
   UNINSTALLED: { label: "Desinstalado", icon: AlertCircle },
   INSTALLING: { label: "Instalando", icon: AlertCircle },
+};
+
+const INSTALL_STATUS_CONFIG_EN: Record<string, { label: string; icon: typeof CheckCircle2 }> = {
+  ACTIVE: { label: "Active", icon: CheckCircle2 },
+  PENDING: { label: "Pending", icon: AlertCircle },
+  FAILED: { label: "Failed", icon: AlertCircle },
+  UNINSTALLED: { label: "Uninstalled", icon: AlertCircle },
+  INSTALLING: { label: "Installing", icon: AlertCircle },
 };
 
 async function getTemplate(templateId: string) {
@@ -55,16 +70,18 @@ export default async function TemplateDetailPage({
   params: Promise<{ templateId: string }>;
 }) {
   const { templateId } = await params;
-  const [template, clients] = await Promise.all([getTemplate(templateId), getClients()]);
+  const [template, clients, lang] = await Promise.all([getTemplate(templateId), getClients(), getServerLang()]);
   if (!template) notFound();
 
+  const INDUSTRY_LABELS = lang === "es" ? INDUSTRY_LABELS_ES : INDUSTRY_LABELS_EN;
+  const INSTALL_STATUS_CONFIG = lang === "es" ? INSTALL_STATUS_CONFIG_ES : INSTALL_STATUS_CONFIG_EN;
   const activeInstalls = template.installations.filter((i) => i.status === "ACTIVE").length;
 
   return (
     <div>
       <div className="mb-4">
         <Link href="/admin/templates" className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
-          <ArrowLeft className="h-4 w-4" /> Volver a templates
+          <ArrowLeft className="h-4 w-4" /> {lang === "es" ? "Volver a templates" : "Back to templates"}
         </Link>
       </div>
 
@@ -89,10 +106,10 @@ export default async function TemplateDetailPage({
       {/* Info bar */}
       <div className="mb-6 grid grid-cols-4 gap-3">
         {[
-          { label: "Estado", value: template.isPublished ? "Publicado" : "Borrador" },
-          { label: "Versión actual", value: template.currentVersion ? `v${template.currentVersion}` : "Sin versiones" },
-          { label: "Versiones", value: template.versions.length },
-          { label: "Instalaciones activas", value: activeInstalls },
+          { label: lang === "es" ? "Estado" : "Status", value: template.isPublished ? (lang === "es" ? "Publicado" : "Published") : (lang === "es" ? "Borrador" : "Draft") },
+          { label: lang === "es" ? "Versión actual" : "Current version", value: template.currentVersion ? `v${template.currentVersion}` : (lang === "es" ? "Sin versiones" : "No versions") },
+          { label: lang === "es" ? "Versiones" : "Versions", value: template.versions.length },
+          { label: lang === "es" ? "Instalaciones activas" : "Active installs", value: activeInstalls },
         ].map(({ label, value }) => (
           <Card key={label}>
             <CardContent className="p-4 text-center">
@@ -109,7 +126,7 @@ export default async function TemplateDetailPage({
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <GitBranch className="h-4 w-4" />
-              Versiones
+              {lang === "es" ? "Versiones" : "Versions"}
             </CardTitle>
             <AddVersionDialog
               templateId={template.id}
@@ -122,7 +139,7 @@ export default async function TemplateDetailPage({
               <div className="py-8 text-center">
                 <GitBranch className="mx-auto h-8 w-8 text-slate-200 mb-2" />
                 <p className="text-sm text-slate-400">
-                  Sin versiones. Añade la primera para poder publicar y instalar.
+                  {lang === "es" ? "Sin versiones. Añade la primera para poder publicar y instalar." : "No versions yet. Add the first one to be able to publish and install."}
                 </p>
               </div>
             ) : (
@@ -138,7 +155,7 @@ export default async function TemplateDetailPage({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold text-slate-900">v{v.version}</span>
-                          {v.isLatest && <Badge variant="default">Última</Badge>}
+                          {v.isLatest && <Badge variant="default">{lang === "es" ? "Última" : "Latest"}</Badge>}
                         </div>
                         {v.changelog && (
                           <p className="mt-1 text-xs text-slate-500">{v.changelog}</p>
@@ -148,7 +165,7 @@ export default async function TemplateDetailPage({
                     </div>
                     {v.n8nWorkflowId && (
                       <p className="mt-1 text-xs text-emerald-600">
-                        ✓ Workflow n8n: {v.n8nWorkflowId}
+                        ✓ {lang === "es" ? "Workflow n8n" : "n8n workflow"}: {v.n8nWorkflowId}
                       </p>
                     )}
                   </div>
@@ -163,7 +180,7 @@ export default async function TemplateDetailPage({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              Instalaciones ({template.installations.length})
+              {lang === "es" ? "Instalaciones" : "Installations"} ({template.installations.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -171,7 +188,7 @@ export default async function TemplateDetailPage({
               <div className="py-8 text-center">
                 <Download className="mx-auto h-8 w-8 text-slate-200 mb-2" />
                 <p className="text-sm text-slate-400">
-                  Sin instalaciones aún. Instala este template para un cliente.
+                  {lang === "es" ? "Sin instalaciones aún. Instala este template para un cliente." : "No installs yet. Install this template for a client."}
                 </p>
               </div>
             ) : (
@@ -212,7 +229,7 @@ export default async function TemplateDetailPage({
         {/* Description */}
         {template.longDescription && (
           <Card className="lg:col-span-2">
-            <CardHeader><CardTitle>Descripción detallada</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{lang === "es" ? "Descripción detallada" : "Detailed description"}</CardTitle></CardHeader>
             <CardContent>
               <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
                 {template.longDescription}

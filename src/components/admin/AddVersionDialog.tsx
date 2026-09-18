@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { addTemplateVersion } from "@/actions/admin/templates";
+import { usePreferences } from "@/context/preferences";
 
 const schema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/, "Formato: 1.0.0"),
@@ -67,6 +68,7 @@ interface AddVersionDialogProps {
 }
 
 export function AddVersionDialog({ templateId, templateName, currentVersion }: AddVersionDialogProps) {
+  const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -84,7 +86,7 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
       try {
         n8nWorkflowJson = JSON.parse(data.n8nWorkflowJsonRaw);
       } catch {
-        toast.error("El JSON del workflow no es válido");
+        toast.error(lang === "es" ? "El JSON del workflow no es válido" : "The workflow JSON is not valid");
         return;
       }
 
@@ -92,7 +94,7 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
         try {
           defaultConfig = JSON.parse(data.defaultConfigRaw);
         } catch {
-          toast.error("El JSON de configuración no es válido");
+          toast.error(lang === "es" ? "El JSON de configuración no es válido" : "The config JSON is not valid");
           return;
         }
       }
@@ -104,11 +106,11 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
         defaultConfig,
       });
 
-      toast.success(`Versión ${data.version} añadida`);
+      toast.success(lang === "es" ? `Versión ${data.version} añadida` : `Version ${data.version} added`);
       reset();
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al añadir versión");
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al añadir versión" : "Error adding version"));
     } finally {
       setLoading(false);
     }
@@ -127,17 +129,17 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <GitBranch className="h-4 w-4" />
-          Nueva versión
+          {lang === "es" ? "Nueva versión" : "New version"}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Nueva versión — {templateName}</DialogTitle>
+          <DialogTitle>{lang === "es" ? "Nueva versión" : "New version"} — {templateName}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Número de versión *</Label>
+              <Label>{lang === "es" ? "Número de versión *" : "Version number *"}</Label>
               <Input
                 placeholder={suggestNext()}
                 defaultValue={suggestNext()}
@@ -145,17 +147,17 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
               />
               {errors.version && <p className="text-xs text-red-500">{errors.version.message}</p>}
               {currentVersion && (
-                <p className="text-xs text-slate-400">Versión actual: {currentVersion}</p>
+                <p className="text-xs text-slate-400">{lang === "es" ? "Versión actual" : "Current version"}: {currentVersion}</p>
               )}
             </div>
             <div className="space-y-2">
               <Label>Changelog</Label>
-              <Input placeholder="Mejoras en la calificación de leads" {...register("changelog")} />
+              <Input placeholder={lang === "es" ? "Mejoras en la calificación de leads" : "Improvements to lead qualification"} {...register("changelog")} />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>Workflow n8n (JSON) *</Label>
+            <Label>{lang === "es" ? "Workflow n8n (JSON) *" : "n8n workflow (JSON) *"}</Label>
             <Textarea
               rows={10}
               className="font-mono text-xs"
@@ -165,12 +167,12 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
               <p className="text-xs text-red-500">{errors.n8nWorkflowJsonRaw.message}</p>
             )}
             <p className="text-xs text-slate-400">
-              Exporta el workflow desde n8n (menú ··· → Exportar) y pega el JSON aquí.
+              {lang === "es" ? "Exporta el workflow desde n8n (menú ··· → Exportar) y pega el JSON aquí." : "Export the workflow from n8n (··· menu → Export) and paste the JSON here."}
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label>Config por defecto (JSON, opcional)</Label>
+            <Label>{lang === "es" ? "Config por defecto (JSON, opcional)" : "Default config (JSON, optional)"}</Label>
             <Textarea
               placeholder='{"company_name": "", "webhook_url": "", "follow_up_days": 3}'
               rows={3}
@@ -178,15 +180,15 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
               {...register("defaultConfigRaw")}
             />
             <p className="text-xs text-slate-400">
-              Variables que el cliente puede personalizar al instalar.
+              {lang === "es" ? "Variables que el cliente puede personalizar al instalar." : "Variables the client can customize when installing."}
             </p>
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Crear versión
+              {lang === "es" ? "Crear versión" : "Create version"}
             </Button>
           </DialogFooter>
         </form>

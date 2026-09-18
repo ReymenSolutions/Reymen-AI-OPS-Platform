@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { ArticleDialog } from "@/components/portal/ArticleDialog";
 import { DeleteArticleButton } from "@/components/portal/DeleteArticleButton";
 import { formatDate } from "@/lib/utils";
+import { getServerLang } from "@/lib/i18n-server";
 
 async function getArticles(orgId: string) {
   return prisma.knowledgeBase.findMany({
@@ -23,12 +24,12 @@ export default async function KnowledgeBasePage() {
   if (!session?.user.organizationId) return redirect("/login");
   await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
-  const articles = await getArticles(session.user.organizationId);
+  const [articles, lang] = await Promise.all([getArticles(session.user.organizationId), getServerLang()]);
   const activeCount = articles.filter((a) => a.isActive).length;
 
   // Group by category
   const grouped = articles.reduce<Record<string, typeof articles>>((acc, art) => {
-    const key = art.category ?? "Sin categoría";
+    const key = art.category ?? (lang === "es" ? "Sin categoría" : "No category");
     if (!acc[key]) acc[key] = [];
     acc[key].push(art);
     return acc;
@@ -37,14 +38,18 @@ export default async function KnowledgeBasePage() {
   return (
     <div>
       <PageHeader
-        title="Base de Conocimiento"
-        description={`${articles.length} artículos · ${activeCount} activos`}
+        title={lang === "es" ? "Base de Conocimiento" : "Knowledge Base"}
+        description={lang === "es" ? `${articles.length} artículos · ${activeCount} activos` : `${articles.length} articles · ${activeCount} active`}
         actions={<ArticleDialog mode="create" />}
       />
 
       <div className="mb-4 rounded-lg bg-blue-50 border border-blue-100 p-3">
         <p className="text-sm text-blue-700">
-          <strong>¿Cómo funciona?</strong> El asistente AI consulta estos artículos automáticamente para responder preguntas de tus clientes. Mantén el contenido actualizado y preciso.
+          {lang === "es" ? (
+            <><strong>¿Cómo funciona?</strong> El asistente AI consulta estos artículos automáticamente para responder preguntas de tus clientes. Mantén el contenido actualizado y preciso.</>
+          ) : (
+            <><strong>How does it work?</strong> The AI assistant automatically consults these articles to answer your customers&apos; questions. Keep the content up to date and accurate.</>
+          )}
         </p>
       </div>
 
@@ -53,8 +58,8 @@ export default async function KnowledgeBasePage() {
           <CardContent className="py-0">
             <EmptyState
               icon={BookOpen}
-              title="Base de conocimiento vacía"
-              description="Agrega artículos con información sobre tus servicios, precios, horarios y preguntas frecuentes."
+              title={lang === "es" ? "Base de conocimiento vacía" : "Empty knowledge base"}
+              description={lang === "es" ? "Agrega artículos con información sobre tus servicios, precios, horarios y preguntas frecuentes." : "Add articles with information about your services, pricing, hours and frequently asked questions."}
               action={<ArticleDialog mode="create" />}
             />
           </CardContent>
@@ -78,7 +83,7 @@ export default async function KnowledgeBasePage() {
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-medium text-slate-900">{article.title}</p>
                             {!article.isActive && (
-                              <Badge variant="secondary">Inactivo</Badge>
+                              <Badge variant="secondary">{lang === "es" ? "Inactivo" : "Inactive"}</Badge>
                             )}
                           </div>
                           <p className="text-sm text-slate-500 line-clamp-2">{article.content}</p>
@@ -87,7 +92,7 @@ export default async function KnowledgeBasePage() {
                               <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>
                             ))}
                             <span className="text-xs text-slate-400">
-                              Actualizado {formatDate(article.updatedAt)}
+                              {lang === "es" ? "Actualizado" : "Updated"} {formatDate(article.updatedAt)}
                             </span>
                           </div>
                         </div>

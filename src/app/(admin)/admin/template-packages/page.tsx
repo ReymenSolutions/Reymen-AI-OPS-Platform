@@ -4,10 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { CreateTemplatePackageDialog } from "@/components/admin/CreateTemplatePackageDialog";
+import { getServerLang } from "@/lib/i18n-server";
 import { Package } from "lucide-react";
 import Link from "next/link";
 
-const INDUSTRY_LABELS: Record<string, string> = {
+const INDUSTRY_LABELS_ES: Record<string, string> = {
   clinic:      "Clínica / Salud",
   real_estate: "Inmobiliaria",
   gym:         "Gimnasio",
@@ -16,6 +17,18 @@ const INDUSTRY_LABELS: Record<string, string> = {
   ecommerce:   "E-commerce",
   restaurant:  "Restaurante",
   education:   "Educación",
+  general:     "General",
+};
+
+const INDUSTRY_LABELS_EN: Record<string, string> = {
+  clinic:      "Clinic / Health",
+  real_estate: "Real Estate",
+  gym:         "Gym",
+  legal:       "Legal",
+  workshop:    "Workshop",
+  ecommerce:   "E-commerce",
+  restaurant:  "Restaurant",
+  education:   "Education",
   general:     "General",
 };
 
@@ -43,14 +56,15 @@ async function getPublishedTemplates() {
 }
 
 export default async function AdminTemplatePackagesPage() {
-  const [packages, templates] = await Promise.all([getPackages(), getPublishedTemplates()]);
+  const [packages, templates, lang] = await Promise.all([getPackages(), getPublishedTemplates(), getServerLang()]);
   const published = packages.filter((p) => p.isPublished).length;
+  const INDUSTRY_LABELS = lang === "es" ? INDUSTRY_LABELS_ES : INDUSTRY_LABELS_EN;
 
   return (
     <div>
       <PageHeader
-        title="Paquetes por industria"
-        description={`${packages.length} paquetes · ${published} publicados`}
+        title={lang === "es" ? "Paquetes por industria" : "Industry packages"}
+        description={lang === "es" ? `${packages.length} paquetes · ${published} publicados` : `${packages.length} packages · ${published} published`}
         actions={<CreateTemplatePackageDialog templates={templates} />}
       />
 
@@ -59,8 +73,8 @@ export default async function AdminTemplatePackagesPage() {
           <CardContent className="py-0">
             <EmptyState
               icon={Package}
-              title="Sin paquetes"
-              description="Agrupa templates publicados en un paquete que un cliente instale de un clic."
+              title={lang === "es" ? "Sin paquetes" : "No packages"}
+              description={lang === "es" ? "Agrupa templates publicados en un paquete que un cliente instale de un clic." : "Group published templates into a package a client installs in one click."}
               action={<CreateTemplatePackageDialog templates={templates} />}
             />
           </CardContent>
@@ -74,9 +88,9 @@ export default async function AdminTemplatePackagesPage() {
                   <div className="flex items-start justify-between mb-3">
                     <span className="text-3xl leading-none">{p.iconEmoji}</span>
                     {p.isPublished ? (
-                      <Badge variant="success">Publicado</Badge>
+                      <Badge variant="success">{lang === "es" ? "Publicado" : "Published"}</Badge>
                     ) : (
-                      <Badge variant="secondary">Borrador</Badge>
+                      <Badge variant="secondary">{lang === "es" ? "Borrador" : "Draft"}</Badge>
                     )}
                   </div>
 

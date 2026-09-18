@@ -15,15 +15,25 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createPrompt, updatePrompt } from "@/actions/prompts";
+import { usePreferences } from "@/context/preferences";
 import type { Prompt, PromptType } from "@prisma/client";
 
-const PROMPT_TYPE_LABELS: Record<PromptType, string> = {
+const PROMPT_TYPE_LABELS_ES: Record<PromptType, string> = {
   SYSTEM: "Sistema (principal)",
   GREETING: "Saludo inicial",
   LEAD_QUALIFICATION: "Calificación de leads",
   APPOINTMENT_BOOKING: "Agendamiento de citas",
   FAQ: "Preguntas frecuentes",
   ESCALATION: "Escalación",
+};
+
+const PROMPT_TYPE_LABELS_EN: Record<PromptType, string> = {
+  SYSTEM: "System (main)",
+  GREETING: "Initial greeting",
+  LEAD_QUALIFICATION: "Lead qualification",
+  APPOINTMENT_BOOKING: "Appointment booking",
+  FAQ: "FAQ",
+  ESCALATION: "Escalation",
 };
 
 const schema = z.object({
@@ -41,6 +51,8 @@ interface PromptDialogProps {
 }
 
 export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDialogProps) {
+  const { lang } = usePreferences();
+  const promptTypeLabels = lang === "es" ? PROMPT_TYPE_LABELS_ES : PROMPT_TYPE_LABELS_EN;
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -56,15 +68,15 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
     try {
       if (mode === "edit" && prompt) {
         await updatePrompt(prompt.id, data);
-        toast.success("Prompt actualizado");
+        toast.success(lang === "es" ? "Prompt actualizado" : "Prompt updated");
       } else {
         await createPrompt(data);
-        toast.success("Prompt creado");
+        toast.success(lang === "es" ? "Prompt creado" : "Prompt created");
         reset();
       }
       setOpen(false);
     } catch {
-      toast.error("Error al guardar prompt");
+      toast.error(lang === "es" ? "Error al guardar prompt" : "Error saving prompt");
     } finally {
       setLoading(false);
     }
@@ -76,7 +88,7 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
         {mode === "create" ? (
           <Button size="sm" variant="outline">
             <Plus className="h-4 w-4" />
-            Nuevo prompt
+            {lang === "es" ? "Nuevo prompt" : "New prompt"}
           </Button>
         ) : (
           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -86,25 +98,25 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{mode === "create" ? "Crear prompt" : "Editar prompt"}</DialogTitle>
+          <DialogTitle>{mode === "create" ? (lang === "es" ? "Crear prompt" : "Create prompt") : (lang === "es" ? "Editar prompt" : "Edit prompt")}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Nombre</Label>
-              <Input placeholder="Prompt sistema v2" {...register("name")} />
+              <Label>{lang === "es" ? "Nombre" : "Name"}</Label>
+              <Input placeholder={lang === "es" ? "Prompt sistema v2" : "System prompt v2"} {...register("name")} />
               {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
             </div>
             {mode === "create" && (
               <div className="space-y-2">
-                <Label>Tipo</Label>
+                <Label>{lang === "es" ? "Tipo" : "Type"}</Label>
                 <Select
                   defaultValue={defaultType}
                   onValueChange={(v) => setValue("type", v as PromptType)}
                 >
-                  <SelectTrigger><SelectValue placeholder="Seleccionar tipo" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={lang === "es" ? "Seleccionar tipo" : "Select type"} /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(PROMPT_TYPE_LABELS).map(([v, l]) => (
+                    {Object.entries(promptTypeLabels).map(([v, l]) => (
                       <SelectItem key={v} value={v}>{l}</SelectItem>
                     ))}
                   </SelectContent>
@@ -115,24 +127,24 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
           </div>
 
           <div className="space-y-2">
-            <Label>Contenido del prompt</Label>
+            <Label>{lang === "es" ? "Contenido del prompt" : "Prompt content"}</Label>
             <Textarea
-              placeholder="Eres un asistente virtual de [empresa]. Tu objetivo es..."
+              placeholder={lang === "es" ? "Eres un asistente virtual de [empresa]. Tu objetivo es..." : "You are a virtual assistant for [company]. Your goal is..."}
               rows={10}
               className="font-mono text-xs"
               {...register("content")}
             />
             {errors.content && <p className="text-xs text-red-500">{errors.content.message}</p>}
             <p className="text-xs text-slate-400">
-              Puedes usar variables como {`{{nombre_empresa}}`}, {`{{horario}}`}, {`{{servicios}}`}.
+              {lang === "es" ? "Puedes usar variables como" : "You can use variables like"} {`{{nombre_empresa}}`}, {`{{horario}}`}, {`{{servicios}}`}.
             </p>
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Guardar
+              {lang === "es" ? "Guardar" : "Save"}
             </Button>
           </DialogFooter>
         </form>

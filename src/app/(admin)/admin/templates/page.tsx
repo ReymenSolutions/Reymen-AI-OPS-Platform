@@ -4,10 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { CreateTemplateDialog } from "@/components/admin/CreateTemplateDialog";
+import { getServerLang } from "@/lib/i18n-server";
 import { Layers } from "lucide-react";
 import Link from "next/link";
 
-const INDUSTRY_LABELS: Record<string, string> = {
+const INDUSTRY_LABELS_ES: Record<string, string> = {
   clinic:      "Clínica / Salud",
   real_estate: "Inmobiliaria",
   gym:         "Gimnasio",
@@ -16,6 +17,18 @@ const INDUSTRY_LABELS: Record<string, string> = {
   ecommerce:   "E-commerce",
   restaurant:  "Restaurante",
   education:   "Educación",
+  general:     "General",
+};
+
+const INDUSTRY_LABELS_EN: Record<string, string> = {
+  clinic:      "Clinic / Health",
+  real_estate: "Real Estate",
+  gym:         "Gym",
+  legal:       "Legal",
+  workshop:    "Workshop",
+  ecommerce:   "E-commerce",
+  restaurant:  "Restaurant",
+  education:   "Education",
   general:     "General",
 };
 
@@ -39,14 +52,15 @@ async function getTemplates() {
 }
 
 export default async function AdminTemplatesPage() {
-  const templates = await getTemplates();
+  const [templates, lang] = await Promise.all([getTemplates(), getServerLang()]);
   const published = templates.filter((t) => t.isPublished).length;
+  const INDUSTRY_LABELS = lang === "es" ? INDUSTRY_LABELS_ES : INDUSTRY_LABELS_EN;
 
   return (
     <div>
       <PageHeader
         title="Templates"
-        description={`${templates.length} templates · ${published} publicados`}
+        description={lang === "es" ? `${templates.length} templates · ${published} publicados` : `${templates.length} templates · ${published} published`}
         actions={<CreateTemplateDialog />}
       />
 
@@ -55,8 +69,8 @@ export default async function AdminTemplatesPage() {
           <CardContent className="py-0">
             <EmptyState
               icon={Layers}
-              title="Sin templates"
-              description="Crea el primer template de automatización para tus clientes."
+              title={lang === "es" ? "Sin templates" : "No templates"}
+              description={lang === "es" ? "Crea el primer template de automatización para tus clientes." : "Create the first automation template for your clients."}
               action={<CreateTemplateDialog />}
             />
           </CardContent>
@@ -71,9 +85,9 @@ export default async function AdminTemplatesPage() {
                     <span className="text-3xl leading-none">{t.iconEmoji}</span>
                     <div className="flex items-center gap-1.5">
                       {t.isPublished ? (
-                        <Badge variant="success">Publicado</Badge>
+                        <Badge variant="success">{lang === "es" ? "Publicado" : "Published"}</Badge>
                       ) : (
-                        <Badge variant="secondary">Borrador</Badge>
+                        <Badge variant="secondary">{lang === "es" ? "Borrador" : "Draft"}</Badge>
                       )}
                     </div>
                   </div>
@@ -86,8 +100,8 @@ export default async function AdminTemplatesPage() {
                       <Badge variant="outline">{INDUSTRY_LABELS[t.industry] ?? t.industry}</Badge>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span>{t._count.versions} versiones</span>
-                      <span>{t._count.installations} instalaciones</span>
+                      <span>{t._count.versions} {lang === "es" ? "versiones" : "versions"}</span>
+                      <span>{t._count.installations} {lang === "es" ? "instalaciones" : "installs"}</span>
                     </div>
                   </div>
 
