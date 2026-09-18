@@ -22,6 +22,7 @@ export const strings = {
     settings: "Configuración",
     signOut: "Cerrar sesión",
     aiOps: "AI Ops",
+    smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notificaciones",
@@ -541,6 +542,7 @@ export const strings = {
     settings: "Settings",
     signOut: "Sign out",
     aiOps: "AI Ops",
+    smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notifications",

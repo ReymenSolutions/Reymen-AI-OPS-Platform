@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
   Calendar, FileText, LogOut, BookOpen, Bot, SlidersHorizontal,
-  Layers, Upload, Loader2, GitBranch, FlaskConical, Rocket,
+  Layers, Upload, Loader2, GitBranch, FlaskConical, Rocket, CreditCard,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -79,6 +79,7 @@ function useNavItems() {
     requests: t.requests,
     settings: t.settings,
     signOut: t.signOut,
+    smartcard: t.smartcard,
   };
 }
 
@@ -97,6 +98,7 @@ const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon
   { href: "/portal/ai-lab", key: "aiLab", icon: FlaskConical, module: "AI_WHATSAPP" },
   { href: "/portal/appointments", key: "appointments", icon: Calendar },
   { href: "/portal/reports", key: "reports", icon: BarChart3 },
+  { href: "/portal/smartcard", key: "smartcard", icon: CreditCard, module: "NFC_QR" },
   { href: "/portal/templates", key: "templates", icon: Layers, module: "AUTOMATIONS" },
   { href: "/portal/requests", key: "requests", icon: FileText },
   { href: "/portal/settings", key: "settings", icon: Settings },
