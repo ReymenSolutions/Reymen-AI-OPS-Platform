@@ -82,36 +82,60 @@ body {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
 }
 
-/* Admin sidebar — light theme uses the Reymen brand navy (AdminSidebar.tsx);
-   these restore its previous plain bg-white look, unchanged, under .dark. */
+/* Admin sidebar — light theme uses the Reymen brand navy (AdminSidebar.tsx,
+   unprefixed utility classes, not scoped here). Dark theme gets its own
+   deliberate palette instead of just matching the page's Card/header gray:
+   scoped custom properties (not part of the global .dark color-variable
+   remap above) so these tokens stay local to the sidebar and never leak
+   into other components. Structure/dimensions/spacing are untouched —
+   this file only ever sets color, background and outline. */
 .dark .admin-sidebar {
-  background-image: none;
-  background-color: var(--color-white);
-  border-color: var(--color-slate-200);
+  --sidebar-grad-from: #192461;
+  --sidebar-grad-to: #111735;
+  --sidebar-active-bg: #293d99;
+  --sidebar-active-indicator: #7c9cff;
+  --sidebar-hover-bg: #202c68;
+  --sidebar-text-muted: #cbd5e1;
+  --sidebar-divider: rgb(255 255 255 / 8%);
+
+  background-image: linear-gradient(to bottom, var(--sidebar-grad-from), var(--sidebar-grad-to));
+  background-color: transparent;
+  border-color: var(--sidebar-grad-to);
 }
 .dark .admin-sidebar-header {
-  border-color: var(--color-slate-200);
+  border-color: var(--sidebar-divider);
 }
 .dark .admin-sidebar-header:hover {
-  background-color: var(--color-slate-50);
+  background-color: var(--sidebar-hover-bg);
 }
 .dark .admin-sidebar-name {
-  color: var(--color-slate-900);
+  color: #ffffff;
 }
 .dark .admin-sidebar-subtitle {
-  color: var(--color-slate-500);
+  color: var(--sidebar-text-muted);
 }
 .dark .admin-sidebar-footer {
-  border-color: var(--color-slate-200);
+  border-color: var(--sidebar-divider);
 }
 .dark .admin-sidebar-nav-inactive {
-  color: var(--color-slate-600);
+  color: var(--sidebar-text-muted);
 }
 .dark .admin-sidebar-nav-inactive:hover {
-  background-color: var(--color-slate-50);
-  color: var(--color-slate-900);
+  background-color: var(--sidebar-hover-bg);
+  color: #ffffff;
 }
 .dark .admin-sidebar-nav-active {
-  background-color: var(--color-brand-50);
-  color: var(--color-brand-700);
+  background-color: var(--sidebar-active-bg);
+  color: #ffffff; /* lucide icons use stroke="currentColor", so this also covers the icon */
+  border-left: 3px solid var(--sidebar-active-indicator);
+  padding-left: calc(0.75rem - 3px); /* px-3 minus the indicator's own width, so text doesn't shift */
+}
+
+/* Keyboard focus — visible and on-palette (the same lilac used for the
+   active-item indicator), for every interactive element in the sidebar. */
+.dark .admin-sidebar-header:focus-visible,
+.dark .admin-sidebar-nav-active:focus-visible,
+.dark .admin-sidebar-nav-inactive:focus-visible {
+  outline: 2px solid var(--sidebar-active-indicator);
+  outline-offset: 2px;
 }
