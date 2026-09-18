@@ -22,6 +22,13 @@ export const strings = {
     settings: "Configuración",
     signOut: "Cerrar sesión",
     aiOps: "AI Ops",
+    food: "Food",
+    foodSales: "Ventas",
+    foodInventory: "Inventario",
+    foodRecipes: "Recetas",
+    foodSuppliers: "Proveedores",
+    foodOperations: "Operación",
+    foodAnalytics: "Analítica",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notificaciones",
@@ -541,6 +548,13 @@ export const strings = {
     settings: "Settings",
     signOut: "Sign out",
     aiOps: "AI Ops",
+    food: "Food",
+    foodSales: "Sales",
+    foodInventory: "Inventory",
+    foodRecipes: "Recipes",
+    foodSuppliers: "Suppliers",
+    foodOperations: "Operations",
+    foodAnalytics: "Analytics",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notifications",
