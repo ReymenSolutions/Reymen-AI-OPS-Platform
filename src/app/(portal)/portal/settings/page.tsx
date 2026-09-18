@@ -14,7 +14,8 @@ import { BillingActions } from "@/components/portal/BillingActions";
 import { PipelineStagesPanel } from "@/components/portal/PipelineStagesPanel";
 import { formatDate } from "@/lib/utils";
 import { can } from "@/lib/permissions";
-import { PLAN_LIMITS } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
+import { MODULE_LABEL } from "@/lib/modules";
 import { isStripeConfigured } from "@/lib/stripe";
 import type { UserRole } from "@prisma/client";
 
@@ -49,6 +50,7 @@ export default async function PortalSettingsPage() {
   const canManageBilling = can(session.user.role as UserRole, "settings:manage");
   const canManagePipeline = can(session.user.role as UserRole, "pipeline:manage");
   const plan = PLAN_LIMITS[org.plan] ?? PLAN_LIMITS.starter;
+  const planModules = PLAN_MODULES[org.plan] ?? PLAN_MODULES.starter;
   const stripeEnabled = isStripeConfigured();
   const hasActiveSubscription =
     org.stripeSubscriptionStatus === "active" || org.stripeSubscriptionStatus === "trialing";
@@ -96,6 +98,9 @@ export default async function PortalSettingsPage() {
                 </div>
               ))}
             </div>
+            <p className="text-xs text-slate-400">
+              {lang === "es" ? "Tu plan incluye" : "Your plan includes"}: {planModules.map((m) => MODULE_LABEL[m]).join(", ")}
+            </p>
             {stripeEnabled && canManageBilling ? (
               <BillingActions hasActiveSubscription={hasActiveSubscription} />
             ) : (

@@ -8,7 +8,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { changePlan } from "@/actions/admin/clients";
-import { PLAN_LIMITS } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
+import { MODULE_LABEL } from "@/lib/modules";
 
 interface ChangePlanDialogProps {
   orgId: string;
@@ -94,6 +95,9 @@ export function ChangePlanDialog({ orgId, currentPlan }: ChangePlanDialogProps) 
                   <span>{limits?.users === 99 ? "Ilimitado" : limits?.users} usuarios</span>
                   <span>{limits?.automations === 99 ? "Ilimitadas" : limits?.automations} automatizaciones</span>
                 </div>
+                <p className="mt-1.5 text-xs text-slate-400">
+                  Incluye: {(PLAN_MODULES[plan.key] ?? []).map((m) => MODULE_LABEL[m]).join(", ")}
+                </p>
               </button>
             );
           })}

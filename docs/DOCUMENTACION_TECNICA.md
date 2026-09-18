@@ -2885,6 +2885,51 @@ published) and as a client (`/portal/templates` showed the org's own-industry pa
 then reverted the installations and deleted the test package to restore both orgs to their seeded
 baseline.
 
+### 11. Plans Expressing Modules, Without Touching Billing (Fase 13)
+
+The `ModuleSource` enum (§4) has carried a `SUBSCRIBED` value since Fase 1 with the schema comment
+"tied to a paid plan (billing wiring not implemented yet)" — an admin could always *label* a module
+grant as `SUBSCRIBED` vs `ADMIN_GRANTED` in `OrganizationModulesPanel`, but nothing actually tied that
+label to what `Organization.plan` means. Fase 13 is that wiring — deliberately not the wiring you'd
+guess (auto-toggling modules from the Stripe webhook). Rule 4 (Módulo/Industria/Rol never mix
+automatically) and rule 8 (never auto-change entitlements) both rule that out, so this stays a
+catalog + an explicit admin action, and the Stripe checkout/webhook code (`src/actions/billing.ts`,
+`src/app/api/webhooks/stripe/route.ts`) is untouched — a plan change through Stripe still only ever
+updates `Organization.plan`, exactly as before.
+
+`PLAN_MODULES` (`src/lib/permissions.ts`, next to `PLAN_LIMITS`/`PLAN_PRICES`) is the catalog:
+
+```typescript
+export const PLAN_MODULES: Record<string, PlatformModule[]> = {
+  starter: ["CRM"],
+  professional: ["CRM", "AUTOMATIONS"],
+  enterprise: ["CRM", "AUTOMATIONS", "AI_WHATSAPP"],
+};
+```
+
+It's reference data, shown wherever a plan is discussed — the admin's `ChangePlanDialog` ("Incluye:
+CRM, Automatizaciones" per tier), the client's own `/portal/settings` plan card ("Tu plan incluye:
+..."), and `OrganizationModulesPanel`'s header plus a per-row "Incluido en el plan" badge — so an
+admin or client can always see what a plan is supposed to include without it silently reshaping what
+the org actually has.
+
+`syncModulesToPlan()` (`src/actions/admin/modules.ts`) is the one explicit, admin-triggered action
+that acts on the catalog — and it's additive only:
+
+```typescript
+const planModules = PLAN_MODULES[org.plan] ?? PLAN_MODULES.starter;
+const activeSet = new Set(existing.filter((m) => m.status === "ACTIVE").map((m) => m.module));
+const toActivate = planModules.filter((m) => !activeSet.has(m)); // never computes anything to suspend
+```
+
+It only ever activates a module the plan includes that isn't already `ACTIVE` (source set to
+`SUBSCRIBED`), and never suspends or cancels anything — a module an org has beyond its plan (an
+`ADMIN_GRANTED` courtesy grant, or one left over from a downgrade) is left exactly as it is. The
+"Sincronizar con plan" button in `OrganizationModulesPanel` only renders when there's actually
+something to activate. Verified live: suspended `CRM` for a real org on Starter, confirmed the button
+appeared and the reference copy/badges rendered correctly, clicked it, and confirmed `CRM` came back
+`ACTIVE`/`SUBSCRIBED` — i.e. exactly its pre-test state, so no cleanup was needed.
+
 ---
 
 ## 18. Extending the Platform

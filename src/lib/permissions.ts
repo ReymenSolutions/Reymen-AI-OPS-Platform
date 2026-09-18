@@ -1,4 +1,4 @@
-import type { UserRole } from "@prisma/client";
+import type { PlatformModule, UserRole } from "@prisma/client";
 
 type Action =
   | "leads:create"
@@ -94,4 +94,17 @@ export const PLAN_PRICES: Record<string, number> = {
   starter: 299,
   professional: 699,
   enterprise: 1499,
+};
+
+// Which PlatformModules each plan tier commercially includes — a catalog
+// reference only. It does NOT drive OrganizationModule automatically: the
+// module axis stays a separate, explicit entitlement (see modules.ts) that
+// an admin grants/suspends by hand, or aligns to this list on purpose via
+// syncModulesToPlan() (src/actions/admin/modules.ts). An org can carry
+// modules its plan doesn't list (e.g. AI_WHATSAPP granted as a courtesy on
+// Starter) — that's expected, not a mismatch to "fix".
+export const PLAN_MODULES: Record<string, PlatformModule[]> = {
+  starter: ["CRM"],
+  professional: ["CRM", "AUTOMATIONS"],
+  enterprise: ["CRM", "AUTOMATIONS", "AI_WHATSAPP"],
 };

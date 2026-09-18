@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerT } from "@/lib/i18n-server";
 import { getEnabledModules } from "@/lib/modules";
 import { METRIC_KEYS, monthPeriod } from "@/lib/metrics";
-import { PLAN_LIMITS } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -95,7 +95,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
   ]);
   if (!client) notFound();
 
-  const leadsLimit = (PLAN_LIMITS[client.plan] ?? PLAN_LIMITS.starter).leads;
+  const planInfo = PLAN_LIMITS[client.plan] ?? PLAN_LIMITS.starter;
+  const leadsLimit = planInfo.leads;
+  const planModules = PLAN_MODULES[client.plan] ?? PLAN_MODULES.starter;
 
   const hasModule = (m: PlatformModule) => enabledModules.includes(m);
   const automationErrors = client.automations.filter((a) => a.status === "ERROR").length;
@@ -331,7 +333,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
           </CardContent>
         </Card>
 
-        <OrganizationModulesPanel orgId={client.id} modules={moduleEntitlements} />
+        <OrganizationModulesPanel
+          orgId={client.id}
+          modules={moduleEntitlements}
+          planLabel={planInfo.label}
+          planModules={planModules}
+        />
 
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">

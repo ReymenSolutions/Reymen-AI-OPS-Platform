@@ -9,7 +9,7 @@ import type { PlatformModule } from "@prisma/client";
  * answers "does this organization's account have access to this line of
  * business at all."
  */
-const MODULE_LABEL: Record<PlatformModule, string> = {
+export const MODULE_LABEL: Record<PlatformModule, string> = {
   CRM: "CRM",
   AI_WHATSAPP: "Asistente IA / WhatsApp",
   AUTOMATIONS: "Automatizaciones",

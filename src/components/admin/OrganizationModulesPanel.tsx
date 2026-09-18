@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2, Layers, Check, Ban, Clock3 } from "lucide-react";
+import { Loader2, Layers, Check, Ban, Clock3, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { setOrganizationModule, type ModuleEntitlementView } from "@/actions/admin/modules";
+import { setOrganizationModule, syncModulesToPlan, type ModuleEntitlementView } from "@/actions/admin/modules";
 import type { ModuleSource, ModuleStatus, PlatformModule } from "@prisma/client";
 
 const MODULE_LABEL: Record<PlatformModule, string> = {
@@ -33,15 +33,42 @@ const STATUS_BADGE: Record<ModuleStatus, { variant: "success" | "secondary" | "d
 export function OrganizationModulesPanel({
   orgId,
   modules,
+  planLabel,
+  planModules,
 }: {
   orgId: string;
   modules: ModuleEntitlementView[];
+  planLabel: string;
+  planModules: PlatformModule[];
 }) {
   const [editing, setEditing] = useState<PlatformModule | null>(null);
   const [status, setStatus] = useState<ModuleStatus>("ACTIVE");
   const [source, setSource] = useState<ModuleSource>("SUBSCRIBED");
   const [notes, setNotes] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [syncing, setSyncing] = useState(false);
+
+  const missingFromPlan = planModules.filter(
+    (m) => !modules.find((entry) => entry.module === m && entry.status === "ACTIVE")
+  );
+
+  function handleSync() {
+    setSyncing(true);
+    startTransition(async () => {
+      try {
+        const result = await syncModulesToPlan(orgId);
+        if (result.activatedModules.length === 0) {
+          toast.success("Los módulos ya coinciden con el plan actual");
+        } else {
+          toast.success(`Activado: ${result.activatedModules.join(", ")}`);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Error al sincronizar módulos");
+      } finally {
+        setSyncing(false);
+      }
+    });
+  }
 
   function openDialog(m: ModuleEntitlementView) {
     setEditing(m.module);
@@ -67,18 +94,37 @@ export function OrganizationModulesPanel({
     <>
       <Card className="lg:col-span-2">
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Módulos contratados</CardTitle>
-          <Layers className="h-4 w-4 text-slate-400" />
+          <div>
+            <CardTitle>Módulos contratados</CardTitle>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Plan {planLabel} incluye: {planModules.map((m) => MODULE_LABEL[m]).join(", ")}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {missingFromPlan.length > 0 && (
+              <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
+                {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Sincronizar con plan
+              </Button>
+            )}
+            <Layers className="h-4 w-4 text-slate-400" />
+          </div>
         </CardHeader>
         <CardContent>
           <div className="divide-y divide-slate-100">
             {modules.map((m) => {
               const reserved = RESERVED_MODULES.includes(m.module);
               const badge = m.status ? STATUS_BADGE[m.status] : null;
+              const includedInPlan = planModules.includes(m.module);
               return (
                 <div key={m.module} className="flex items-center justify-between py-3">
                   <div>
-                    <p className="text-sm font-medium text-slate-900">{MODULE_LABEL[m.module]}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-slate-900">{MODULE_LABEL[m.module]}</p>
+                      {includedInPlan && !reserved && (
+                        <Badge variant="outline" className="text-xs">Incluido en el plan</Badge>
+                      )}
+                    </div>
                     {reserved ? (
                       <p className="text-xs text-slate-400">Reservado — sin funcionalidad propia todavía</p>
                     ) : (
