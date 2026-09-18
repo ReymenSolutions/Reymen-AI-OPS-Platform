@@ -4,19 +4,18 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { generateWebhookSecret } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
 import { assertPlanCapacity } from "@/lib/plan-limits";
 import { assertModuleEnabled } from "@/lib/modules";
-import type { Prisma } from "@prisma/client";
+import { applyTemplateInstall } from "@/lib/template-install";
 
 /**
- * The actual per-template install: creates the Automation + upserts the
- * TemplateInstallation. Shared by installTemplate() (one template, from the
- * marketplace grid) and installTemplatePackage() (many templates at once,
- * from a curated industry package) so both go through the exact same plan-
- * capacity check and produce the exact same TemplateInstallation row —
- * a package install is just this, looped.
+ * Resolves the latest published version of a template and applies the
+ * install — the client self-service path (always latest, subject to the
+ * org's own plan capacity). installTemplateForClient() (src/actions/admin/
+ * templates.ts) is the admin equivalent: it lets an admin pin a specific
+ * version and isn't subject to plan capacity, but both funnel into the
+ * same applyTemplateInstall() so neither can drift from the other.
  */
 async function installTemplateCore(
   orgId: string,
@@ -39,62 +38,27 @@ async function installTemplateCore(
 
   const latestVersion = template.versions[0];
 
+  // Checked here (before the capacity check) so a reinstall attempt on an
+  // already-active template gets the clearer "ya está instalado" error
+  // rather than a misleading plan-limit one; applyTemplateInstall() repeats
+  // the same check as its own final guard right before it mutates anything.
   const existing = await prisma.templateInstallation.findUnique({
     where: { organizationId_templateId: { organizationId: orgId, templateId } },
   });
-
   if (existing?.status === "ACTIVE") {
     throw new Error("Este template ya está instalado");
   }
 
   await assertPlanCapacity(orgId, "automations");
 
-  const automation = await prisma.automation.create({
-    data: {
-      organizationId: orgId,
-      name: template.name,
-      description: template.description,
-      type: template.category,
-      webhookSecret: generateWebhookSecret(),
-      n8nWorkflowId: latestVersion.n8nWorkflowId,
-      config: config ? (config as Prisma.InputJsonValue) : undefined,
-    },
-  });
-
-  if (existing) {
-    await prisma.templateInstallation.update({
-      where: { id: existing.id },
-      data: {
-        versionId: latestVersion.id,
-        automationId: automation.id,
-        status: "ACTIVE",
-        config: config ? (config as Prisma.InputJsonValue) : undefined,
-        updatedAt: new Date(),
-      },
-    });
-  } else {
-    await prisma.templateInstallation.create({
-      data: {
-        organizationId: orgId,
-        templateId,
-        versionId: latestVersion.id,
-        automationId: automation.id,
-        status: "ACTIVE",
-        config: config ? (config as Prisma.InputJsonValue) : undefined,
-      },
-    });
-  }
-
-  await logAudit({
-    organizationId: orgId,
+  return applyTemplateInstall({
+    orgId,
     userId,
-    action: "template.install",
-    resource: "TemplateInstallation",
-    resourceId: templateId,
-    metadata: { templateName: template.name, version: latestVersion.version },
+    templateId,
+    template: { name: template.name, description: template.description, category: template.category },
+    version: { id: latestVersion.id, version: latestVersion.version, n8nWorkflowId: latestVersion.n8nWorkflowId },
+    config,
   });
-
-  return { automationId: automation.id };
 }
 
 const installSchema = z.object({

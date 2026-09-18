@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth, isAdmin } from "@/lib/auth";
-import { generateWebhookSecret } from "@/lib/utils";
+import { applyTemplateInstall } from "@/lib/template-install";
 import type { Prisma } from "@prisma/client";
 
 const templateSchema = z.object({
@@ -135,6 +135,15 @@ export async function addTemplateVersion(
   return { success: true };
 }
 
+/**
+ * Admin equivalent of installTemplate() (src/actions/templates.ts), for
+ * installing a template on a client's behalf. Two real differences from
+ * the client self-service path: an admin can pin any version, not just
+ * the latest, and this isn't subject to the org's own plan capacity (a
+ * deliberate admin override, not an oversight). Both still funnel into
+ * the same applyTemplateInstall() for the actual Automation/
+ * TemplateInstallation/audit-log work.
+ */
 export async function installTemplateForClient(
   orgId: string,
   templateId: string,
@@ -154,51 +163,20 @@ export async function installTemplateForClient(
   if (!org) throw new Error("Cliente no encontrado");
   if (!version) throw new Error("Versión no encontrada");
 
-  const existing = await prisma.templateInstallation.findUnique({
-    where: { organizationId_templateId: { organizationId: orgId, templateId } },
-  });
-  if (existing && existing.status === "ACTIVE") {
-    throw new Error("Este template ya está instalado para este cliente");
-  }
-
-  // Create automation + installation atomically
-  const automation = await prisma.automation.create({
-    data: {
-      organizationId: orgId,
+  const { automationId } = await applyTemplateInstall({
+    orgId,
+    userId: session.user.id,
+    templateId,
+    template: {
       name: version.template.name,
       description: version.template.description,
-      type: version.template.category,
-      webhookSecret: generateWebhookSecret(),
-      n8nWorkflowId: version.n8nWorkflowId,
-      config: config ? (config as Prisma.InputJsonValue) : undefined,
+      category: version.template.category,
     },
+    version: { id: version.id, version: version.version, n8nWorkflowId: version.n8nWorkflowId },
+    config,
   });
-
-  if (existing) {
-    await prisma.templateInstallation.update({
-      where: { id: existing.id },
-      data: {
-        versionId,
-        automationId: automation.id,
-        status: "ACTIVE",
-        config: config ? (config as Prisma.InputJsonValue) : undefined,
-        updatedAt: new Date(),
-      },
-    });
-  } else {
-    await prisma.templateInstallation.create({
-      data: {
-        organizationId: orgId,
-        templateId,
-        versionId,
-        automationId: automation.id,
-        status: "ACTIVE",
-        config: config ? (config as Prisma.InputJsonValue) : undefined,
-      },
-    });
-  }
 
   revalidatePath(`/admin/clients/${orgId}`);
   revalidatePath(`/admin/templates/${templateId}`);
-  return { success: true, automationId: automation.id };
+  return { success: true, automationId };
 }
