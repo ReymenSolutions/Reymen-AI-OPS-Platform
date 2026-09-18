@@ -15,6 +15,7 @@ export const MODULE_LABEL: Record<PlatformModule, string> = {
   AUTOMATIONS: "Automatizaciones",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
+  FOOD_OPS: "REYMEN Ops Food",
 };
 
 export async function hasModule(organizationId: string, module: PlatformModule): Promise<boolean> {
