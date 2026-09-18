@@ -82,14 +82,17 @@ body {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
 }
 
-/* Admin sidebar — light theme uses the Reymen brand navy (AdminSidebar.tsx,
-   unprefixed utility classes, not scoped here). Dark theme gets its own
-   deliberate palette instead of just matching the page's Card/header gray:
-   scoped custom properties (not part of the global .dark color-variable
-   remap above) so these tokens stay local to the sidebar and never leak
-   into other components. Structure/dimensions/spacing are untouched —
-   this file only ever sets color, background and outline. */
-.dark .admin-sidebar {
+/* App sidebar (admin AND portal — AdminSidebar.tsx and PortalSidebar.tsx
+   both use these same hook classNames, one shared ruleset instead of two
+   near-identical ones) — light theme uses the Reymen brand navy via plain
+   unprefixed utility classes on the component itself, not scoped here.
+   Dark theme gets its own deliberate palette instead of just matching the
+   page's Card/header gray: scoped custom properties (not part of the
+   global .dark color-variable remap above) so these tokens stay local to
+   the sidebar and never leak into other components. Structure/dimensions/
+   spacing are untouched — this file only ever sets color, background and
+   outline. */
+.dark .sidebar {
   --sidebar-grad-from: #192461;
   --sidebar-grad-to: #111735;
   --sidebar-active-bg: #293d99;
@@ -102,29 +105,29 @@ body {
   background-color: transparent;
   border-color: var(--sidebar-grad-to);
 }
-.dark .admin-sidebar-header {
+.dark .sidebar-header {
   border-color: var(--sidebar-divider);
 }
-.dark .admin-sidebar-header:hover {
+.dark .sidebar-header:hover {
   background-color: var(--sidebar-hover-bg);
 }
-.dark .admin-sidebar-name {
+.dark .sidebar-name {
   color: #ffffff;
 }
-.dark .admin-sidebar-subtitle {
+.dark .sidebar-subtitle {
   color: var(--sidebar-text-muted);
 }
-.dark .admin-sidebar-footer {
+.dark .sidebar-footer {
   border-color: var(--sidebar-divider);
 }
-.dark .admin-sidebar-nav-inactive {
+.dark .sidebar-nav-inactive {
   color: var(--sidebar-text-muted);
 }
-.dark .admin-sidebar-nav-inactive:hover {
+.dark .sidebar-nav-inactive:hover {
   background-color: var(--sidebar-hover-bg);
   color: #ffffff;
 }
-.dark .admin-sidebar-nav-active {
+.dark .sidebar-nav-active {
   background-color: var(--sidebar-active-bg);
   color: #ffffff; /* lucide icons use stroke="currentColor", so this also covers the icon */
   border-left: 3px solid var(--sidebar-active-indicator);
@@ -133,9 +136,9 @@ body {
 
 /* Keyboard focus — visible and on-palette (the same lilac used for the
    active-item indicator), for every interactive element in the sidebar. */
-.dark .admin-sidebar-header:focus-visible,
-.dark .admin-sidebar-nav-active:focus-visible,
-.dark .admin-sidebar-nav-inactive:focus-visible {
+.dark .sidebar-header:focus-visible,
+.dark .sidebar-nav-active:focus-visible,
+.dark .sidebar-nav-inactive:focus-visible {
   outline: 2px solid var(--sidebar-active-indicator);
   outline-offset: 2px;
 }

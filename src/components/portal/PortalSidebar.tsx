@@ -164,11 +164,19 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
 
   return (
     <>
-      <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
+      {/*
+        Same Reymen-brand treatment as AdminSidebar.tsx — light theme uses
+        the brand navy gradient via plain utility classes; dark theme uses
+        the shared `.dark .sidebar*` ruleset in globals.css (custom
+        properties scoped to that selector, not the global color remap),
+        via the same `sidebar*` hook classNames so both sidebars stay in
+        sync from one CSS block instead of two.
+      */}
+      <aside className="sidebar flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950">
         {/* Logo / Org — clickable to update logo */}
         <button
           onClick={() => { setLogoUrl(currentLogoUrl ?? ""); setLogoDialogOpen(true); }}
-          className="flex h-16 items-center border-b border-slate-200 px-6 w-full text-left group hover:bg-slate-50 transition-colors"
+          className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 w-full text-left group hover:bg-white/5 transition-colors"
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="relative flex-shrink-0">
@@ -184,8 +192,8 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
               </div>
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900 leading-none">{orgName}</p>
-              <p className="text-xs text-slate-500 leading-none mt-0.5">{t.aiOps}</p>
+              <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{orgName}</p>
+              <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">{t.aiOps}</p>
             </div>
           </div>
         </button>
@@ -202,8 +210,8 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    ? "sidebar-nav-active bg-white text-brand-700"
+                    : "sidebar-nav-inactive text-brand-100 hover:bg-white/10 hover:text-white"
                 )}
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
@@ -219,10 +227,10 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-slate-200 p-3">
+        <div className="sidebar-footer border-t border-white/10 p-3">
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            className="sidebar-nav-inactive flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-brand-100 hover:bg-white/10 hover:text-white transition-colors"
           >
             <LogOut className="h-4 w-4" />
             {t.signOut}
