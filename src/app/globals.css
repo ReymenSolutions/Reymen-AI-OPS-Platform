@@ -81,3 +81,37 @@ body {
 .dark .shadow-xl {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
 }
+
+/* Admin sidebar — light theme uses the Reymen brand navy (AdminSidebar.tsx);
+   these restore its previous plain bg-white look, unchanged, under .dark. */
+.dark .admin-sidebar {
+  background-image: none;
+  background-color: var(--color-white);
+  border-color: var(--color-slate-200);
+}
+.dark .admin-sidebar-header {
+  border-color: var(--color-slate-200);
+}
+.dark .admin-sidebar-header:hover {
+  background-color: var(--color-slate-50);
+}
+.dark .admin-sidebar-name {
+  color: var(--color-slate-900);
+}
+.dark .admin-sidebar-subtitle {
+  color: var(--color-slate-500);
+}
+.dark .admin-sidebar-footer {
+  border-color: var(--color-slate-200);
+}
+.dark .admin-sidebar-nav-inactive {
+  color: var(--color-slate-600);
+}
+.dark .admin-sidebar-nav-inactive:hover {
+  background-color: var(--color-slate-50);
+  color: var(--color-slate-900);
+}
+.dark .admin-sidebar-nav-active {
+  background-color: var(--color-brand-50);
+  color: var(--color-brand-700);
+}

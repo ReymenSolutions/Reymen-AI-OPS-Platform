@@ -175,14 +175,28 @@ export function AdminSidebar({
 
   return (
     <>
-      <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
+      {/*
+        Light theme: Reymen brand navy (matches the physical NFC card /
+        marketing identity) — a deliberate visual choice, not a bug fix.
+        Dark mode must stay exactly as it is today. This app's dark mode
+        works by remapping Tailwind's color CSS variables under a plain
+        `.dark` class selector (globals.css) — NOT via Tailwind's `dark:`
+        utility variant, which in this project's Tailwind v4 setup compiles
+        to `@media (prefers-color-scheme: dark)` (no `@custom-variant dark`
+        override), completely disconnected from the `.dark` class
+        preferences.tsx actually toggles. So the classes below use plain
+        hook classNames (admin-sidebar*) + matching `.dark .admin-sidebar*`
+        overrides in globals.css, the same pattern already used there,
+        instead of `dark:` utilities that would silently never apply.
+      */}
+      <aside className="admin-sidebar flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950">
         {/* Logo — always clickable: org logo when the admin has an org, personal avatar otherwise */}
         <button
           onClick={() => {
             setLogoUrl(currentLogoUrl ?? "");
             setLogoDialogOpen(true);
           }}
-          className="group flex h-16 items-center border-b border-slate-200 px-6 w-full text-left transition-colors hover:bg-slate-50 cursor-pointer"
+          className="admin-sidebar-header group flex h-16 items-center border-b border-white/10 px-6 w-full text-left transition-colors hover:bg-white/5 cursor-pointer"
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="relative flex-shrink-0">
@@ -198,8 +212,8 @@ export function AdminSidebar({
               </div>
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900 leading-none">{adminName}</p>
-              <p className="text-xs text-slate-500 leading-none mt-0.5">Admin</p>
+              <p className="admin-sidebar-name truncate text-sm font-bold text-white leading-none">{adminName}</p>
+              <p className="admin-sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">Admin</p>
             </div>
           </div>
         </button>
@@ -216,8 +230,8 @@ export function AdminSidebar({
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    ? "admin-sidebar-nav-active bg-white text-brand-700"
+                    : "admin-sidebar-nav-inactive text-brand-100 hover:bg-white/10 hover:text-white"
                 )}
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
@@ -228,10 +242,10 @@ export function AdminSidebar({
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-slate-200 p-3">
+        <div className="admin-sidebar-footer border-t border-white/10 p-3">
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            className="admin-sidebar-nav-inactive flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-brand-100 hover:bg-white/10 hover:text-white transition-colors"
           >
             <LogOut className="h-4 w-4" />
             {t.signOut}
