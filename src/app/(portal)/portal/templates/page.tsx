@@ -94,12 +94,12 @@ export default async function PortalTemplatesPage() {
         description={`${templates.length} templates disponibles · ${installedIds.length} instalados`}
       />
 
-      <div className="mb-5 rounded-lg border border-brand-100 bg-brand-50 p-4">
+      <div className="info-box mb-5 rounded-lg border border-brand-100 bg-brand-50 p-4">
         <div className="flex items-start gap-3">
-          <Zap className="h-5 w-5 text-brand-600 mt-0.5 flex-shrink-0" />
+          <Zap className="info-box-icon h-5 w-5 text-brand-600 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="text-sm font-medium text-brand-900">Templates pre-construidos por Reymen</p>
-            <p className="text-sm text-brand-700 mt-0.5">
+            <p className="info-box-title text-sm font-medium text-brand-900">Templates pre-construidos por Reymen</p>
+            <p className="info-box-text text-sm text-brand-700 mt-0.5">
               Instala un template en un clic y activa automatizaciones probadas para tu industria.
               Usa el buscador o los filtros de categoría para encontrar el template adecuado.
             </p>

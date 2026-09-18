@@ -104,9 +104,9 @@ export default async function PortalSettingsPage() {
             {stripeEnabled && canManageBilling ? (
               <BillingActions hasActiveSubscription={hasActiveSubscription} />
             ) : (
-              <div className="rounded-lg bg-brand-50 border border-brand-100 p-3">
-                <p className="text-xs text-brand-700">{t.capacityMessage}</p>
-                <a href="/portal/requests" className="mt-1.5 inline-block text-xs font-medium text-brand-600 hover:underline">
+              <div className="info-box rounded-lg bg-brand-50 border border-brand-100 p-3">
+                <p className="info-box-text text-xs text-brand-700">{t.capacityMessage}</p>
+                <a href="/portal/requests" className="info-box-icon mt-1.5 inline-block text-xs font-medium text-brand-600 hover:underline">
                   {t.openRequest}
                 </a>
               </div>

@@ -91,18 +91,18 @@ export default async function PortalDashboardPage() {
       {!onboarding.allDone && !onboarding.onboardingCompletedAt && (
         <Link
           href="/portal/onboarding"
-          className="mb-6 flex items-center justify-between rounded-lg border border-brand-200 bg-brand-50 p-4 hover:bg-brand-100 transition-colors"
+          className="info-box mb-6 flex items-center justify-between rounded-lg border border-brand-200 bg-brand-50 p-4 hover:bg-brand-100 transition-colors"
         >
           <div className="flex items-center gap-3">
-            <Rocket className="h-5 w-5 text-brand-600 flex-shrink-0" />
+            <Rocket className="info-box-icon h-5 w-5 text-brand-600 flex-shrink-0" />
             <div>
-              <p className="text-sm font-medium text-brand-900">
+              <p className="info-box-title text-sm font-medium text-brand-900">
                 Termina de configurar tu cuenta — {onboarding.completedCount} de {onboarding.totalCount} pasos completados
               </p>
-              <p className="text-xs text-brand-700 mt-0.5">Completa la configuración inicial para aprovechar todo Reymen AI Ops.</p>
+              <p className="info-box-text text-xs text-brand-700 mt-0.5">Completa la configuración inicial para aprovechar todo Reymen AI Ops.</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-brand-600 flex-shrink-0" />
+          <ArrowRight className="info-box-icon h-4 w-4 text-brand-600 flex-shrink-0" />
         </Link>
       )}
 

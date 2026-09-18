@@ -224,9 +224,9 @@ function WebhookInfoDialog({
             </div>
           </div>
 
-          <div className="rounded-md border border-brand-200 bg-brand-50 p-3 space-y-1.5">
-            <p className="text-xs font-semibold text-brand-700">{t.adminWebhookN8nGuide}</p>
-            <ol className="text-xs text-brand-700 space-y-1 list-decimal list-inside">
+          <div className="info-box rounded-md border border-brand-200 bg-brand-50 p-3 space-y-1.5">
+            <p className="info-box-title text-xs font-semibold text-brand-700">{t.adminWebhookN8nGuide}</p>
+            <ol className="info-box-text text-xs text-brand-700 space-y-1 list-decimal list-inside">
               <li>{t.adminWebhookN8nStep1}</li>
               <li>{t.adminWebhookN8nStep2}</li>
               <li>{t.adminWebhookN8nStep3}</li>

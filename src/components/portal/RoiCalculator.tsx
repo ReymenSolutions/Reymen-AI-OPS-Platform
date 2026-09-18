@@ -56,14 +56,14 @@ export function RoiCalculator({ data, planLabel }: RoiCalculatorProps) {
           ))}
         </div>
 
-        <div className="mt-4 rounded-lg border border-brand-100 bg-brand-50 p-3">
-          <p className="text-sm font-medium text-brand-900">
+        <div className="info-box mt-4 rounded-lg border border-brand-100 bg-brand-50 p-3">
+          <p className="info-box-title text-sm font-medium text-brand-900">
             Ingresos últimos 30 días:{" "}
-            <span className="text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
+            <span className="info-box-text text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
             {" "}vs. tu plan {planLabel}:{" "}
-            <span className="text-brand-700">${data.planCost}/mes</span>
+            <span className="info-box-text text-brand-700">${data.planCost}/mes</span>
           </p>
-          <p className="text-xs text-brand-700 mt-0.5">
+          <p className="info-box-text text-xs text-brand-700 mt-0.5">
             Basado en {data.last30WonOpportunities} oportunidad{data.last30WonOpportunities === 1 ? "" : "es"} ganada
             {data.last30WonOpportunities === 1 ? "" : "s"} en tu pipeline durante los últimos 30 días. Histórico total:{" "}
             {data.totalWonOpportunities} oportunidades ganadas por ${data.totalRevenue.toLocaleString("en-US")} USD.

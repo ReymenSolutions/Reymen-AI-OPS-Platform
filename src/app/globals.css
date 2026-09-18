@@ -142,3 +142,30 @@ body {
   outline: 2px solid var(--sidebar-active-indicator);
   outline-offset: 2px;
 }
+
+/* Info banners (bg-brand-50 container + text-brand-900/700 body copy) —
+   readable by design in light mode, but illegible in dark: the global
+   remap above only redefines --color-brand-50/100 (the backgrounds) to a
+   dark navy, while --color-brand-600/700/900 stay their light-mode values
+   because those same utilities also paint solid backgrounds elsewhere
+   (buttons, badges, hover pills) that must stay vivid blue in both themes.
+   So — same reasoning as the sidebar above — this is a scoped override via
+   its own hook classNames, not a change to the shared --color-brand-*
+   tokens, reusing the sidebar's own accent values for one consistent
+   dark-mode accent language across the app. */
+.dark .info-box {
+  background-color: rgb(41 61 153 / 12%);
+  border-color: rgb(124 156 255 / 25%);
+}
+.dark .info-box:hover {
+  background-color: rgb(41 61 153 / 20%);
+}
+.dark .info-box-title {
+  color: #ffffff;
+}
+.dark .info-box-text {
+  color: #cbd5e1;
+}
+.dark .info-box-icon {
+  color: #7c9cff;
+}
