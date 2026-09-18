@@ -56,6 +56,9 @@ model Organization {
   aiSandboxSessions     AiSandboxSession[]
   promptTestCases       PromptTestCase[]
   promptExperiments     PromptExperiment[]
+  foodSales             FoodSale[]
+  foodInventoryItems    FoodInventoryItem[]
+  foodSuppliers         FoodSupplier[]
 
   @@index([slug])
 }
@@ -985,6 +988,7 @@ enum PlatformModule {
   AUTOMATIONS
   NFC_QR // reserved — no schema/UI yet, integration point for a separate future repo
   MARKETING_ADS // reserved — no schema/UI yet, future module
+  FOOD_OPS // restaurant ops — Sales/Inventory/Suppliers have real models below; Recipes/Operations are view-only placeholders for now
 }
 
 enum ModuleStatus {
@@ -1013,6 +1017,67 @@ model OrganizationModule {
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@unique([organizationId, module])
+  @@index([organizationId])
+}
+
+// ─── FOOD OPS (módulo FOOD_OPS, Fase inicial) ──────────────────────
+// Solo Ventas, Inventario y Proveedores tienen modelo real por ahora —
+// Recetas y Operación (mesas/turnos/tickets) son vistas de solo lectura
+// sin tabla propia todavía (ver src/app/(portal)/portal/food). Se agrega
+// así, incompleto mas explícito, en vez de simular con datos falsos en
+// páginas que aparentan estar conectadas a algo real.
+
+model FoodSale {
+  id             String   @id @default(cuid())
+  organizationId String
+  // Fecha del negocio a la que pertenece la venta -- no necesariamente el
+  // mismo día que createdAt si algún día se permite captura tardía.
+  occurredAt     DateTime @default(now())
+  // Canal de venta (mostrador, domicilio, app, etc.) -- texto libre por
+  // ahora, igual que Lead.source; si más adelante hace falta un catálogo
+  // fijo con reportes por canal, se vuelve enum entonces.
+  channel        String?
+  grossAmount    Decimal  @db.Decimal(10, 2)
+  netAmount      Decimal  @db.Decimal(10, 2)
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, occurredAt])
+}
+
+model FoodInventoryItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  unit           String // "kg", "lt", "pza", etc. -- texto libre, mismo criterio que FoodSale.channel
+  currentStock   Decimal  @default(0) @db.Decimal(10, 2)
+  minStock       Decimal  @default(0) @db.Decimal(10, 2)
+  unitCost       Decimal? @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model FoodSupplier {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  contactName    String?
+  phone          String?
+  email          String?
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
   @@index([organizationId])
 }
 
