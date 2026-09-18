@@ -122,7 +122,7 @@ export function OrganizationModulesPanel({
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-slate-900">{MODULE_LABEL[m.module]}</p>
                       {includedInPlan && !reserved && (
-                        <Badge variant="outline" className="text-xs">Incluido en el plan</Badge>
+                        <Badge variant="info" className="text-xs">Incluido en el plan</Badge>
                       )}
                     </div>
                     {reserved ? (
