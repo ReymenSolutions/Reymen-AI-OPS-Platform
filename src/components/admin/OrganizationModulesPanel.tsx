@@ -19,6 +19,7 @@ const MODULE_LABEL_ES: Record<PlatformModule, string> = {
   AUTOMATIONS: "Automatizaciones",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
+  FOOD_OPS: "REYMEN Ops Food",
 };
 
 const MODULE_LABEL_EN: Record<PlatformModule, string> = {
