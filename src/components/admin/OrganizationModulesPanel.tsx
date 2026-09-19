@@ -28,6 +28,7 @@ const MODULE_LABEL_EN: Record<PlatformModule, string> = {
   AUTOMATIONS: "Automations",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
+  FOOD_OPS: "REYMEN Ops Food",
 };
 
 // NFC_QR and MARKETING_ADS are reserved for future modules — no functionality
