@@ -38,6 +38,13 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Requerido por docker/Dockerfile: ese build copia .next/standalone (ver
+  // COPY --from=builder .../standalone en la etapa runner) para no llevar
+  // node_modules completo a la imagen final. Sin esta línea, next build
+  // nunca genera esa carpeta y el build de Docker falla en el COPY con
+  // "not found" -- descubierto ahora porque es la primera vez que este
+  // Dockerfile se corre de verdad (documentado pero nunca antes probado).
+  output: "standalone",
   poweredByHeader: false,
   images: {
     // A wildcard hostname here would let next/image's server-side optimizer
