@@ -29,6 +29,7 @@ export const strings = {
     foodSuppliers: "Proveedores",
     foodOperations: "Operación",
     foodAnalytics: "Analítica",
+    smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notificaciones",
@@ -557,6 +558,7 @@ export const strings = {
     foodSuppliers: "Suppliers",
     foodOperations: "Operations",
     foodAnalytics: "Analytics",
+    smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notifications",
