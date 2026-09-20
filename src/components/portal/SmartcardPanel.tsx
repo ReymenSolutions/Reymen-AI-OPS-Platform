@@ -92,8 +92,16 @@ export function SmartcardPanel({
   function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
+      // inviteSmartcardTeamMember returns { success } / { success: false, error }
+      // instead of throwing — Next.js redacts a thrown Server Action error's
+      // message in production, so relying on try/catch here showed a generic
+      // crash instead of the real reason (see the action's own comment).
       try {
-        await inviteSmartcardTeamMember(name, email, roleCode, password);
+        const result = await inviteSmartcardTeamMember(name, email, roleCode, password);
+        if (!result.success) {
+          toast.error(result.error);
+          return;
+        }
         toast.success(
           lang === "es"
             ? "Listo. Comparte la contraseña temporal con esa persona para que inicie sesión."
@@ -103,8 +111,9 @@ export function SmartcardPanel({
         setEmail("");
         setPassword("");
         setRoleCode("staff");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : (lang === "es" ? "Error al invitar" : "Error inviting"));
+      } catch {
+        // Belt-and-suspenders only — inviteSmartcardTeamMember shouldn't throw.
+        toast.error(lang === "es" ? "Error al invitar" : "Error inviting");
       }
     });
   }
@@ -200,7 +209,7 @@ export function SmartcardPanel({
                       minLength={2}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                       placeholder={lang === "es" ? "Ana Martínez" : "Jane Doe"}
                     />
                   </div>
@@ -214,7 +223,7 @@ export function SmartcardPanel({
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                       placeholder="nombre@empresa.com"
                     />
                   </div>
@@ -226,7 +235,7 @@ export function SmartcardPanel({
                       id="smartcard-invite-role"
                       value={roleCode}
                       onChange={(e) => setRoleCode(e.target.value)}
-                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                     >
                       {INVITABLE_ROLES.map((r) => (
                         <option key={r} value={r}>
@@ -246,7 +255,7 @@ export function SmartcardPanel({
                       minLength={8}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                       placeholder={lang === "es" ? "Mínimo 8 caracteres" : "At least 8 characters"}
                     />
                   </div>

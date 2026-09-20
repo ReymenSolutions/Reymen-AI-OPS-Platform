@@ -28,6 +28,8 @@ const SMARTCARD_ROLE_TO_USER_ROLE: Record<string, "MANAGER" | "AGENT"> = {
   agent: "AGENT",
 };
 
+type InviteResult = { success: true } | { success: false; error: string };
+
 /**
  * Rewritten 2026-09-20 after discovering reymen-smartcard's own invite flow
  * was never finished end-to-end: apps/ops/app/auth/confirm/route.ts sends an
@@ -58,14 +60,40 @@ const SMARTCARD_ROLE_TO_USER_ROLE: Record<string, "MANAGER" | "AGENT"> = {
  * Explicit product decision (not a default): the portal account this
  * creates gets ordinary org-wide access per its UserRole (leads, pipeline,
  * conversations, etc.), same as any other team invite — there's no
- * SmartCard-only login today. See SMARTCARD_ROLE_TO_USER_ROLE above.
+ * SmartCard-only login today. See SMARTCARD_ROLE_TO_USER_ROLE above. One
+ * real consequence of that choice: this now also counts against the org's
+ * general "users" plan capacity (assertPlanCapacity inside inviteTeamMember),
+ * on top of SmartCard's own separate max_team_members seat limit — an org
+ * already at its general user cap can't add a SmartCard member either,
+ * until its plan is upgraded or a seat is freed.
+ *
+ * Returns a result object instead of throwing (2026-09-20): Next.js
+ * redacts a thrown Server Action error's message in production ("An error
+ * occurred in the Server Components render..."), so the friendly Spanish
+ * messages below never reached the client — every failure surfaced as a
+ * generic crash instead of a toast. All internal validation still throws
+ * (kept for readable early-return control flow); only the outermost catch
+ * here converts that into { success: false, error }.
  */
 export async function inviteSmartcardTeamMember(
   name: string,
   email: string,
   roleCode: string,
   password: string
-): Promise<{ success: true }> {
+): Promise<InviteResult> {
+  try {
+    await run(name, email, roleCode, password);
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo procesar la invitación. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] inviteSmartcardTeamMember falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
+  }
+}
+
+async function run(name: string, email: string, roleCode: string, password: string): Promise<void> {
   const session = await auth();
   if (!session?.user.organizationId || !session.user.email) {
     throw new Error("Sesión inválida.");
@@ -111,7 +139,7 @@ export async function inviteSmartcardTeamMember(
   ]);
 
   if (limitValue !== null && (currentSeats ?? 0) >= Number(limitValue)) {
-    throw new Error("Llegaste al límite de integrantes de tu plan. Contacta a REYMEN para subir de plan.");
+    throw new Error("Llegaste al límite de integrantes de tu plan de SmartCard. Contacta a REYMEN para subir de plan.");
   }
 
   const { data: role } = await supabase.from("roles").select("id").eq("code", normalizedRole).maybeSingle();
@@ -192,6 +220,4 @@ export async function inviteSmartcardTeamMember(
       throw portalError instanceof Error ? portalError : new Error("No se pudo crear la cuenta del portal.");
     }
   }
-
-  return { success: true };
 }
