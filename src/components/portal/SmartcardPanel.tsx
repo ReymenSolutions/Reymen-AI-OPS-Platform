@@ -78,7 +78,9 @@ export function SmartcardPanel({
   const ROLE_LABELS = lang === "es" ? ROLE_LABELS_ES : ROLE_LABELS_EN;
   const STATUS_LABELS = lang === "es" ? STATUS_LABELS_ES : STATUS_LABELS_EN;
 
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [roleCode, setRoleCode] = useState("staff");
   const [isPending, startTransition] = useTransition();
 
@@ -91,9 +93,15 @@ export function SmartcardPanel({
     e.preventDefault();
     startTransition(async () => {
       try {
-        await inviteSmartcardTeamMember(email, roleCode);
-        toast.success(lang === "es" ? "Invitación enviada." : "Invitation sent.");
+        await inviteSmartcardTeamMember(name, email, roleCode, password);
+        toast.success(
+          lang === "es"
+            ? "Listo. Comparte la contraseña temporal con esa persona para que inicie sesión."
+            : "Done. Share the temporary password with that person so they can log in."
+        );
+        setName("");
         setEmail("");
+        setPassword("");
         setRoleCode("staff");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : (lang === "es" ? "Error al invitar" : "Error inviting"));
@@ -174,39 +182,76 @@ export function SmartcardPanel({
                   : "You reached your plan's member limit. Contact Reymen to upgrade."}
               </p>
             ) : (
-              <form onSubmit={handleInvite} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <div className="flex flex-1 flex-col gap-1">
-                  <label htmlFor="smartcard-invite-email" className="text-xs font-medium text-slate-600">
-                    {lang === "es" ? "Correo" : "Email"}
-                  </label>
-                  <input
-                    id="smartcard-invite-email"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="rounded-md border border-slate-200 px-3 py-2 text-sm"
-                    placeholder="nombre@empresa.com"
-                  />
+              <form onSubmit={handleInvite} className="flex flex-col gap-3">
+                <p className="text-xs text-slate-500">
+                  {lang === "es"
+                    ? "Se crea una cuenta del portal para esa persona con la contraseña que pongas aquí — compártesela tú directamente después."
+                    : "This creates a portal account for that person with the password you set here — share it with them directly afterward."}
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="smartcard-invite-name" className="text-xs font-medium text-slate-600">
+                      {lang === "es" ? "Nombre completo" : "Full name"}
+                    </label>
+                    <input
+                      id="smartcard-invite-name"
+                      type="text"
+                      required
+                      minLength={2}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      placeholder={lang === "es" ? "Ana Martínez" : "Jane Doe"}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="smartcard-invite-email" className="text-xs font-medium text-slate-600">
+                      {lang === "es" ? "Correo" : "Email"}
+                    </label>
+                    <input
+                      id="smartcard-invite-email"
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="nombre@empresa.com"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="smartcard-invite-role" className="text-xs font-medium text-slate-600">
+                      {lang === "es" ? "Rol" : "Role"}
+                    </label>
+                    <select
+                      id="smartcard-invite-role"
+                      value={roleCode}
+                      onChange={(e) => setRoleCode(e.target.value)}
+                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      {INVITABLE_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABELS[r]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="smartcard-invite-password" className="text-xs font-medium text-slate-600">
+                      {lang === "es" ? "Contraseña temporal" : "Temporary password"}
+                    </label>
+                    <input
+                      id="smartcard-invite-password"
+                      type="password"
+                      required
+                      minLength={8}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      placeholder={lang === "es" ? "Mínimo 8 caracteres" : "At least 8 characters"}
+                    />
+                  </div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <label htmlFor="smartcard-invite-role" className="text-xs font-medium text-slate-600">
-                    {lang === "es" ? "Rol" : "Role"}
-                  </label>
-                  <select
-                    id="smartcard-invite-role"
-                    value={roleCode}
-                    onChange={(e) => setRoleCode(e.target.value)}
-                    className="rounded-md border border-slate-200 px-3 py-2 text-sm"
-                  >
-                    {INVITABLE_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {ROLE_LABELS[r]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <Button type="submit" disabled={isPending}>
+                <Button type="submit" disabled={isPending} className="self-end">
                   {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                   {lang === "es" ? "Invitar" : "Invite"}
                 </Button>
