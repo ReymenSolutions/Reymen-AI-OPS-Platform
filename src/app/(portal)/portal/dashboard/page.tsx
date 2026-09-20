@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Users, Zap, MessageSquare, FileText, AlertTriangle, CheckCircle2, Rocket, ArrowRight } from "lucide-react";
+import { Users, Zap, MessageSquare, FileText, AlertTriangle, CheckCircle2, Rocket, ArrowRight, UtensilsCrossed, CreditCard } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getServerT, getServerLang } from "@/lib/i18n-server";
 import { prisma } from "@/lib/prisma";
 import { getOnboardingStatus } from "@/lib/onboarding";
 import { getEnabledModules } from "@/lib/modules";
+import { getFoodSalesSummary } from "@/lib/food";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,6 +68,18 @@ export default async function PortalDashboardPage() {
   ]);
 
   const hasModule = (m: PlatformModule) => enabledModules.includes(m);
+
+  // Food's own DB (same Prisma connection, no external dependency), so it's
+  // safe to pull live numbers onto the org-wide home page — only queried
+  // when the module is actually enabled. SmartCard doesn't get the same
+  // treatment: its data lives in a separate Supabase project, and resolving
+  // membership there means an external round-trip (plus, today, an O(n)
+  // scan over every active member to match the caller's email) that this
+  // page — the one every login lands on — shouldn't have to wait on or
+  // degrade for. Its card below is a plain link, not a live widget.
+  const foodSummary = hasModule("FOOD_OPS")
+    ? await getFoodSalesSummary(session.user.organizationId)
+    : null;
 
   // Actionable, module-aware: only items the client can actually do something
   // about right now, each linking straight to where they'd fix it. A disabled
@@ -144,6 +157,53 @@ export default async function PortalDashboardPage() {
         <MetricCard title={t.conversations} value={metrics.openConversations} icon={MessageSquare} />
         <MetricCard title={t.requests} value={metrics.openRequests} icon={FileText} />
       </div>
+
+      {(hasModule("FOOD_OPS") || hasModule("NFC_QR")) && (
+        <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2">
+          {hasModule("FOOD_OPS") && foodSummary && (
+            <Link
+              href="/portal/food"
+              className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50/40"
+            >
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-amber-50 p-2">
+                  <UtensilsCrossed className="h-4 w-4 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">
+                    {lang === "es" ? "Food — ventas de hoy" : "Food — today's sales"}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    ${foodSummary.today.gross.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                    {" · "}
+                    {foodSummary.today.count} {lang === "es" ? "venta(s)" : "sale(s)"}
+                  </p>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 flex-shrink-0 text-slate-300" />
+            </Link>
+          )}
+          {hasModule("NFC_QR") && (
+            <Link
+              href="/portal/smartcard"
+              className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50/40"
+            >
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-brand-50 p-2">
+                  <CreditCard className="h-4 w-4 text-brand-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">SmartCard</p>
+                  <p className="text-xs text-slate-400">
+                    {lang === "es" ? "Ver equipo y módulos contratados" : "View team and contracted modules"}
+                  </p>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 flex-shrink-0 text-slate-300" />
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>

@@ -50,7 +50,6 @@ export default async function SmartcardPage() {
     <SmartcardPanel
       membership={result.membership}
       roster={roster}
-      currentUserEmail={session.user.email}
     />
   );
 }
