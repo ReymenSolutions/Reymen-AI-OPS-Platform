@@ -8,6 +8,7 @@ import { prisma } from "./prisma";
 
 export interface FoodSalesSummary {
   today: { gross: number; net: number; count: number };
+  yesterday: { gross: number; net: number; count: number };
   last7Days: { gross: number; net: number; count: number };
   last30Days: { gross: number; net: number; count: number };
   previous30Days: { gross: number; net: number; count: number };
@@ -18,6 +19,13 @@ export interface FoodSalesSummary {
   // que ya se traían.
   monthOverMonthOrdersPct: number | null;
   monthOverMonthTicketPct: number | null;
+  // "vs ayer" -- comparación día contra día, agregada 2026-09-21 para los
+  // KPIs superiores del dashboard (el mockup de referencia del cliente pide
+  // "vs ayer" ahí, no "vs 30 días previos"). Un día es una muestra chica y
+  // ruidosa, pero es la comparación real que se pidió, no una inventada.
+  vsYesterdayGrossPct: number | null;
+  vsYesterdayOrdersPct: number | null;
+  vsYesterdayTicketPct: number | null;
 }
 
 function startOfDay(d: Date): Date {
@@ -50,8 +58,9 @@ async function sumRange(organizationId: string, from: Date, to?: Date) {
 }
 
 export async function getFoodSalesSummary(organizationId: string): Promise<FoodSalesSummary> {
-  const [today, last7Days, last30Days, previous30Days] = await Promise.all([
+  const [today, yesterday, last7Days, last30Days, previous30Days] = await Promise.all([
     sumRange(organizationId, startOfDay(new Date())),
+    sumRange(organizationId, daysAgo(1), startOfDay(new Date())),
     sumRange(organizationId, daysAgo(7)),
     sumRange(organizationId, daysAgo(30)),
     sumRange(organizationId, daysAgo(60), daysAgo(30)),
@@ -66,14 +75,24 @@ export async function getFoodSalesSummary(organizationId: string): Promise<FoodS
   const ticketPrev30 = previous30Days.count > 0 ? previous30Days.gross / previous30Days.count : 0;
   const monthOverMonthTicketPct = pctChange(ticket30, ticketPrev30);
 
+  const vsYesterdayGrossPct = pctChange(today.gross, yesterday.gross);
+  const vsYesterdayOrdersPct = pctChange(today.count, yesterday.count);
+  const ticketToday = today.count > 0 ? today.gross / today.count : 0;
+  const ticketYesterday = yesterday.count > 0 ? yesterday.gross / yesterday.count : 0;
+  const vsYesterdayTicketPct = pctChange(ticketToday, ticketYesterday);
+
   return {
     today,
+    yesterday,
     last7Days,
     last30Days,
     previous30Days,
     monthOverMonthGrossPct,
     monthOverMonthOrdersPct,
     monthOverMonthTicketPct,
+    vsYesterdayGrossPct,
+    vsYesterdayOrdersPct,
+    vsYesterdayTicketPct,
   };
 }
 
@@ -167,4 +186,40 @@ export async function getFoodLowStockItems(organizationId: string, limit = 5): P
     // (en términos relativos, no absolutos, para no sesgar por unidad).
     .sort((a, b) => a.currentStock / Math.max(a.minStock, 1) - b.currentStock / Math.max(b.minStock, 1))
     .slice(0, limit);
+}
+
+// ─── FOOD OPS — ventas por día (sparklines del dashboard) ────────────
+// Mismo criterio que getFoodHourlySales (se trae el rango completo y se
+// agrega en JS), pero por día en vez de por hora -- agregado 2026-09-21
+// específicamente para alimentar los mini-sparklines de los KPIs
+// superiores con una serie real de los últimos N días, no inventada.
+
+export interface FoodDailyBucket {
+  date: string; // YYYY-MM-DD, hora local del servidor (mismo criterio que el resto del archivo)
+  gross: number;
+  count: number;
+}
+
+export async function getFoodDailySales(organizationId: string, days = 7): Promise<FoodDailyBucket[]> {
+  const from = daysAgo(days - 1);
+  const sales = await prisma.foodSale.findMany({
+    where: { organizationId, occurredAt: { gte: from } },
+    select: { occurredAt: true, grossAmount: true },
+  });
+
+  const toKey = (d: Date) => startOfDay(d).toISOString().slice(0, 10);
+
+  const buckets = new Map<string, { gross: number; count: number }>();
+  for (const sale of sales) {
+    const key = toKey(sale.occurredAt);
+    const entry = buckets.get(key) ?? { gross: 0, count: 0 };
+    entry.gross += Number(sale.grossAmount);
+    entry.count += 1;
+    buckets.set(key, entry);
+  }
+
+  return Array.from({ length: days }, (_, i) => {
+    const key = toKey(daysAgo(days - 1 - i));
+    return { date: key, gross: buckets.get(key)?.gross ?? 0, count: buckets.get(key)?.count ?? 0 };
+  });
 }
