@@ -10,9 +10,11 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { PromptDialog } from "@/components/portal/PromptDialog";
 import { ActivatePromptButton } from "@/components/portal/ActivatePromptButton";
 import { PromptVersionHistoryDialog } from "@/components/portal/PromptVersionHistoryDialog";
+import { PortalSectionTabs } from "@/components/portal/PortalSectionTabs";
+import { getAiWhatsappTabs } from "@/lib/portal-nav-tabs";
 import { formatDate } from "@/lib/utils";
-import { getServerLang } from "@/lib/i18n-server";
-import type { PromptType } from "@prisma/client";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
+import type { PromptType, UserRole } from "@prisma/client";
 
 const PROMPT_TYPE_LABELS_ES: Record<PromptType, string> = {
   SYSTEM: "Sistema (principal)",
@@ -71,7 +73,7 @@ export default async function PromptsPage() {
   if (!session?.user.organizationId) return redirect("/login");
   await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
-  const [prompts, lang] = await Promise.all([getPrompts(session.user.organizationId), getServerLang()]);
+  const [prompts, lang, t] = await Promise.all([getPrompts(session.user.organizationId), getServerLang(), getServerT()]);
   const PROMPT_TYPE_LABELS = lang === "es" ? PROMPT_TYPE_LABELS_ES : PROMPT_TYPE_LABELS_EN;
   const PROMPT_TYPE_DESC = lang === "es" ? PROMPT_TYPE_DESC_ES : PROMPT_TYPE_DESC_EN;
   const activeCount = prompts.filter((p) => p.isActive).length;
@@ -89,6 +91,8 @@ export default async function PromptsPage() {
         description={lang === "es" ? `${prompts.length} prompts · ${activeCount} activos` : `${prompts.length} prompts · ${activeCount} active`}
         actions={<PromptDialog mode="create" />}
       />
+
+      <PortalSectionTabs tabs={getAiWhatsappTabs(t, session.user.role as UserRole)} />
 
       <div className="mb-4 rounded-lg bg-blue-50 border border-blue-100 p-3">
         <p className="text-sm text-blue-700">

@@ -5,7 +5,9 @@ import { requireModule } from "@/lib/modules";
 import { can } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { AiLabWorkspace } from "@/components/portal/ai-lab/AiLabWorkspace";
-import { getServerLang } from "@/lib/i18n-server";
+import { PortalSectionTabs } from "@/components/portal/PortalSectionTabs";
+import { getAiWhatsappTabs } from "@/lib/portal-nav-tabs";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
 import type { UserRole } from "@prisma/client";
 
 export default async function AiLabPage() {
@@ -15,7 +17,7 @@ export default async function AiLabPage() {
   if (!can(session.user.role as UserRole, "prompts:manage")) return redirect("/portal/dashboard");
 
   const orgId = session.user.organizationId;
-  const lang = await getServerLang();
+  const [lang, t] = await Promise.all([getServerLang(), getServerT()]);
 
   const [prompts, sessions, testCases, experiments] = await Promise.all([
     prisma.prompt.findMany({
@@ -48,6 +50,8 @@ export default async function AiLabPage() {
           ? "Sandbox de conversaciones, versionado de prompts, pruebas A/B y casos guardados"
           : "Conversation sandbox, prompt versioning, A/B testing and saved cases"}
       />
+
+      <PortalSectionTabs tabs={getAiWhatsappTabs(t, session.user.role as UserRole)} />
 
       <div className="mb-4 rounded-lg bg-blue-50 border border-blue-100 p-3">
         <p className="text-sm text-blue-700">

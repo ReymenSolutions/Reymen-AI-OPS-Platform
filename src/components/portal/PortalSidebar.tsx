@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
-  Calendar, FileText, LogOut, BookOpen, Bot, SlidersHorizontal,
-  Layers, Upload, Loader2, GitBranch, FlaskConical, Rocket, UtensilsCrossed, CreditCard,
+  Calendar, FileText, LogOut, Bot,
+  Upload, Loader2, GitBranch, Rocket, UtensilsCrossed, CreditCard,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -85,23 +85,22 @@ function useNavItems() {
 }
 
 // `module: undefined` means the section isn't gated by any commercial module
-// (always shown regardless of what the org has contracted).
-const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule }[] = [
+// (always shown regardless of what the org has contracted). `alsoActiveFor`
+// covers sibling routes folded into this item's own PortalSectionTabs (see
+// src/lib/portal-nav-tabs.ts) — e.g. visiting /portal/prompts should still
+// highlight the "WhatsApp AI" sidebar entry, not leave nothing active.
+const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule; alsoActiveFor?: string[] }[] = [
   { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard },
   { href: "/portal/onboarding", key: "onboarding", icon: Rocket },
   { href: "/portal/leads", key: "leads", icon: Users, module: "CRM" },
   { href: "/portal/pipeline", key: "pipeline", icon: GitBranch, module: "CRM" },
-  { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS" },
-  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, module: "AI_WHATSAPP" },
+  { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS", alsoActiveFor: ["/portal/templates"] },
+  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, module: "AI_WHATSAPP", alsoActiveFor: ["/portal/knowledge-base", "/portal/prompts", "/portal/ai-lab"] },
   { href: "/portal/conversations", key: "conversations", icon: MessageSquare, module: "AI_WHATSAPP" },
-  { href: "/portal/knowledge-base", key: "knowledgeBase", icon: BookOpen, module: "AI_WHATSAPP" },
-  { href: "/portal/prompts", key: "prompts", icon: SlidersHorizontal, module: "AI_WHATSAPP" },
-  { href: "/portal/ai-lab", key: "aiLab", icon: FlaskConical, module: "AI_WHATSAPP" },
   { href: "/portal/appointments", key: "appointments", icon: Calendar },
   { href: "/portal/food", key: "food", icon: UtensilsCrossed, module: "FOOD_OPS" },
   { href: "/portal/reports", key: "reports", icon: BarChart3 },
   { href: "/portal/smartcard", key: "smartcard", icon: CreditCard, module: "NFC_QR" },
-  { href: "/portal/templates", key: "templates", icon: Layers, module: "AUTOMATIONS" },
   { href: "/portal/requests", key: "requests", icon: FileText },
   { href: "/portal/settings", key: "settings", icon: Settings },
 ];
@@ -206,7 +205,7 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href);
+            const isActive = pathname.startsWith(item.href) || (item.alsoActiveFor?.some((p) => pathname.startsWith(p)) ?? false);
             return (
               <Link
                 key={item.href}

@@ -54,7 +54,6 @@ export default async function SmartcardPage() {
       membership={result.membership}
       roster={roster}
       cardStats={cardStats}
-      currentUserEmail={session.user.email}
     />
   );
 }

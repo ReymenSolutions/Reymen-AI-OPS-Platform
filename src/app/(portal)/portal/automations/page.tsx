@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PortalSectionTabs } from "@/components/portal/PortalSectionTabs";
+import { getAutomationsTabs } from "@/lib/portal-nav-tabs";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { Zap, ArrowRight } from "lucide-react";
 
@@ -41,6 +43,8 @@ export default async function PortalAutomationsPage() {
         title={t.automations}
         description={`${automations.length} ${t.automationsConfigured}`}
       />
+
+      <PortalSectionTabs tabs={getAutomationsTabs(t)} />
 
       {automations.length === 0 ? (
         <Card>

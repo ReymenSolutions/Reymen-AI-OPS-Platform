@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { Loader2, CreditCard, Users, Activity } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -45,19 +46,6 @@ const ROLE_LABELS_EN: Record<string, string> = {
   agent: "Agent",
 };
 
-const STATUS_LABELS_ES: Record<string, string> = {
-  invited: "Invitado",
-  active: "Activo",
-  suspended: "Suspendido",
-  removed: "Eliminado",
-};
-const STATUS_LABELS_EN: Record<string, string> = {
-  invited: "Invited",
-  active: "Active",
-  suspended: "Suspended",
-  removed: "Removed",
-};
-
 // EVENT_TYPE_LABELS_ES itself is imported from smartcard-company.ts (single
 // source of truth, next to the query that produces the raw event_type
 // values) — this English pair lives here since lib/ only ever needed the
@@ -93,22 +81,37 @@ function StatTile({ label, value }: { label: string; value: number }) {
  * follows THIS app's own conventions (toast + useTransition, matching
  * OrganizationModulesPanel.tsx) rather than the original's full-page
  * redirect-with-query-string-error pattern.
+ *
+ * The "Equipo" card intentionally does NOT list members one by one anymore
+ * (see the removed per-row markup in git history). Two reasons, not one:
+ *   1. Privacy, ported on purpose from the original product — company_users
+ *      never exposed other members' emails, RLS scoped `user_profiles` to
+ *      your own row only. getCompanyRoster() still only returns role/status,
+ *      no name/email, so a real per-row list here could only ever show a
+ *      placeholder like "Integrante" for everyone but yourself — theater,
+ *      not information.
+ *   2. This portal already has a real, working team list with actual names
+ *      (Configuración → Equipo, backed by this app's own User table) —
+ *      inviteSmartcardTeamMember() below already provisions an account
+ *      there for every SmartCard invite. Duplicating a (worse) roster view
+ *      here just to have one on this page isn't worth it; the seat count
+ *      in the header plus a link to Settings covers what this page needs
+ *      to say about who's on the team, without the SmartCard invite path's
+ *      own company_users provisioning (the part unique to this page) going
+ *      away.
  */
 export function SmartcardPanel({
   membership,
   roster,
   cardStats,
-  currentUserEmail,
 }: {
   membership: SmartcardMembership;
   roster: CompanyRosterEntry[];
   cardStats: CompanyCardStats;
-  currentUserEmail: string;
 }) {
   const { lang } = usePreferences();
   const MODULE_LABELS = lang === "es" ? MODULE_LABELS_ES : MODULE_LABELS_EN;
   const ROLE_LABELS = lang === "es" ? ROLE_LABELS_ES : ROLE_LABELS_EN;
-  const STATUS_LABELS = lang === "es" ? STATUS_LABELS_ES : STATUS_LABELS_EN;
   const EVENT_TYPE_LABELS = lang === "es" ? EVENT_TYPE_LABELS_ES : EVENT_TYPE_LABELS_EN;
 
   const byTypeEntries = Object.entries(cardStats.byType).sort((a, b) => b[1] - a[1]);
@@ -295,25 +298,17 @@ export function SmartcardPanel({
           </span>
         </CardHeader>
         <CardContent>
-          {roster.length > 0 ? (
-            <ul className="mb-4 divide-y divide-slate-100 text-sm">
-              {roster.map((m) => (
-                <li key={m.id} className="flex items-center justify-between py-2">
-                  <span>
-                    {m.isCurrentUser ? currentUserEmail : (lang === "es" ? "Integrante" : "Member")} —{" "}
-                    {ROLE_LABELS[m.roleCode] ?? m.roleCode}
-                  </span>
-                  <Badge variant="secondary" className="text-xs">
-                    {STATUS_LABELS[m.status] ?? m.status}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mb-4 text-sm text-slate-500">
-              {lang === "es" ? "Todavía no hay integrantes." : "No members yet."}
-            </p>
-          )}
+          <p className="mb-4 text-sm text-slate-500">
+            {lang === "es"
+              ? "Por privacidad no se listan nombres aquí. "
+              : "Names aren't listed here for privacy. "}
+            <Link href="/portal/settings" className="font-medium text-brand-600 hover:underline">
+              {lang === "es" ? "Ve a Configuración" : "Go to Settings"}
+            </Link>
+            {lang === "es"
+              ? " para ver quién es cada integrante, cambiar su rol o darlo de baja del portal."
+              : " to see who each member is, change their role, or remove them from the portal."}
+          </p>
 
           {canManageTeam ? (
             atLimit ? (

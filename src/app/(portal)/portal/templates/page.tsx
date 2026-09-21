@@ -6,7 +6,9 @@ import { requireModule } from "@/lib/modules";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { TemplateFilters } from "@/components/portal/TemplateFilters";
 import { TemplatePackages } from "@/components/portal/TemplatePackages";
-import { getServerLang } from "@/lib/i18n-server";
+import { PortalSectionTabs } from "@/components/portal/PortalSectionTabs";
+import { getAutomationsTabs } from "@/lib/portal-nav-tabs";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
 
 const INDUSTRY_LABELS_ES: Record<string, string> = {
   clinic:      "Clínica / Salud",
@@ -108,9 +110,10 @@ export default async function PortalTemplatesPage() {
   // same gate the install action itself already enforces server-side.
   await requireModule(orgId, "AUTOMATIONS");
 
-  const [{ templates, installedIds, packages, orgIndustry }, lang] = await Promise.all([
+  const [{ templates, installedIds, packages, orgIndustry }, lang, t] = await Promise.all([
     getTemplateMarketplace(orgId),
     getServerLang(),
+    getServerT(),
   ]);
   const INDUSTRY_LABELS = lang === "es" ? INDUSTRY_LABELS_ES : INDUSTRY_LABELS_EN;
   const CATEGORY_LABELS = lang === "es" ? CATEGORY_LABELS_ES : CATEGORY_LABELS_EN;
@@ -121,6 +124,8 @@ export default async function PortalTemplatesPage() {
         title={lang === "es" ? "Templates de Automatización" : "Automation Templates"}
         description={lang === "es" ? `${templates.length} templates disponibles · ${installedIds.length} instalados` : `${templates.length} templates available · ${installedIds.length} installed`}
       />
+
+      <PortalSectionTabs tabs={getAutomationsTabs(t)} />
 
       <div className="info-box mb-5 rounded-lg border border-brand-100 bg-brand-50 p-4">
         <div className="flex items-start gap-3">
