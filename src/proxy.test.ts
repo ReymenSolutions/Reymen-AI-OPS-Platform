@@ -11,7 +11,7 @@ vi.mock("next-auth", () => ({
 }));
 vi.mock("@/lib/auth.config", () => ({ authConfig: {} }));
 
-const { default: middleware } = await import("./middleware");
+const { default: middleware } = await import("./proxy");
 
 function makeReq(pathname: string, session: unknown = null) {
   return {

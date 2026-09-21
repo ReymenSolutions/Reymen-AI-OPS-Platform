@@ -1137,7 +1137,7 @@ export async function createLead(formData: FormData) {
 
 ### Middleware Route Guard
 
-`src/middleware.ts` runs on every request (except static assets) and enforces:
+`src/proxy.ts` runs on every request (except static assets) and enforces:
 
 ```typescript
 // Admin routes require SUPER_ADMIN or ADMIN
@@ -1154,7 +1154,7 @@ if (isPortalRoute && !session.user.organizationId) {
 Public routes (session not required — each authenticates itself another way, or needs no auth):
 - `/login`, `/forgot-password`, `/reset-password`
 - `/api/webhooks/*` (secured by HMAC instead of session)
-- `/api/v1/*` (the n8n pull endpoints — `/knowledge-base`, `/conversations/status`, `/appointments/due-reminders`, `/leads/due-followups` — each authenticates via `X-Api-Key` matched against the organization's own `n8nWebhookSecret`, falling back to a session only for browser callers, checked inside the route itself; **fixed in Fase 6** — these were previously falling through to the session check below and being 307-redirected to `/login` on every unauthenticated n8n call, which meant none of the pull endpoints actually worked in production, see `src/middleware.test.ts`)
+- `/api/v1/*` (the n8n pull endpoints — `/knowledge-base`, `/conversations/status`, `/appointments/due-reminders`, `/leads/due-followups` — each authenticates via `X-Api-Key` matched against the organization's own `n8nWebhookSecret`, falling back to a session only for browser callers, checked inside the route itself; **fixed in Fase 6** — these were previously falling through to the session check below and being 307-redirected to `/login` on every unauthenticated n8n call, which meant none of the pull endpoints actually worked in production, see `src/proxy.test.ts`)
 - `/api/auth/*` (NextAuth handlers)
 - `/api/cron/*` (secured by `CRON_SECRET` instead of session)
 - `/api/health` (must be reachable by load balancers/uptime monitors without a session)
@@ -2564,7 +2564,7 @@ reymen-ai-ops-platform/
 │   │   ├── tenant.ts               # getOrganizationBySlug/Id(), assertOrgAccess()
 │   │   ├── utils.ts                # cn(), formatDate(), generateSlug(), generateWebhookSecret()
 │   │   └── webhook-validator.ts    # verifyWebhookSignature(), createWebhookSignature()
-│   ├── middleware.ts               # Route guard: auth + role enforcement
+│   ├── proxy.ts                    # Route guard: auth + role enforcement
 │   └── types/
 │       ├── api.ts                  # API response type definitions
 │       └── domain.ts               # Domain model type aliases
