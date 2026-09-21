@@ -94,7 +94,7 @@ export default async function AdminAuditPage({
               {logs.map((log) => {
                 const cfg = actionLabels[log.action];
                 return (
-                  <div key={log.id} className="flex items-start gap-3 py-3">
+                  <div key={log.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-start sm:gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         {cfg ? (

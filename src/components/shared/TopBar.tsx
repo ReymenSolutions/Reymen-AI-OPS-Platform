@@ -143,6 +143,13 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
     }
     setNotifOpen(true);
     setUserMenuOpen(false);
+    // Opening the bell counts as having seen the current items — the list
+    // keeps showing them (they're still pending), but the unread badge
+    // clears until something genuinely new shows up.
+    if (notifications.count > 0) {
+      setNotifications((prev) => ({ ...prev, count: 0 }));
+      fetch("/api/notifications", { method: "POST" }).catch(() => {});
+    }
   }
 
   function toggleUserMenu() {
@@ -176,13 +183,23 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 5MB)" : "Image too large (max 5MB)");
+    // The raw file is only ever read into a canvas and re-encoded at 200x200
+    // below, so this cap just guards against hanging on a huge decode — the
+    // real size limit is updateAvatar()'s 300KB check on the compressed
+    // result. Phone camera photos routinely run 8-15MB, so keep this high.
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 20MB)" : "Image too large (max 20MB)");
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => {
+      toast.error(lang === "es" ? "No se pudo leer la imagen" : "Could not read the image");
+    };
     reader.onload = (event) => {
       const img = new window.Image();
+      img.onerror = () => {
+        toast.error(lang === "es" ? "Formato de imagen no compatible" : "Unsupported image format");
+      };
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const size = 200;
@@ -198,6 +215,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
       img.src = event.target!.result as string;
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   }
 
   function handleSaveAvatar() {

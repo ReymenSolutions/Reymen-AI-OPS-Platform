@@ -11,19 +11,21 @@ export async function GET() {
   const isPortal = !!session.user.organizationId;
   const orgFilter = isPortal ? { organizationId: session.user.organizationId! } : {};
 
-  const [escalated, openRequests] = await Promise.all([
+  const [escalated, openRequests, seenAt] = await Promise.all([
     prisma.conversation.findMany({
       where: { ...orgFilter, status: "ESCALATED" },
       take: 5,
       orderBy: { updatedAt: "desc" },
-      select: { id: true, contactName: true },
+      select: { id: true, contactName: true, updatedAt: true },
     }),
     prisma.request.findMany({
       where: { ...orgFilter, status: "OPEN" },
       take: 5,
       orderBy: { createdAt: "desc" },
-      select: { id: true, title: true },
+      select: { id: true, title: true, createdAt: true },
     }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { notificationsSeenAt: true } })
+      .then((u) => u?.notificationsSeenAt ?? null),
   ]);
 
   const items = [
@@ -32,14 +34,36 @@ export async function GET() {
       label: "Conversación escalada",
       detail: c.contactName ?? "Sin nombre",
       href: isPortal ? "/portal/conversations" : "/admin/escalations",
+      at: c.updatedAt,
     })),
     ...openRequests.map((r) => ({
       type: "request",
       label: "Solicitud abierta",
       detail: r.title,
       href: isPortal ? "/portal/requests" : "/admin/requests",
+      at: r.createdAt,
     })),
   ].slice(0, 8);
 
-  return NextResponse.json({ count: items.length, items });
+  // The badge only counts items newer than the last time the bell was
+  // opened — the list itself still shows everything pending, so nothing
+  // that still needs action disappears, only the "new since last look" count.
+  const unreadCount = seenAt ? items.filter((i) => i.at > seenAt).length : items.length;
+
+  return NextResponse.json({
+    count: unreadCount,
+    items: items.map(({ at: _at, ...rest }) => rest),
+  });
+}
+
+export async function POST() {
+  const session = await auth();
+  if (!session) return NextResponse.json({ success: false }, { status: 401 });
+
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { notificationsSeenAt: new Date() },
+  });
+
+  return NextResponse.json({ success: true });
 }

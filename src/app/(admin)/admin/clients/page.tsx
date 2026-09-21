@@ -1,12 +1,10 @@
-import Link from "next/link";
-import { ExternalLink, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getServerT } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { CreateClientDialog } from "@/components/admin/CreateClientDialog";
-import { formatDate } from "@/lib/utils";
+import { ClientRow } from "@/components/admin/ClientRow";
 
 async function getClients() {
   return prisma.organization.findMany({
@@ -52,31 +50,13 @@ export default async function AdminClientsPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {clients.map((client) => (
-                <tr key={client.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-slate-900">{client.name}</p>
-                    <p className="text-xs text-slate-400">{client.slug}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant="secondary" className="capitalize">{client.plan}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-slate-700">{client._count.leads}</td>
-                  <td className="px-4 py-3 text-slate-700">{client._count.automations}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={client.isActive ? "success" : "destructive"}>
-                      {client.isActive ? t.statusActive : t.inactive}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{formatDate(client.createdAt)}</td>
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/admin/clients/${client.id}`}
-                      className="flex items-center gap-1 text-xs text-brand-600 hover:underline"
-                    >
-                      {t.viewDetail} <ExternalLink className="h-3 w-3" />
-                    </Link>
-                  </td>
-                </tr>
+                <ClientRow
+                  key={client.id}
+                  client={client}
+                  viewDetailLabel={t.viewDetail}
+                  statusActiveLabel={t.statusActive}
+                  inactiveLabel={t.inactive}
+                />
               ))}
             </tbody>
           </table>

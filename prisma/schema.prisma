@@ -76,6 +76,7 @@ model User {
   isActive             Boolean  @default(true)
   theme                String?  @default("light")
   language             String?  @default("es")
+  notificationsSeenAt  DateTime? // last time the user opened the notification bell — items newer than this still count as unread
   totpSecret           String? // base32 TOTP secret; set once enrollment begins
   totpEnabled          Boolean  @default(false)
   totpBackupCodeHashes String[] @default([]) // bcrypt hashes, single-use, cleared/regenerated on re-enroll

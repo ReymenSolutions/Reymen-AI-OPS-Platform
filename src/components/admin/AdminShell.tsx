@@ -32,9 +32,9 @@ export function AdminShell({ adminName, orgLogoUrl, personalImageUrl, hasOrganiz
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
       />
-      <div className="flex flex-1 flex-col min-h-0">
+      <div className="flex flex-1 flex-col min-h-0 min-w-0">
         <TopBar onMenuClick={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <main className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto p-4 sm:p-6">
           {children}
         </main>
       </div>

@@ -255,6 +255,7 @@ export const strings = {
 
     // ── Admin navigation ──────────────────────────────────────
     adminNavClients: "Clientes",
+    adminNavUsers: "Usuarios",
     adminNavEscalations: "Escalaciones",
     adminNavMetrics: "Métricas",
     adminNavAudit: "Auditoría",
@@ -291,6 +292,7 @@ export const strings = {
     // ── Admin clients ─────────────────────────────────────────
     adminClientsTitle: "Clientes",
     adminOrgsRegistered: "organizaciones registradas",
+    adminUsersRegistered: "usuarios registrados",
     adminNoClients: "Sin clientes aún",
     adminCreateFirstClient: "Crea tu primer cliente para comenzar",
     adminColCompany: "Empresa",
@@ -784,6 +786,7 @@ export const strings = {
 
     // ── Admin navigation ──────────────────────────────────────
     adminNavClients: "Clients",
+    adminNavUsers: "Users",
     adminNavEscalations: "Escalations",
     adminNavMetrics: "Metrics",
     adminNavAudit: "Audit",
@@ -820,6 +823,7 @@ export const strings = {
     // ── Admin clients ─────────────────────────────────────────
     adminClientsTitle: "Clients",
     adminOrgsRegistered: "organizations registered",
+    adminUsersRegistered: "users registered",
     adminNoClients: "No clients yet",
     adminCreateFirstClient: "Create your first client to get started",
     adminColCompany: "Company",

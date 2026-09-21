@@ -132,13 +132,23 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 5MB)" : "Image too large (max 5MB)");
+    // The raw file is only ever read into a canvas and re-encoded at 200x200
+    // below, so this cap just guards against hanging on a huge decode — the
+    // real size limit is updateOrgLogo()'s check on the compressed result.
+    // Phone camera photos routinely run 8-15MB, so keep this high.
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 20MB)" : "Image too large (max 20MB)");
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => {
+      toast.error(lang === "es" ? "No se pudo leer la imagen" : "Could not read the image");
+    };
     reader.onload = (event) => {
       const img = new window.Image();
+      img.onerror = () => {
+        toast.error(lang === "es" ? "Formato de imagen no compatible" : "Unsupported image format");
+      };
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const size = 200;
