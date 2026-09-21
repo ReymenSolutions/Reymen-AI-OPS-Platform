@@ -2,13 +2,19 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Loader2, CreditCard, Users } from "lucide-react";
+import { Loader2, CreditCard, Users, Activity } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/context/preferences";
 import { inviteSmartcardTeamMember } from "@/actions/portal/smartcard";
-import type { SmartcardMembership, CompanyRosterEntry } from "@/lib/smartcard-company";
+import {
+  EVENT_TYPE_LABELS_ES,
+  type SmartcardMembership,
+  type CompanyRosterEntry,
+  type CompanyCardStats,
+} from "@/lib/smartcard-company";
 
 const MODULE_LABELS_ES: Record<string, string> = {
   smartcard: "SmartCard",
@@ -40,7 +46,32 @@ const ROLE_LABELS_EN: Record<string, string> = {
   agent: "Agent",
 };
 
+// EVENT_TYPE_LABELS_ES itself is imported from smartcard-company.ts (single
+// source of truth, next to the query that produces the raw event_type
+// values) — this English pair lives here since lib/ only ever needed the
+// Spanish one so far.
+const EVENT_TYPE_LABELS_EN: Record<string, string> = {
+  qr_scan: "QR scans",
+  profile_view: "Profile views",
+  whatsapp_click: "WhatsApp clicks",
+  call_click: "Call clicks",
+  email_click: "Email clicks",
+  facebook_click: "Facebook clicks",
+  instagram_click: "Instagram clicks",
+  custom_link_click: "Custom link clicks",
+  save_contact: "Contacts saved",
+};
+
 const INVITABLE_ROLES = ["admin", "manager", "staff", "agent"];
+
+function StatTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-3">
+      <div className="text-2xl font-semibold text-slate-900">{value.toLocaleString()}</div>
+      <div className="mt-0.5 text-xs text-slate-500">{label}</div>
+    </div>
+  );
+}
 
 /**
  * Client half of the SmartCard page — dashboard summary (contracted
@@ -72,13 +103,20 @@ const INVITABLE_ROLES = ["admin", "manager", "staff", "agent"];
 export function SmartcardPanel({
   membership,
   roster,
+  cardStats,
 }: {
   membership: SmartcardMembership;
   roster: CompanyRosterEntry[];
+  cardStats: CompanyCardStats;
 }) {
   const { lang } = usePreferences();
   const MODULE_LABELS = lang === "es" ? MODULE_LABELS_ES : MODULE_LABELS_EN;
   const ROLE_LABELS = lang === "es" ? ROLE_LABELS_ES : ROLE_LABELS_EN;
+  const EVENT_TYPE_LABELS = lang === "es" ? EVENT_TYPE_LABELS_ES : EVENT_TYPE_LABELS_EN;
+
+  const byTypeEntries = Object.entries(cardStats.byType).sort((a, b) => b[1] - a[1]);
+  const maxTypeCount = byTypeEntries.length > 0 ? byTypeEntries[0][1] : 0;
+  const avgEventsPerCard = cardStats.totalCards > 0 ? Math.round(cardStats.totalEvents / cardStats.totalCards) : 0;
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -150,6 +188,101 @@ export function SmartcardPanel({
                 </li>
               ))}
             </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-center gap-2">
+          <Activity className="h-4 w-4 text-slate-400" />
+          <CardTitle>{lang === "es" ? "Estadísticas de tarjetas" : "Card statistics"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cardStats.totalCards === 0 ? (
+            <p className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">
+              {lang === "es"
+                ? "Todavía no hay tarjetas emitidas para esta empresa."
+                : "No cards have been issued for this company yet."}
+            </p>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <StatTile label={lang === "es" ? "Tarjetas" : "Cards"} value={cardStats.totalCards} />
+                <StatTile label={lang === "es" ? "Eventos totales" : "Total events"} value={cardStats.totalEvents} />
+                <StatTile
+                  label={lang === "es" ? "Promedio por tarjeta" : "Average per card"}
+                  value={avgEventsPerCard}
+                />
+              </div>
+
+              {byTypeEntries.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {lang === "es" ? "Por tipo de evento" : "By event type"}
+                  </h3>
+                  <ul className="space-y-2">
+                    {byTypeEntries.map(([type, count]) => (
+                      <li key={type} className="flex items-center gap-3 text-sm">
+                        <span className="w-36 shrink-0 truncate text-slate-600" title={EVENT_TYPE_LABELS[type] ?? type}>
+                          {EVENT_TYPE_LABELS[type] ?? type}
+                        </span>
+                        <span className="h-2 flex-1 rounded-full bg-slate-100">
+                          <span
+                            className="block h-2 rounded-full bg-blue-500"
+                            style={{ width: `${maxTypeCount > 0 ? Math.max(4, (count / maxTypeCount) * 100) : 0}%` }}
+                          />
+                        </span>
+                        <span className="w-10 shrink-0 text-right font-medium text-slate-700">{count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div>
+                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  {lang === "es" ? "Por tarjeta" : "By card"}
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+                        <th className="py-2 pr-3 font-medium">{lang === "es" ? "Tarjeta" : "Card"}</th>
+                        <th className="py-2 pr-3 font-medium">{lang === "es" ? "Integrante" : "Member"}</th>
+                        <th className="py-2 pr-3 font-medium">{lang === "es" ? "Estado" : "Status"}</th>
+                        <th className="py-2 pr-3 text-right font-medium">{lang === "es" ? "Eventos" : "Events"}</th>
+                        <th className="py-2 font-medium">{lang === "es" ? "Última actividad" : "Last activity"}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {cardStats.cards.map((c) => (
+                        <tr key={c.cardId}>
+                          <td className="py-2 pr-3 font-mono text-xs text-slate-700">{c.cardCode}</td>
+                          <td className="py-2 pr-3 text-slate-600">{c.clientName}</td>
+                          <td className="py-2 pr-3">
+                            <Badge variant="secondary" className="text-xs">
+                              {c.status}
+                            </Badge>
+                          </td>
+                          <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
+                          <td className="py-2 text-slate-500">
+                            {c.lastActivityAt
+                              ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+                                  year: "numeric",
+                                  month: "short",
+                                  day: "numeric",
+                                })
+                              : lang === "es"
+                                ? "Sin actividad"
+                                : "No activity"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
