@@ -52,13 +52,13 @@ export default async function FoodOverviewPage() {
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Ventas de hoy"
-          value={`$${summary.today.gross.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`}
+          value={`$${summary.today.gross.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           description="Bruto"
           icon={DollarSign}
         />
         <MetricCard
           title="Ticket promedio"
-          value={`$${avgTicketToday.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`}
+          value={`$${avgTicketToday.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           description="Hoy"
           icon={Receipt}
           trend={
@@ -99,21 +99,25 @@ export default async function FoodOverviewPage() {
                 Todavía no hay ventas registradas hoy.
               </p>
             ) : (
-              <div className="flex h-40 items-end gap-1">
+              <div className="flex items-end gap-1">
                 {chartHours.map((h) => {
-                  const heightPct = maxHourlyGross > 0 ? Math.max(4, (h.gross / maxHourlyGross) * 100) : 0;
+                  // Altura en px directa, no porcentaje: un % de altura solo
+                  // funciona si el contenedor inmediato tiene una altura
+                  // definida, y aquí cada columna es un flex item con altura
+                  // automática (se alinean por abajo vía items-end en el
+                  // padre) -- un % ahí siempre resuelve a 0. Con px fijos se
+                  // evita el problema por completo.
+                  const barPx = maxHourlyGross > 0 ? Math.max(4, Math.round((h.gross / maxHourlyGross) * 96)) : 0;
                   const isPeak = h.gross === maxHourlyGross && h.gross > 0;
                   return (
-                    <div key={h.hour} className="flex flex-1 flex-col items-center justify-end gap-1">
-                      {isPeak && (
-                        <span className="text-[10px] font-medium text-slate-600">
-                          ${h.gross.toLocaleString("es-MX", { maximumFractionDigits: 0 })}
-                        </span>
-                      )}
+                    <div key={h.hour} className="flex flex-1 flex-col items-center gap-1">
+                      <span className="h-3 text-[10px] font-medium text-slate-600">
+                        {isPeak ? `$${h.gross.toLocaleString("es-MX", { maximumFractionDigits: 0 })}` : ""}
+                      </span>
                       <div
                         className="w-full rounded-t-sm bg-brand-500"
-                        style={{ height: `${heightPct}%` }}
-                        title={`${h.hour}:00 — $${h.gross.toLocaleString("es-MX", { minimumFractionDigits: 2 })} (${h.count} venta(s))`}
+                        style={{ height: `${barPx}px` }}
+                        title={`${h.hour}:00 — $${h.gross.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${h.count} venta(s))`}
                       />
                       <span className="text-[10px] text-slate-400">{h.hour}h</span>
                     </div>
@@ -165,7 +169,7 @@ export default async function FoodOverviewPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-slate-900">
-              ${summary.last30Days.gross.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+              ${summary.last30Days.gross.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             {summary.monthOverMonthGrossPct !== null && (
               <p className={`mt-1 text-xs font-medium ${summary.monthOverMonthGrossPct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
@@ -195,7 +199,7 @@ export default async function FoodOverviewPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-slate-900">
-              ${(summary.last30Days.count > 0 ? summary.last30Days.gross / summary.last30Days.count : 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+              ${(summary.last30Days.count > 0 ? summary.last30Days.gross / summary.last30Days.count : 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             {summary.monthOverMonthTicketPct !== null && (
               <p className={`mt-1 text-xs font-medium ${summary.monthOverMonthTicketPct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
