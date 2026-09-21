@@ -19,6 +19,7 @@ import {
   Loader2,
   Webhook,
   Package,
+  X,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,11 @@ interface AdminSidebarProps {
   personalImageUrl?: string | null;
   /** False for super-admins that have no organization; they manage their personal avatar here instead */
   hasOrganization?: boolean;
+  /** Off-canvas drawer state below `lg:` — controlled by AdminShell.tsx, which
+   * also renders the hamburger toggle in TopBar. No effect at `lg:` and up,
+   * where the sidebar is always visible exactly as before. */
+  mobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
 export function AdminSidebar({
@@ -80,6 +86,8 @@ export function AdminSidebar({
   orgLogoUrl: initialOrgLogoUrl,
   personalImageUrl: initialPersonalImageUrl,
   hasOrganization = false,
+  mobileOpen,
+  onMobileClose,
 }: AdminSidebarProps) {
   const pathname = usePathname();
   const { t, lang } = usePreferences();
@@ -189,16 +197,31 @@ export function AdminSidebar({
         overrides in globals.css, the same pattern already used there,
         instead of `dark:` utilities that would silently never apply.
       */}
-      <aside className="sidebar flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950">
+      {/* Off-canvas backdrop — below `lg:` only, closes the drawer on click */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          "sidebar fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950 transition-transform duration-200 ease-in-out",
+          "lg:static lg:z-auto lg:translate-x-0 lg:transition-none",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
         {/* Logo — always clickable: org logo when the admin has an org, personal avatar otherwise */}
-        <button
-          onClick={() => {
-            setLogoUrl(currentLogoUrl ?? "");
-            setLogoDialogOpen(true);
-          }}
-          className="sidebar-header group flex h-16 items-center border-b border-white/10 px-6 w-full text-left transition-colors hover:bg-white/5 cursor-pointer"
-        >
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 transition-colors hover:bg-white/5">
+          <button
+            onClick={() => {
+              setLogoUrl(currentLogoUrl ?? "");
+              setLogoDialogOpen(true);
+            }}
+            className="group flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+          >
             <div className="relative flex-shrink-0">
               {currentLogoUrl ? (
                 <img src={currentLogoUrl} alt={adminName} className="h-8 w-8 rounded-lg object-cover" />
@@ -215,8 +238,15 @@ export function AdminSidebar({
               <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{adminName}</p>
               <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">Admin</p>
             </div>
-          </div>
-        </button>
+          </button>
+          <button
+            onClick={onMobileClose}
+            className="ml-2 flex-shrink-0 rounded-md p-1.5 text-brand-100 hover:bg-white/10 hover:text-white transition-colors lg:hidden"
+            aria-label={lang === "es" ? "Cerrar menú" : "Close menu"}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
@@ -227,6 +257,7 @@ export function AdminSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onMobileClose}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive

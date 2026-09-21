@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useTransition } from "react";
 import {
   Bell, LogOut, MessageSquare, FileText, Sun, Moon, Globe,
-  Image as ImageIcon, KeyRound, RefreshCw, User, Loader2, Upload, Users, X,
+  Image as ImageIcon, KeyRound, RefreshCw, User, Loader2, Upload, Users, X, Menu,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
@@ -73,11 +73,15 @@ function getInitials(name?: string | null, email?: string | null): string {
 
 interface TopBarProps {
   title?: string;
+  /** Renders a hamburger button (visible only below `lg:`) that calls this
+   * to open the off-canvas sidebar drawer. Omitted on pages that don't use
+   * the sidebar shell (e.g. auth pages), where no button renders. */
+  onMenuClick?: () => void;
 }
 
 type ActiveDialog = null | "avatar" | "password" | "switch-account" | "impersonate";
 
-export function TopBar({ title }: TopBarProps) {
+export function TopBar({ title, onMenuClick }: TopBarProps) {
   const { data: session, update } = useSession();
   const { theme, setTheme, lang, setLang, t } = usePreferences();
 
@@ -334,8 +338,17 @@ export function TopBar({ title }: TopBarProps) {
         </div>
       )}
 
-      <header className="relative flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-6">
-        <div className="flex-1">
+      <header className="relative flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-4 sm:px-6">
+        <div className="flex flex-1 items-center gap-3">
+          {onMenuClick && (
+            <button
+              onClick={onMenuClick}
+              className="rounded-md p-2 text-slate-500 hover:bg-slate-100 transition-colors lg:hidden"
+              aria-label={t.menu}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          )}
           {title && <p className="text-sm text-slate-500">{title}</p>}
         </div>
         <Link

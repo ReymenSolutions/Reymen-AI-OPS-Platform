@@ -108,7 +108,7 @@ export function LeadTableClient({ leads, total, page, pageSize, query, status }:
           <p className="text-sm text-slate-400">{t.noLeadsFiltered}</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
