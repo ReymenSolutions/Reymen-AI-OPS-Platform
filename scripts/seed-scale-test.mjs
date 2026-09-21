@@ -31,11 +31,11 @@ async function main() {
   });
   console.log("org:", org.id);
 
-  for (const module of ["CRM", "AI_WHATSAPP", "AUTOMATIONS"]) {
+  for (const mod of ["CRM", "AI_WHATSAPP", "AUTOMATIONS"]) {
     await prisma.organizationModule.upsert({
-      where: { organizationId_module: { organizationId: org.id, module } },
+      where: { organizationId_module: { organizationId: org.id, module: mod } },
       update: {},
-      create: { organizationId: org.id, module, status: "ACTIVE", source: "SUBSCRIBED" },
+      create: { organizationId: org.id, module: mod, status: "ACTIVE", source: "SUBSCRIBED" },
     });
   }
 
