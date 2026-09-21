@@ -161,3 +161,140 @@ export async function getCompanyRoster(
     isCurrentUser: m.user_id === currentUserId,
   }));
 }
+
+// The real, human-facing labels for reymen-smartcard's event_type values —
+// confirmed 2026-09-21 by sampling the live events table rather than
+// guessing (its schema carries no label column). Every value seen appears
+// here; an event_type added later falls back to its raw code in the UI
+// (see CardStatsPanel) instead of silently disappearing from the totals.
+export const EVENT_TYPE_LABELS_ES: Record<string, string> = {
+  qr_scan: "Escaneos QR",
+  profile_view: "Vistas de perfil",
+  whatsapp_click: "Clicks a WhatsApp",
+  call_click: "Clicks a llamar",
+  email_click: "Clicks a correo",
+  facebook_click: "Clicks a Facebook",
+  instagram_click: "Clicks a Instagram",
+  custom_link_click: "Clicks a links personalizados",
+  save_contact: "Contactos guardados",
+};
+
+export interface CardStatsEntry {
+  cardId: string;
+  cardCode: string;
+  status: string;
+  destinationType: string;
+  clientName: string;
+  totalEvents: number;
+  byType: Record<string, number>;
+  lastActivityAt: string | null;
+}
+
+export interface CompanyCardStats {
+  totalCards: number;
+  totalEvents: number;
+  byType: Record<string, number>;
+  cards: CardStatsEntry[];
+}
+
+const EMPTY_STATS: CompanyCardStats = { totalCards: 0, totalEvents: 0, byType: {}, cards: [] };
+
+/**
+ * SmartCard's actual reason for existing (per the user, 2026-09-21) — how
+ * each issued card is performing: scans, profile views, and clicks per
+ * channel. reymen-smartcard's own dashboard never built this (its
+ * app/dashboard/page.tsx literally says "llega en la Fase 2"), so there's
+ * nothing to port — this queries the raw tables directly:
+ * clients (company_id) -> cards (client_id) -> events (card_id), same
+ * company_id -> clients chain company_modules/company_users already use.
+ *
+ * PostgREST has no GROUP BY, so the per-type/per-card breakdown is done in
+ * application code over the raw event rows rather than in SQL. Capped at
+ * 5000 events (ordered newest-first) as a sanity limit for this early
+ * stage of the product — worth moving to a real aggregate (a view, or a
+ * dedicated RPC like the existing check_limit/log_event ones) well before
+ * any single company gets close to that many real events.
+ *
+ * is_bot rows are excluded — that flag exists in the schema specifically
+ * to keep non-human traffic out of stats like these.
+ */
+export async function getCompanyCardStats(companyId: string): Promise<CompanyCardStats> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return EMPTY_STATS;
+
+  const { data: clients, error: clientsError } = await supabase
+    .from("clients")
+    .select("id, name, business_name")
+    .eq("company_id", companyId);
+  if (clientsError) {
+    console.error("[smartcard-company] Error listando clients:", clientsError.message);
+    return EMPTY_STATS;
+  }
+  if (!clients?.length) return EMPTY_STATS;
+
+  const clientIds = clients.map((c) => c.id);
+  const clientNameById = new Map(clients.map((c) => [c.id, c.business_name || c.name]));
+
+  const { data: cards, error: cardsError } = await supabase
+    .from("cards")
+    .select("id, card_code, status, destination_type, client_id")
+    .in("client_id", clientIds)
+    .is("deleted_at", null);
+  if (cardsError) {
+    console.error("[smartcard-company] Error listando cards:", cardsError.message);
+    return EMPTY_STATS;
+  }
+  if (!cards?.length) return { ...EMPTY_STATS, totalCards: 0 };
+
+  const cardIds = cards.map((c) => c.id);
+  const { data: events, error: eventsError } = await supabase
+    .from("events")
+    .select("card_id, event_type, occurred_at")
+    .in("card_id", cardIds)
+    .eq("is_bot", false)
+    .order("occurred_at", { ascending: false })
+    .limit(5000);
+  if (eventsError) {
+    console.error("[smartcard-company] Error listando events:", eventsError.message);
+    return { totalCards: cards.length, totalEvents: 0, byType: {}, cards: [] };
+  }
+
+  const byCard = new Map<string, { byType: Record<string, number>; total: number; lastActivityAt: string | null }>();
+  const companyByType: Record<string, number> = {};
+  let companyTotal = 0;
+
+  for (const e of events ?? []) {
+    companyByType[e.event_type] = (companyByType[e.event_type] ?? 0) + 1;
+    companyTotal += 1;
+
+    const entry = byCard.get(e.card_id) ?? { byType: {}, total: 0, lastActivityAt: null };
+    entry.byType[e.event_type] = (entry.byType[e.event_type] ?? 0) + 1;
+    entry.total += 1;
+    // events is ordered newest-first, so the first row seen per card is its
+    // most recent activity.
+    if (!entry.lastActivityAt) entry.lastActivityAt = e.occurred_at;
+    byCard.set(e.card_id, entry);
+  }
+
+  const cardStats: CardStatsEntry[] = cards.map((c) => {
+    const stats = byCard.get(c.id) ?? { byType: {}, total: 0, lastActivityAt: null };
+    return {
+      cardId: c.id,
+      cardCode: c.card_code,
+      status: c.status,
+      destinationType: c.destination_type,
+      clientName: clientNameById.get(c.client_id) ?? "—",
+      totalEvents: stats.total,
+      byType: stats.byType,
+      lastActivityAt: stats.lastActivityAt,
+    };
+  });
+  cardStats.sort((a, b) => b.totalEvents - a.totalEvents);
+
+  return {
+    totalCards: cards.length,
+    totalEvents: companyTotal,
+    byType: companyByType,
+    cards: cardStats,
+  };
+}
