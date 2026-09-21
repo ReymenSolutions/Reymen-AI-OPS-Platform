@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
   Calendar, FileText, LogOut, Bot,
-  Upload, Loader2, GitBranch, Rocket, UtensilsCrossed, CreditCard,
+  Upload, Loader2, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -110,9 +110,14 @@ interface PortalSidebarProps {
   orgLogoUrl?: string | null;
   enabledModules: PlatformModule[];
   pendingConversations?: number;
+  /** Off-canvas drawer state below `lg:` — controlled by PortalShell.tsx, which
+   * also renders the hamburger toggle in TopBar. No effect at `lg:` and up,
+   * where the sidebar is always visible exactly as before. */
+  mobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
-export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModules, pendingConversations = 0 }: PortalSidebarProps) {
+export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModules, pendingConversations = 0, mobileOpen, onMobileClose }: PortalSidebarProps) {
   const pathname = usePathname();
   const { t, lang } = usePreferences();
   const labels = useNavItems();
@@ -175,13 +180,28 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
         via the same `sidebar*` hook classNames so both sidebars stay in
         sync from one CSS block instead of two.
       */}
-      <aside className="sidebar flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950">
+      {/* Off-canvas backdrop — below `lg:` only, closes the drawer on click */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          "sidebar fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950 transition-transform duration-200 ease-in-out",
+          "lg:static lg:z-auto lg:translate-x-0 lg:transition-none",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
         {/* Logo / Org — clickable to update logo */}
-        <button
-          onClick={() => { setLogoUrl(currentLogoUrl ?? ""); setLogoDialogOpen(true); }}
-          className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 w-full text-left group hover:bg-white/5 transition-colors"
-        >
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 hover:bg-white/5 transition-colors">
+          <button
+            onClick={() => { setLogoUrl(currentLogoUrl ?? ""); setLogoDialogOpen(true); }}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left group"
+          >
             <div className="relative flex-shrink-0">
               {currentLogoUrl ? (
                 <img src={currentLogoUrl} alt={orgName} className="h-8 w-8 rounded-lg object-cover" />
@@ -198,8 +218,15 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
               <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{orgName}</p>
               <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">{t.aiOps}</p>
             </div>
-          </div>
-        </button>
+          </button>
+          <button
+            onClick={onMobileClose}
+            className="ml-2 flex-shrink-0 rounded-md p-1.5 text-brand-100 hover:bg-white/10 hover:text-white transition-colors lg:hidden"
+            aria-label={lang === "es" ? "Cerrar menú" : "Close menu"}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
@@ -210,6 +237,7 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onMobileClose}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive

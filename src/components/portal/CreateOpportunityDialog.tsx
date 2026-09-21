@@ -148,7 +148,7 @@ export function CreateOpportunityDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{lang === "es" ? "Monto" : "Amount"}</Label>
               <Input type="number" min="0" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -166,7 +166,7 @@ export function CreateOpportunityDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{lang === "es" ? "Etapa" : "Stage"}</Label>
               <Select value={stageId} onValueChange={setStageId}>

@@ -71,7 +71,7 @@ export function CreateRequestDialog() {
             {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t.adminColType}</Label>
               <Select onValueChange={(v) => setValue("type", v as FormData["type"])}>

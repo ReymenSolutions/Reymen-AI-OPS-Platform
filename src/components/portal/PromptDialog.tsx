@@ -101,7 +101,7 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
           <DialogTitle>{mode === "create" ? (lang === "es" ? "Crear prompt" : "Create prompt") : (lang === "es" ? "Editar prompt" : "Edit prompt")}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{lang === "es" ? "Nombre" : "Name"}</Label>
               <Input placeholder={lang === "es" ? "Prompt sistema v2" : "System prompt v2"} {...register("name")} />

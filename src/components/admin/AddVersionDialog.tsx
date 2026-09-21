@@ -137,7 +137,7 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
           <DialogTitle>{lang === "es" ? "Nueva versión" : "New version"} — {templateName}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{lang === "es" ? "Número de versión *" : "Version number *"}</Label>
               <Input
