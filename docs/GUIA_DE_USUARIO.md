@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Guía de Usuario
 
-> **Versión del documento:** 1.1 | **Fecha:** Septiembre 2026 (actualizado con los módulos Food y SmartCard, y gestión de usuarios)  
+> **Versión del documento:** 1.2 | **Fecha:** Septiembre 2026 (actualizado con categorías y modificadores de menú, conexión con POS externo, módulos Food y SmartCard, y gestión de usuarios)  
 > **Idioma:** Español | **Aplicable a:** Portal de Clientes y Panel de Administración
 
 ---
@@ -864,6 +864,22 @@ Aquí se arma el menú real:
 
 > Un platillo sin receta capturada muestra costo $0.00 y margen 100% — no es un error, es que todavía no le has agregado insumos.
 
+**Categorías y grupos de modificadores** (en la misma página, debajo de la lista de platillos):
+
+- **Categorías**: agrupa tus platillos (ej. "Bebidas", "Entradas", "Postres"). Créalas con el botón
+  "Nueva categoría" y asígnalas a un platillo desde su formulario de edición, en el selector
+  "Categoría". Un platillo puede tener una categoría o ninguna. Borrar una categoría no borra sus
+  platillos — solo quedan sin categoría.
+- **Grupos de modificadores**: opciones que el cliente elige al pedir un platillo (ej. "Término de
+  cocción", "Extras"). Cada grupo tiene un mínimo y un máximo de opciones a elegir (0 mínimo =
+  opcional, 1 máximo = elección única) y una lista de opciones, cada una con un precio adicional
+  opcional. Se asignan a un platillo con los botones de la sección "Grupos de modificadores" en su
+  formulario de edición — un platillo puede tener varios grupos asignados. Borrar un grupo lo quita
+  de cualquier platillo que lo tuviera.
+
+Ambas cosas alimentan el menú que un punto de venta (POS) externo puede consultar, si tu
+organización tiene uno conectado — ver más abajo.
+
 ### Rentabilidad (`/portal/food/profitability`)
 
 - **Gastos fijos mensuales**: renta, nómina, servicios — súmalos aquí para que el resto de los cálculos los tome en cuenta.
@@ -873,6 +889,15 @@ Aquí se arma el menú real:
 - **Recomendaciones para mejorar utilidad**: alertas automáticas generadas a partir de margen + volumen de venta real (ej. "se vende mucho pero deja poco margen — considera subir el precio").
 - **Promociones recomendadas**: platillos que casi no se venden, para que consideres un descuento o combo.
 - **Calculadora de precio recomendado**: elige un platillo (o captura un costo manual) y tu % de costo objetivo — te sugiere el precio de venta ideal.
+
+### Conexión con un punto de venta (POS) externo
+
+Si tu restaurante usa (o va a usar) un punto de venta propio, Reymen puede conectarse con él para
+recibir automáticamente las ventas de cada orden, sin que tengas que capturarlas a mano en
+"Ventas de hoy por platillo". Contacta a tu proveedor de Reymen para obtener la clave de conexión
+de tu organización (la misma que usan las automatizaciones) — el punto de venta la usa para leer
+tu menú (con categorías y modificadores incluidos) y para reportar cada orden cerrada. Esto es
+opcional: mientras no tengas un POS conectado, todo sigue funcionando igual con captura manual.
 
 ---
 

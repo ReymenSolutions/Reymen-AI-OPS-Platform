@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { hasModule } from "./modules";
 
 // ─── FOOD OPS — agregados de Ventas ──────────────────────────────────
 // Compartido entre /portal/food (resumen) y /portal/food/analytics
@@ -266,6 +267,9 @@ export interface FoodDishWithCost {
   id: string;
   name: string;
   isActive: boolean;
+  categoryId: string | null;
+  categoryName: string | null;
+  modifierGroupIds: string[];
   variants: FoodDishVariantWithCost[];
 }
 
@@ -276,6 +280,8 @@ export async function getFoodDishesWithCost(
   const dishes = await prisma.foodDish.findMany({
     where: { organizationId, ...(opts.activeOnly ? { isActive: true } : {}) },
     include: {
+      category: { select: { id: true, name: true } },
+      modifierGroups: { select: { groupId: true } },
       variants: {
         include: {
           ingredients: {
@@ -319,7 +325,15 @@ export async function getFoodDishesWithCost(
         displayName: singleDefaultVariant ? d.name : `${d.name} — ${v.label}`,
       };
     });
-    return { id: d.id, name: d.name, isActive: d.isActive, variants };
+    return {
+      id: d.id,
+      name: d.name,
+      isActive: d.isActive,
+      categoryId: d.category?.id ?? null,
+      categoryName: d.category?.name ?? null,
+      modifierGroupIds: d.modifierGroups.map((m) => m.groupId),
+      variants,
+    };
   });
 }
 
@@ -342,10 +356,27 @@ export interface FoodMenuVariant {
   externalPosId: string | null;
 }
 
+export interface FoodMenuModifierOption {
+  optionId: string;
+  name: string;
+  priceDelta: number;
+}
+
+export interface FoodMenuModifierGroup {
+  groupId: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  options: FoodMenuModifierOption[];
+}
+
 export interface FoodMenuDish {
   dishId: string;
   name: string;
+  categoryId: string | null;
+  categoryName: string | null;
   variants: FoodMenuVariant[];
+  modifierGroups: FoodMenuModifierGroup[];
 }
 
 export async function getFoodMenuForPos(organizationId: string): Promise<FoodMenuDish[]> {
@@ -354,9 +385,24 @@ export async function getFoodMenuForPos(organizationId: string): Promise<FoodMen
     select: {
       id: true,
       name: true,
+      category: { select: { id: true, name: true } },
       variants: {
         select: { id: true, label: true, price: true, externalPosId: true },
         orderBy: { label: "asc" },
+      },
+      modifierGroups: {
+        select: {
+          group: {
+            select: {
+              id: true,
+              name: true,
+              minSelect: true,
+              maxSelect: true,
+              sortOrder: true,
+              options: { select: { id: true, name: true, priceDelta: true }, orderBy: { sortOrder: "asc" } },
+            },
+          },
+        },
       },
     },
     orderBy: { name: "asc" },
@@ -365,12 +411,80 @@ export async function getFoodMenuForPos(organizationId: string): Promise<FoodMen
   return dishes.map((d) => ({
     dishId: d.id,
     name: d.name,
+    categoryId: d.category?.id ?? null,
+    categoryName: d.category?.name ?? null,
     variants: d.variants.map((v) => ({
       variantId: v.id,
       label: v.label,
       price: Number(v.price),
       externalPosId: v.externalPosId,
     })),
+    modifierGroups: d.modifierGroups
+      .map((link) => link.group)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((g) => ({
+        groupId: g.id,
+        name: g.name,
+        minSelect: g.minSelect,
+        maxSelect: g.maxSelect,
+        options: g.options.map((o) => ({ optionId: o.id, name: o.name, priceDelta: Number(o.priceDelta) })),
+      })),
+  }));
+}
+
+// ─── FOOD OPS — Categorías de menú (Fase 17) ─────────────────────────
+
+export interface FoodDishCategoryEntry {
+  id: string;
+  name: string;
+  sortOrder: number;
+  dishCount: number;
+}
+
+export async function getFoodDishCategories(organizationId: string): Promise<FoodDishCategoryEntry[]> {
+  const rows = await prisma.foodDishCategory.findMany({
+    where: { organizationId },
+    orderBy: { sortOrder: "asc" },
+    include: { _count: { select: { dishes: true } } },
+  });
+  return rows.map((c) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder, dishCount: c._count.dishes }));
+}
+
+// ─── FOOD OPS — Grupos de modificadores (Fase 17) ────────────────────
+
+export interface FoodModifierOptionEntry {
+  id: string;
+  name: string;
+  priceDelta: number;
+}
+
+export interface FoodModifierGroupEntry {
+  id: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  sortOrder: number;
+  options: FoodModifierOptionEntry[];
+  dishCount: number;
+}
+
+export async function getFoodModifierGroups(organizationId: string): Promise<FoodModifierGroupEntry[]> {
+  const rows = await prisma.foodModifierGroup.findMany({
+    where: { organizationId },
+    orderBy: { sortOrder: "asc" },
+    include: {
+      options: { orderBy: { sortOrder: "asc" } },
+      _count: { select: { dishLinks: true } },
+    },
+  });
+  return rows.map((g) => ({
+    id: g.id,
+    name: g.name,
+    minSelect: g.minSelect,
+    maxSelect: g.maxSelect,
+    sortOrder: g.sortOrder,
+    options: g.options.map((o) => ({ id: o.id, name: o.name, priceDelta: Number(o.priceDelta) })),
+    dishCount: g._count.dishLinks,
   }));
 }
 
@@ -727,4 +841,76 @@ export async function getFoodLeastSoldDishes(organizationId: string, days = 30, 
 export function recommendDishPrice(cost: number, targetCostPct: number): number {
   if (targetCostPct <= 0 || targetCostPct >= 100) return cost;
   return Math.round((cost / (targetCostPct / 100)) * 100) / 100;
+}
+
+// ─── FOOD OPS — Ingesta de ventas desde un POS externo (Fase 17) ─────
+// Llamado por POST /api/webhooks/pos/orders (autenticación + idempotencia
+// las resuelve la ruta vía ingestWebhookEvent, igual que los webhooks de
+// n8n) -- esta función solo valida el payload y escribe. A diferencia de
+// logFoodDishSales() (captura manual, REEMPLAZA la cantidad del día), aquí
+// cada orden SUMA -- un POS manda una orden a la vez, no un total diario.
+
+export interface FoodPosOrderItem {
+  variantId: string;
+  quantity: number;
+}
+
+export interface FoodPosOrderPayload {
+  occurredAt?: string; // ISO 8601; por defecto ahora
+  channel?: string; // por defecto "POS"
+  grossAmount: number;
+  netAmount: number;
+  items: FoodPosOrderItem[];
+}
+
+export async function processFoodPosOrder(payload: unknown, organizationId: string): Promise<void> {
+  if (!(await hasModule(organizationId, "FOOD_OPS"))) {
+    throw new Error("El módulo Food no está habilitado para esta organización");
+  }
+
+  const body = payload as Partial<FoodPosOrderPayload>;
+
+  if (typeof body.grossAmount !== "number" || typeof body.netAmount !== "number") {
+    throw new Error("grossAmount y netAmount son requeridos y deben ser numéricos");
+  }
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    throw new Error("La orden debe traer al menos un item");
+  }
+  for (const item of body.items) {
+    if (!item?.variantId || typeof item.quantity !== "number" || item.quantity <= 0) {
+      throw new Error("Cada item requiere variantId y quantity > 0");
+    }
+  }
+
+  const occurredAt = body.occurredAt ? new Date(body.occurredAt) : new Date();
+  if (Number.isNaN(occurredAt.getTime())) throw new Error("occurredAt inválido");
+  const businessDay = startOfDay(occurredAt);
+
+  const variantIds = body.items.map((i) => i.variantId);
+  const owned = await prisma.foodDishVariant.findMany({
+    where: { id: { in: variantIds }, organizationId },
+    select: { id: true },
+  });
+  if (owned.length !== new Set(variantIds).size) {
+    throw new Error("Una o más variantes de la orden no pertenecen a esta organización");
+  }
+
+  await prisma.$transaction([
+    prisma.foodSale.create({
+      data: {
+        organizationId,
+        occurredAt,
+        channel: body.channel ?? "POS",
+        grossAmount: body.grossAmount,
+        netAmount: body.netAmount,
+      },
+    }),
+    ...body.items.map((item) =>
+      prisma.foodDishSale.upsert({
+        where: { variantId_occurredAt: { variantId: item.variantId, occurredAt: businessDay } },
+        update: { quantity: { increment: item.quantity } },
+        create: { organizationId, variantId: item.variantId, occurredAt: businessDay, quantity: item.quantity },
+      })
+    ),
+  ]);
 }

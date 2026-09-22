@@ -65,9 +65,11 @@ model Organization {
   foodInventoryItems    FoodInventoryItem[]
   foodSuppliers         FoodSupplier[]
   foodDishes            FoodDish[]
+  foodDishCategories    FoodDishCategory[]
   foodDishVariants      FoodDishVariant[]
   foodDishSales         FoodDishSale[]
   foodOperatingCosts    FoodOperatingCost[]
+  foodModifierGroups    FoodModifierGroup[]
 
   @@index([slug])
 }
@@ -1111,19 +1113,43 @@ model FoodSupplier {
 // existan, sin forzar a rehacer el flujo de captura de ventas que ya
 // existe ni inventar una mezcla de ventas.
 
+// Agrupación de menú para un POS (ej. "Bebidas", "Entradas") -- opcional a
+// propósito (categoryId es nullable en FoodDish): un platillo sin
+// categorizar sigue siendo válido, solo no aparece agrupado en el grid del
+// POS. onDelete: SetNull en FoodDish.category, nunca se borra un platillo
+// solo porque se borró su categoría.
+model FoodDishCategory {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  dishes       FoodDish[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
 model FoodDish {
   id             String   @id @default(cuid())
   organizationId String
+  categoryId     String?
   name           String
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization      @relation(fields: [organizationId], references: [id])
-  variants     FoodDishVariant[]
+  organization   Organization            @relation(fields: [organizationId], references: [id])
+  category       FoodDishCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  variants       FoodDishVariant[]
+  modifierGroups FoodDishModifierGroup[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
+  @@index([categoryId])
 }
 
 model FoodDishVariant {
@@ -1178,9 +1204,14 @@ model FoodDishSale {
   organizationId String
   variantId      String
   // Fecha de negocio, mismo criterio que FoodSale.occurredAt -- siempre a
-  // medianoche local del día que se está registrando (no una hora exacta),
-  // ya que logFoodDishSales() guarda "cuántas unidades de esta variante se
-  // vendieron ESE día" como un total diario, no una venta individual.
+  // medianoche local del día que se está registrando (no una hora exacta).
+  // Dos escrituras distintas mantienen esta fila, con semántica distinta
+  // cada una (ver logFoodDishSales() vs. el webhook de POS en
+  // /api/webhooks/pos/orders): la captura manual del portal REEMPLAZA la
+  // cantidad del día completo (corrige un error de captura sin duplicar);
+  // el webhook del POS la SUMA por cada orden que llega (varias ventas
+  // reales del mismo día para la misma variante). No se mezclan en la
+  // práctica -- un restaurante que ya usa el POS deja de capturar a mano.
   occurredAt     DateTime @default(now())
   quantity       Int
   createdAt      DateTime @default(now())
@@ -1191,6 +1222,62 @@ model FoodDishSale {
 
   @@unique([variantId, occurredAt])
   @@index([organizationId, occurredAt])
+}
+
+// ─── FOOD OPS — Modificadores (Fase 17: integración con POS) ─────────
+// Un grupo de opciones reutilizable entre varios platillos (ej. "Término"
+// con Crudo/Medio/Bien cocido, minSelect=maxSelect=1 -- obligatorio elegir
+// uno; "Extras" con Extra queso/Extra tocino, minSelect=0 maxSelect=3 --
+// opcional, varias). Vive a nivel FoodDish (no por variante): el
+// modificador aplica igual sin importar el tamaño elegido. Sin costo de
+// insumo asociado todavía -- a diferencia de FoodDishVariantIngredient,
+// esto es solo para que el POS muestre las opciones y ajuste el precio;
+// el impacto real en costo/inventario de un modificador es una fase futura.
+
+model FoodModifierGroup {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  minSelect      Int      @default(0) // 0 = opcional
+  maxSelect      Int      @default(1) // 1 = elección única; >1 = varias
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization            @relation(fields: [organizationId], references: [id])
+  options      FoodModifierOption[]
+  dishLinks    FoodDishModifierGroup[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model FoodModifierOption {
+  id         String  @id @default(cuid())
+  groupId    String
+  name       String
+  // Puede ser 0 (ej. "Sin cebolla", no cambia el precio) o positivo (ej.
+  // "Extra queso +$10"). Nunca negativo -- un descuento no es un
+  // modificador, es una promoción, fuera de alcance por ahora.
+  priceDelta Decimal @default(0) @db.Decimal(10, 2)
+  sortOrder  Int     @default(0)
+
+  group FoodModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+model FoodDishModifierGroup {
+  id      String @id @default(cuid())
+  dishId  String
+  groupId String
+
+  dish  FoodDish          @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  group FoodModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([dishId, groupId])
+  @@index([dishId])
+  @@index([groupId])
 }
 
 model FoodOperatingCost {

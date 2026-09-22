@@ -172,6 +172,8 @@ const dishVariantSchema = z.object({
 const dishSchema = z
   .object({
     name: z.string().min(1, "Nombre requerido"),
+    categoryId: z.string().nullable().optional(),
+    modifierGroupIds: z.array(z.string()).optional(),
     variants: z.array(dishVariantSchema).min(1, "Agrega al menos una variante"),
   })
   .refine((data) => new Set(data.variants.map((v) => v.label.trim().toLowerCase())).size === data.variants.length, {
@@ -181,8 +183,22 @@ const dishSchema = z
 
 type DishInput = {
   name: string;
+  categoryId?: string | null;
+  modifierGroupIds?: string[];
   variants: { label: string; price: number; ingredients: { inventoryItemId: string; quantity: number }[] }[];
 };
+
+/** Confirma que categoryId (si viene) y todos los modifierGroupIds pertenecen a esta organización. */
+async function assertDishRefsOwnedByOrg(organizationId: string, categoryId?: string | null, modifierGroupIds?: string[]) {
+  if (categoryId) {
+    const category = await prisma.foodDishCategory.findFirst({ where: { id: categoryId, organizationId } });
+    if (!category) throw new Error("Categoría no encontrada");
+  }
+  if (modifierGroupIds && modifierGroupIds.length > 0) {
+    const owned = await prisma.foodModifierGroup.count({ where: { id: { in: modifierGroupIds }, organizationId } });
+    if (owned !== new Set(modifierGroupIds).size) throw new Error("Uno o más grupos de modificadores no son válidos");
+  }
+}
 
 export async function createFoodDish(data: DishInput) {
   const session = await auth();
@@ -197,10 +213,13 @@ export async function createFoodDish(data: DishInput) {
   });
   if (existing) throw new Error("Ya existe un platillo con ese nombre");
 
+  await assertDishRefsOwnedByOrg(session.user.organizationId, parsed.data.categoryId, parsed.data.modifierGroupIds);
+
   const dish = await prisma.foodDish.create({
     data: {
       organizationId: session.user.organizationId,
       name: parsed.data.name,
+      categoryId: parsed.data.categoryId || null,
       variants: {
         create: parsed.data.variants.map((v) => ({
           organizationId: session.user.organizationId!,
@@ -208,6 +227,9 @@ export async function createFoodDish(data: DishInput) {
           price: v.price,
           ingredients: { create: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
         })),
+      },
+      modifierGroups: {
+        create: (parsed.data.modifierGroupIds ?? []).map((groupId) => ({ groupId })),
       },
     },
   });
@@ -237,16 +259,20 @@ export async function updateFoodDish(dishId: string, data: DishInput) {
   const dish = await prisma.foodDish.findFirst({ where: { id: dishId, organizationId: session.user.organizationId } });
   if (!dish) throw new Error("Platillo no encontrado");
 
+  await assertDishRefsOwnedByOrg(session.user.organizationId, parsed.data.categoryId, parsed.data.modifierGroupIds);
+
   // Reemplaza la lista completa de variantes (y con ellas, sus ingredientes
-  // vía onDelete: Cascade) en una sola transacción -- más simple y menos
-  // propenso a errores que intentar diffear cuáles se agregaron/quitaron/
-  // cambiaron desde el formulario.
+  // vía onDelete: Cascade) y de grupos de modificadores asignados en una
+  // sola transacción -- más simple y menos propenso a errores que intentar
+  // diffear cuáles se agregaron/quitaron/cambiaron desde el formulario.
   await prisma.$transaction([
     prisma.foodDishVariant.deleteMany({ where: { dishId } }),
+    prisma.foodDishModifierGroup.deleteMany({ where: { dishId } }),
     prisma.foodDish.update({
       where: { id: dishId },
       data: {
         name: parsed.data.name,
+        categoryId: parsed.data.categoryId || null,
         variants: {
           create: parsed.data.variants.map((v) => ({
             organizationId: session.user.organizationId!,
@@ -254,6 +280,9 @@ export async function updateFoodDish(dishId: string, data: DishInput) {
             price: v.price,
             ingredients: { create: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
           })),
+        },
+        modifierGroups: {
+          create: (parsed.data.modifierGroupIds ?? []).map((groupId) => ({ groupId })),
         },
       },
     }),
@@ -294,6 +323,213 @@ export async function toggleFoodDishActive(dishId: string, isActive: boolean) {
 
   revalidatePath("/portal/food/recipes");
   revalidatePath("/portal/food/profitability");
+  revalidatePath("/portal/food");
+}
+
+// ─── FOOD OPS — Categorías de menú (Fase 17) ─────────────────────────
+
+const dishCategorySchema = z.object({
+  name: z.string().min(1, "Nombre requerido"),
+  sortOrder: z.coerce.number().int().optional(),
+});
+
+export async function createFoodDishCategory(data: { name: string; sortOrder?: number }) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+
+  const parsed = dishCategorySchema.safeParse(data);
+  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos de categoría inválidos");
+
+  const existing = await prisma.foodDishCategory.findUnique({
+    where: { organizationId_name: { organizationId: session.user.organizationId, name: parsed.data.name } },
+  });
+  if (existing) throw new Error("Ya existe una categoría con ese nombre");
+
+  const category = await prisma.foodDishCategory.create({
+    data: { organizationId: session.user.organizationId, name: parsed.data.name, sortOrder: parsed.data.sortOrder ?? 0 },
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "food.dish_category_create",
+    resource: "FoodDishCategory",
+    resourceId: category.id,
+    metadata: { name: category.name },
+  });
+
+  revalidatePath("/portal/food/recipes");
+  revalidatePath("/portal/food");
+}
+
+export async function updateFoodDishCategory(categoryId: string, data: { name: string; sortOrder?: number }) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+
+  const parsed = dishCategorySchema.safeParse(data);
+  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos de categoría inválidos");
+
+  const category = await prisma.foodDishCategory.findFirst({ where: { id: categoryId, organizationId: session.user.organizationId } });
+  if (!category) throw new Error("Categoría no encontrada");
+
+  await prisma.foodDishCategory.update({
+    where: { id: categoryId },
+    data: { name: parsed.data.name, sortOrder: parsed.data.sortOrder ?? category.sortOrder },
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "food.dish_category_update",
+    resource: "FoodDishCategory",
+    resourceId: categoryId,
+    metadata: { name: parsed.data.name },
+  });
+
+  revalidatePath("/portal/food/recipes");
+  revalidatePath("/portal/food");
+}
+
+/** Borra la categoría -- los platillos que la tenían quedan sin categoría (onDelete: SetNull), nunca se borran. */
+export async function deleteFoodDishCategory(categoryId: string) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+
+  const category = await prisma.foodDishCategory.findFirst({ where: { id: categoryId, organizationId: session.user.organizationId } });
+  if (!category) throw new Error("Categoría no encontrada");
+
+  await prisma.foodDishCategory.delete({ where: { id: categoryId } });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "food.dish_category_delete",
+    resource: "FoodDishCategory",
+    resourceId: categoryId,
+    metadata: { name: category.name },
+  });
+
+  revalidatePath("/portal/food/recipes");
+  revalidatePath("/portal/food");
+}
+
+// ─── FOOD OPS — Grupos de modificadores (Fase 17) ────────────────────
+
+const modifierOptionSchema = z.object({
+  name: z.string().min(1, "Nombre de opción requerido"),
+  priceDelta: z.coerce.number().min(0, "El precio adicional no puede ser negativo"),
+});
+
+const modifierGroupSchema = z.object({
+  name: z.string().min(1, "Nombre requerido"),
+  minSelect: z.coerce.number().int().min(0),
+  maxSelect: z.coerce.number().int().min(1),
+  options: z.array(modifierOptionSchema).min(1, "Agrega al menos una opción"),
+});
+
+type ModifierGroupInput = { name: string; minSelect: number; maxSelect: number; options: { name: string; priceDelta: number }[] };
+
+export async function createFoodModifierGroup(data: ModifierGroupInput) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+
+  const parsed = modifierGroupSchema.safeParse(data);
+  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos de modificador inválidos");
+  if (parsed.data.minSelect > parsed.data.maxSelect) throw new Error("El mínimo no puede ser mayor al máximo");
+
+  const existing = await prisma.foodModifierGroup.findUnique({
+    where: { organizationId_name: { organizationId: session.user.organizationId, name: parsed.data.name } },
+  });
+  if (existing) throw new Error("Ya existe un grupo de modificadores con ese nombre");
+
+  const group = await prisma.foodModifierGroup.create({
+    data: {
+      organizationId: session.user.organizationId,
+      name: parsed.data.name,
+      minSelect: parsed.data.minSelect,
+      maxSelect: parsed.data.maxSelect,
+      options: { create: parsed.data.options.map((o) => ({ name: o.name, priceDelta: o.priceDelta })) },
+    },
+  });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "food.modifier_group_create",
+    resource: "FoodModifierGroup",
+    resourceId: group.id,
+    metadata: { name: group.name, options: parsed.data.options.length },
+  });
+
+  revalidatePath("/portal/food/recipes");
+  revalidatePath("/portal/food");
+}
+
+export async function updateFoodModifierGroup(groupId: string, data: ModifierGroupInput) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+
+  const parsed = modifierGroupSchema.safeParse(data);
+  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos de modificador inválidos");
+  if (parsed.data.minSelect > parsed.data.maxSelect) throw new Error("El mínimo no puede ser mayor al máximo");
+
+  const group = await prisma.foodModifierGroup.findFirst({ where: { id: groupId, organizationId: session.user.organizationId } });
+  if (!group) throw new Error("Grupo de modificadores no encontrado");
+
+  // Reemplaza la lista completa de opciones en una sola transacción --
+  // mismo criterio que updateFoodDish() con sus variantes.
+  await prisma.$transaction([
+    prisma.foodModifierOption.deleteMany({ where: { groupId } }),
+    prisma.foodModifierGroup.update({
+      where: { id: groupId },
+      data: {
+        name: parsed.data.name,
+        minSelect: parsed.data.minSelect,
+        maxSelect: parsed.data.maxSelect,
+        options: { create: parsed.data.options.map((o) => ({ name: o.name, priceDelta: o.priceDelta })) },
+      },
+    }),
+  ]);
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "food.modifier_group_update",
+    resource: "FoodModifierGroup",
+    resourceId: groupId,
+    metadata: { name: parsed.data.name, options: parsed.data.options.length },
+  });
+
+  revalidatePath("/portal/food/recipes");
+  revalidatePath("/portal/food");
+}
+
+/** Borra el grupo -- se desvincula de cualquier platillo que lo tuviera asignado (onDelete: Cascade en el join, no en el platillo). */
+export async function deleteFoodModifierGroup(groupId: string) {
+  const session = await auth();
+  if (!session?.user.organizationId) throw new Error("No autorizado");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+
+  const group = await prisma.foodModifierGroup.findFirst({ where: { id: groupId, organizationId: session.user.organizationId } });
+  if (!group) throw new Error("Grupo de modificadores no encontrado");
+
+  await prisma.foodModifierGroup.delete({ where: { id: groupId } });
+
+  await logAudit({
+    organizationId: session.user.organizationId,
+    userId: session.user.id,
+    action: "food.modifier_group_delete",
+    resource: "FoodModifierGroup",
+    resourceId: groupId,
+    metadata: { name: group.name },
+  });
+
+  revalidatePath("/portal/food/recipes");
   revalidatePath("/portal/food");
 }
 

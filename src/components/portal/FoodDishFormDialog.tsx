@@ -23,6 +23,16 @@ export interface FoodInventoryOption {
   unitCost: number | null;
 }
 
+export interface FoodCategoryOption {
+  id: string;
+  name: string;
+}
+
+export interface FoodModifierGroupOption {
+  id: string;
+  name: string;
+}
+
 // Mismo valor que DEFAULT_VARIANT_LABEL en src/lib/food.ts -- se repite
 // aquí a propósito (ese archivo trae Prisma y no puede importarse desde un
 // componente cliente), mismo criterio que recommendPrice() en
@@ -42,6 +52,8 @@ const variantSchema = z.object({
 
 const schema = z.object({
   name: z.string().min(1, "Nombre requerido"),
+  categoryId: z.string().optional(),
+  modifierGroupIds: z.array(z.string()).optional(),
   variants: z.array(variantSchema).min(1, "Agrega al menos una variante"),
 });
 
@@ -57,11 +69,15 @@ interface ExistingVariant {
 interface ExistingDish {
   id: string;
   name: string;
+  categoryId?: string | null;
+  modifierGroupIds?: string[];
   variants: ExistingVariant[];
 }
 
 interface FoodDishFormDialogProps {
   inventoryItems: FoodInventoryOption[];
+  categories?: FoodCategoryOption[];
+  modifierGroups?: FoodModifierGroupOption[];
   dish?: ExistingDish;
 }
 
@@ -70,17 +86,19 @@ function emptyVariant(): FormData["variants"][number] {
 }
 
 function emptyDefaults(): FormData {
-  return { name: "", variants: [{ ...emptyVariant(), label: DEFAULT_VARIANT_LABEL }] };
+  return { name: "", categoryId: "", modifierGroupIds: [], variants: [{ ...emptyVariant(), label: DEFAULT_VARIANT_LABEL }] };
 }
 
 function dishDefaults(dish: ExistingDish): FormData {
   return {
     name: dish.name,
+    categoryId: dish.categoryId ?? "",
+    modifierGroupIds: dish.modifierGroupIds ?? [],
     variants: dish.variants.map((v) => ({ label: v.label, price: v.price, ingredients: v.ingredients })),
   };
 }
 
-export function FoodDishFormDialog({ inventoryItems, dish }: FoodDishFormDialogProps) {
+export function FoodDishFormDialog({ inventoryItems, categories = [], modifierGroups = [], dish }: FoodDishFormDialogProps) {
   const { lang } = usePreferences();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -90,9 +108,10 @@ export function FoodDishFormDialog({ inventoryItems, dish }: FoodDishFormDialogP
     resolver: zodResolver(schema),
     defaultValues: dish ? dishDefaults(dish) : emptyDefaults(),
   });
-  const { register, control, handleSubmit, reset, formState: { errors } } = form;
+  const { register, control, handleSubmit, reset, setValue, formState: { errors } } = form;
 
   const { fields: variantFields, append: appendVariant, remove: removeVariant } = useFieldArray({ control, name: "variants" });
+  const watchedModifierGroupIds = useWatch({ control, name: "modifierGroupIds" }) ?? [];
 
   function openDialog() {
     reset(dish ? dishDefaults(dish) : emptyDefaults());
@@ -139,11 +158,57 @@ export function FoodDishFormDialog({ inventoryItems, dish }: FoodDishFormDialogP
         </DialogHeader>
         <FormProvider {...form}>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>{lang === "es" ? "Nombre del platillo *" : "Dish name *"}</Label>
-              <Input placeholder={lang === "es" ? "Berry Bloom" : "Berry Bloom"} {...register("name")} />
-              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>{lang === "es" ? "Nombre del platillo *" : "Dish name *"}</Label>
+                <Input placeholder={lang === "es" ? "Berry Bloom" : "Berry Bloom"} {...register("name")} />
+                {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label>{lang === "es" ? "Categoría" : "Category"}</Label>
+                <select
+                  {...register("categoryId")}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                >
+                  <option value="">{lang === "es" ? "Sin categoría" : "No category"}</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
+
+            {modifierGroups.length > 0 && (
+              <div className="space-y-2">
+                <Label>{lang === "es" ? "Grupos de modificadores" : "Modifier groups"}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {modifierGroups.map((g) => {
+                    const checked = watchedModifierGroupIds.includes(g.id);
+                    return (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() =>
+                          setValue(
+                            "modifierGroupIds",
+                            checked ? watchedModifierGroupIds.filter((id) => id !== g.id) : [...watchedModifierGroupIds, g.id],
+                            { shouldDirty: true }
+                          )
+                        }
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          checked
+                            ? "border-brand-600 bg-brand-50 text-brand-700"
+                            : "border-slate-300 text-slate-600 hover:border-brand-300"
+                        )}
+                      >
+                        {g.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">

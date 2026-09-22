@@ -14,6 +14,9 @@ import {
   getFoodLeastSoldDishes,
   recommendDishPrice,
   getFoodMenuForPos,
+  getFoodDishCategories,
+  getFoodModifierGroups,
+  processFoodPosOrder,
 } from "./food";
 
 async function makeInventoryItem(orgId: string, name: string, unitCost: number, unit = "kg") {
@@ -118,6 +121,40 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       });
       const dishes = await getFoodDishesWithCost(org.id);
       expect(dishes[0].variants[0].marginPct).toBeNull();
+    });
+
+    it("surfaces the dish's category and assigned modifier group ids", async () => {
+      org = await createTestOrg("Food Dish Category Modifier Org");
+      const category = await prisma.foodDishCategory.create({ data: { organizationId: org.id, name: "Entradas" } });
+      const group = await prisma.foodModifierGroup.create({
+        data: { organizationId: org.id, name: "Picante", minSelect: 0, maxSelect: 1, options: { create: [{ name: "Sin picante", priceDelta: 0 }] } },
+      });
+      const dish = await prisma.foodDish.create({
+        data: {
+          organizationId: org.id,
+          name: "Alitas",
+          categoryId: category.id,
+          variants: { create: [{ organizationId: org.id, label: "Único", price: 120 }] },
+          modifierGroups: { create: [{ groupId: group.id }] },
+        },
+      });
+
+      const dishes = await getFoodDishesWithCost(org.id);
+      const found = dishes.find((d) => d.id === dish.id);
+      expect(found?.categoryId).toBe(category.id);
+      expect(found?.categoryName).toBe("Entradas");
+      expect(found?.modifierGroupIds).toEqual([group.id]);
+    });
+
+    it("returns null category and an empty modifier list for an uncategorized dish", async () => {
+      org = await createTestOrg("Food Dish No Category Org");
+      await prisma.foodDish.create({
+        data: { organizationId: org.id, name: "Sencillo", variants: { create: [{ organizationId: org.id, label: "Único", price: 50 }] } },
+      });
+      const dishes = await getFoodDishesWithCost(org.id);
+      expect(dishes[0].categoryId).toBeNull();
+      expect(dishes[0].categoryName).toBeNull();
+      expect(dishes[0].modifierGroupIds).toEqual([]);
     });
 
     it("filters inactive dishes when activeOnly is set", async () => {
@@ -428,6 +465,140 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       const menu = await getFoodMenuForPos(org.id);
       expect(menu[0].variants[0].externalPosId).toBe("pos-item-123");
       expect(menu[0].variants[0].variantId).toBe(dish.variants[0].id);
+    });
+
+    it("embeds the dish's category and assigned modifier groups", async () => {
+      org = await createTestOrg("Food Menu Pos Category Org");
+      const category = await prisma.foodDishCategory.create({ data: { organizationId: org.id, name: "Bebidas" } });
+      const group = await prisma.foodModifierGroup.create({
+        data: {
+          organizationId: org.id,
+          name: "Tamaño de hielo",
+          minSelect: 0,
+          maxSelect: 1,
+          options: { create: [{ name: "Con hielo", priceDelta: 0 }, { name: "Sin hielo", priceDelta: 0 }] },
+        },
+      });
+      const dish = await prisma.foodDish.create({
+        data: {
+          organizationId: org.id,
+          name: "Limonada",
+          categoryId: category.id,
+          variants: { create: [{ organizationId: org.id, label: "Único", price: 35 }] },
+          modifierGroups: { create: [{ groupId: group.id }] },
+        },
+      });
+
+      const menu = await getFoodMenuForPos(org.id);
+      const menuDish = menu.find((d) => d.dishId === dish.id);
+      expect(menuDish?.categoryId).toBe(category.id);
+      expect(menuDish?.categoryName).toBe("Bebidas");
+      expect(menuDish?.modifierGroups).toHaveLength(1);
+      expect(menuDish?.modifierGroups[0].name).toBe("Tamaño de hielo");
+      expect(menuDish?.modifierGroups[0].options.map((o) => o.name).sort()).toEqual(["Con hielo", "Sin hielo"]);
+    });
+  });
+
+  describe("getFoodDishCategories", () => {
+    it("returns categories ordered by sortOrder with a dish count", async () => {
+      org = await createTestOrg("Food Categories Org");
+      await prisma.foodDishCategory.create({ data: { organizationId: org.id, name: "Postres", sortOrder: 1 } });
+      const drinks = await prisma.foodDishCategory.create({ data: { organizationId: org.id, name: "Bebidas", sortOrder: 0 } });
+      await prisma.foodDish.create({
+        data: { organizationId: org.id, name: "Agua", categoryId: drinks.id, variants: { create: [{ organizationId: org.id, label: "Único", price: 20 }] } },
+      });
+
+      const categories = await getFoodDishCategories(org.id);
+      expect(categories.map((c) => c.name)).toEqual(["Bebidas", "Postres"]);
+      expect(categories[0].dishCount).toBe(1);
+      expect(categories[1].dishCount).toBe(0);
+    });
+  });
+
+  describe("getFoodModifierGroups", () => {
+    it("returns groups with their options and how many dishes use them", async () => {
+      org = await createTestOrg("Food Modifier Groups Org");
+      const group = await prisma.foodModifierGroup.create({
+        data: {
+          organizationId: org.id,
+          name: "Extras",
+          minSelect: 0,
+          maxSelect: 3,
+          options: { create: [{ name: "Queso extra", priceDelta: 15 }, { name: "Tocino", priceDelta: 20 }] },
+        },
+      });
+      await prisma.foodDish.create({
+        data: {
+          organizationId: org.id,
+          name: "Hamburguesa",
+          variants: { create: [{ organizationId: org.id, label: "Único", price: 90 }] },
+          modifierGroups: { create: [{ groupId: group.id }] },
+        },
+      });
+
+      const groups = await getFoodModifierGroups(org.id);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].name).toBe("Extras");
+      expect(groups[0].dishCount).toBe(1);
+      expect(groups[0].options.map((o) => o.name)).toEqual(["Queso extra", "Tocino"]);
+      expect(groups[0].options.find((o) => o.name === "Queso extra")?.priceDelta).toBe(15);
+    });
+  });
+
+  describe("processFoodPosOrder", () => {
+    async function makePosDish(orgId: string, price = 100) {
+      const dish = await prisma.foodDish.create({
+        data: { organizationId: orgId, name: "Pizza", variants: { create: [{ organizationId: orgId, label: "Único", price }] } },
+        include: { variants: true },
+      });
+      return dish.variants[0];
+    }
+
+    it("accumulates quantity across multiple orders on the same business day", async () => {
+      org = await createTestOrg("Food Pos Order Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+
+      await processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 2 }] }, org.id);
+      await processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 3 }] }, org.id);
+
+      const sale = await prisma.foodDishSale.findFirst({ where: { variantId: variant.id } });
+      expect(sale?.quantity).toBe(5);
+      const sales = await prisma.foodSale.findMany({ where: { organizationId: org.id } });
+      expect(sales).toHaveLength(2);
+    });
+
+    it("rejects an order for a variant that belongs to another organization", async () => {
+      org = await createTestOrg("Food Pos Order Cross Org");
+      const otherOrg = await createTestOrg("Food Pos Order Other Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const foreignVariant = await makePosDish(otherOrg.id);
+
+      await expect(
+        processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [{ variantId: foreignVariant.id, quantity: 1 }] }, org.id)
+      ).rejects.toThrow(/no pertenecen a esta organización/);
+
+      await cleanupOrg(otherOrg.id);
+    });
+
+    it("rejects an order when the FOOD_OPS module isn't enabled", async () => {
+      org = await createTestOrg("Food Pos Order No Module Org");
+      const variant = await makePosDish(org.id);
+
+      await expect(
+        processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 1 }] }, org.id)
+      ).rejects.toThrow(/módulo Food no está habilitado/);
+    });
+
+    it("rejects a payload with no items or a non-positive quantity", async () => {
+      org = await createTestOrg("Food Pos Order Invalid Payload Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+
+      await expect(processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [] }, org.id)).rejects.toThrow(/al menos un item/);
+      await expect(
+        processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 0 }] }, org.id)
+      ).rejects.toThrow(/quantity > 0/);
     });
   });
 });

@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Technical Documentation
 
-> **Document Version:** 1.1 | **Date:** September 2026 (updated through Fase 16 — Food Ops costing/variants, POS integration groundwork, SmartCard bridge, admin user management, Next.js 16 upgrade)  
+> **Document Version:** 1.2 | **Date:** September 2026 (updated through Fase 17 — Food Ops menu categories/modifiers, POS sales webhook, SmartCard bridge, admin user management, Next.js 16 upgrade)  
 > **Language:** English/Spanish (technical terms in English, explanations bilingual)  
 > **Audience:** Developers, DevOps, and technical team members
 
@@ -985,7 +985,7 @@ enum InstallationStatus {
 
 ---
 
-### Models: Food Ops (Fases 14–16) — restaurant sales, inventory, recipes, costing
+### Models: Food Ops (Fases 14–17) — restaurant sales, inventory, recipes, costing, menu structure
 
 A second commercial line of business (`PlatformModule.FOOD_OPS`), built the same way CRM/WhatsApp
 were: real models gated by `requireModule`/`assertModuleEnabled` (§17 item 7), no demo data
@@ -1100,6 +1100,66 @@ model FoodOperatingCost {
 `Organization.foodTargetCostPct` (`Int`, default `30`) is the one Food-specific org setting —
 the target ingredient-cost percentage the price recommendation formula divides by (see below).
 
+**Phase 3 — menu categories and modifiers (Fase 17):** built for a real external POS integration
+(§4's `GET /api/v1/food/menu`, §7's `POST /api/webhooks/pos/orders`) to have menu structure and
+options to render, not just a flat dish list.
+
+```prisma
+model FoodDishCategory {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  sortOrder      Int      @default(0)
+
+  dishes FoodDish[]
+
+  @@unique([organizationId, name])
+}
+
+model FoodModifierGroup {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   // "Término", "Extras"...
+  minSelect      Int      @default(0) // 0 = optional
+  maxSelect      Int      @default(1) // 1 = single choice, >1 = multi
+  sortOrder      Int      @default(0)
+
+  options   FoodModifierOption[]
+  dishLinks FoodDishModifierGroup[]
+}
+
+model FoodModifierOption {
+  id          String  @id @default(cuid())
+  groupId     String
+  name        String
+  priceDelta  Decimal @default(0) @db.Decimal(10, 2) // never negative -- a discount isn't a modifier
+  sortOrder   Int     @default(0)
+}
+
+model FoodDishModifierGroup { // join table: modifiers attach to the DISH, not the variant
+  dishId  String
+  groupId String
+
+  @@id([dishId, groupId])
+}
+```
+
+`FoodDish` gained `categoryId String?` (`onDelete: SetNull` — deleting a category just
+uncategorizes its dishes, no history is lost) and the `modifierGroups` back-relation. Modifier
+groups attach at the **dish** level, not per-variant: an option like "sin cebolla" applies
+regardless of which size the customer picked, so duplicating it per variant would just be
+redundant data entry. There's no ingredient/cost linkage for modifiers in this phase (a "extra
+cheese" option doesn't deduct inventory or affect the dish's calculated cost) — deliberately
+scoped out until a real need for it shows up.
+
+**Hard delete here, soft-disable everywhere else in Food:** `FoodDishCategory` and
+`FoodModifierGroup` are genuinely deleted (`deleteFoodDishCategory`/`deleteFoodModifierGroup`,
+guarded by a `window.confirm()` in the UI) — unlike `FoodDish`/`FoodOperatingCost`, which use
+`isActive` because sales/analytics history references them. Nothing in the analytics pipeline
+references a category or modifier group directly, so a hard delete with `onDelete: SetNull`
+(category) / `Cascade` (the join table) is safe and doesn't need an "inactive categories" filter
+nobody asked for.
+
 **Why `FoodDishSale` is separate from `FoodSale`:** `FoodSale` (Phase 1) is still the only real
 source for total daily revenue. `FoodDishSale` is an *optional, additive* daily log of "how many
 units of this exact variant sold today" — deliberately not required, so a restaurant can keep
@@ -1133,14 +1193,15 @@ ad hoc:
   it into client JS if imported from a `"use client"` file — same reasoning applies to why
   `FoodDishFormDialog.tsx` doesn't import `DEFAULT_VARIANT_LABEL` from `lib/food.ts` either.
 
-**POS integration groundwork, not the integration itself (Fase 16):** `FoodDishVariant.externalPosId`
+**POS integration (Fase 16 groundwork, Fase 17 live):** `FoodDishVariant.externalPosId`
 (nullable, `@@unique([organizationId, externalPosId])`, same dedup pattern as `Lead.externalId`)
-exists so a future point-of-sale system can be mapped to this catalog without guessing by name —
-but nothing writes to it yet. `GET /api/v1/food/menu` (§9) is the one integration surface that's
-actually live: a read-only projection of active dishes/variants/price/`externalPosId`, gated by
-`FOOD_OPS` and authenticated the same dual way as `/api/v1/knowledge-base`. An order-ingestion
-webhook and switching `FoodDishSale` from "replace" to "accumulate" semantics were deliberately
-left unbuilt until there's a real POS payload shape to build against, rather than guessing one.
+lets a point-of-sale system map its own item IDs to this catalog without guessing by name.
+`GET /api/v1/food/menu` (§9) is the read side: active dishes/variants/price/`externalPosId`, now
+also embedding each dish's category and assigned modifier groups+options, gated by `FOOD_OPS` and
+authenticated the same dual way as `/api/v1/knowledge-base`. `POST /api/webhooks/pos/orders` (§7)
+is the write side: order-ingestion, same auth/idempotency machinery as the n8n webhooks (§8) but
+under its own `pos` source — see there for why it **accumulates** into `FoodDishSale` instead of
+replacing.
 
 ---
 
@@ -1607,6 +1668,52 @@ its last logged attempt was (`repeatIntervalMinutes`). A lead already at `rule.m
 returned again for that rule. Each row carries the raw `template` string, the lead's contact info, and
 `attemptNumber` for n8n to interpolate and send.
 
+### POST `/api/webhooks/pos/orders` (Fase 17 — not an n8n route, same machinery)
+
+The one inbound webhook in the platform that doesn't come from n8n: a restaurant's external
+point-of-sale system posts each completed order here. It reuses the exact same reliability
+stack as the n8n webhooks above — `isWebhookAuthorized()` (HMAC-SHA256 over the raw body, bound
+to a fresh timestamp, against the target org's own `n8nWebhookSecret` — §8), `checkRateLimit()`,
+and `ingestWebhookEvent()` for delivery-level idempotency — just under its own `source: "pos"`
+instead of `"n8n"`, since it isn't one.
+
+**Request body:**
+```json
+{
+  "occurredAt": "2026-09-22T18:30:00.000Z",
+  "channel": "POS",
+  "grossAmount": 250,
+  "netAmount": 225,
+  "items": [
+    { "variantId": "cuid_of_a_FoodDishVariant", "quantity": 2 }
+  ]
+}
+```
+
+**Behavior (`processFoodPosOrder()` in `src/lib/food.ts`):**
+- Requires `FOOD_OPS` to be enabled for the org (throws otherwise — the same 422 path as any
+  other validation failure, see below).
+- Validates every `variantId` belongs to the calling organization before writing anything —
+  an order referencing another org's variant is rejected whole, not partially applied.
+- In one `$transaction`: creates a `FoodSale` row (so this order also counts toward the existing
+  daily-revenue totals) and **upserts** each `FoodDishSale` row with
+  `quantity: { increment: item.quantity }` instead of a flat replace.
+
+**Why this accumulates instead of replacing (unlike manual entry):** `logFoodDishSales()` (the
+portal's own daily units-sold form, §10) intentionally **replaces** the day's quantity on
+re-save — it's a human correcting a single daily total, and replace makes fixing a typo safe.
+A POS sends one order at a time, potentially dozens per day for the same variant, so replacing
+would silently lose every order but the last one processed. `processFoodPosOrder()` therefore
+increments. Both write to the same `FoodDishSale` row under the same
+`@@unique([variantId, occurredAt])` constraint — this dual semantic (documented directly on the
+model in `prisma/schema.prisma`) is a property of *which caller* wrote the row, not a schema
+flag, so a future reader hitting one code path doesn't need to reconcile it against the other.
+
+A failed validation (missing FOOD_OPS, malformed payload, foreign variant) returns `422` with
+`{ error: string }` — deliberately more informative than the generic `500` the n8n webhooks
+return on failure, since this is an actively-developed external integration where a POS
+developer needs to see *why* an order was rejected.
+
 ---
 
 ## 8. Webhook Security
@@ -1935,10 +2042,10 @@ Cookie: next-auth.session-token=...
 |----------|-------|
 | Auth | `x-api-key` header OR NextAuth session |
 | Gate | Requires `FOOD_OPS` module `ACTIVE` for the resolved org — `403` otherwise |
-| Returns | Active dishes + their variants (price, `externalPosId`) for an org |
+| Returns | Active dishes with their variants, category, and assigned modifier groups, plus the org's category list |
 
-Read-only projection built ahead of a future POS integration (§4 "Food Ops" — Fase 16); nothing
-writes to it yet, no order-ingestion counterpart exists.
+Read-only projection for an external POS to render its menu from (§4 "Food Ops"). Order
+ingestion is the write-side counterpart, `POST /api/webhooks/pos/orders` (§7) — not this route.
 
 **Query parameters:**
 - `orgId` (required if using API key auth)
@@ -1956,12 +2063,24 @@ x-api-key: {ORG_N8N_WEBHOOK_SECRET}
     {
       "dishId": "string",
       "name": "Berry Bloom",
+      "categoryId": "string | null",
+      "categoryName": "string | null",
       "variants": [
         { "variantId": "string", "label": "Chico", "price": 100, "externalPosId": null },
         { "variantId": "string", "label": "Grande", "price": 160, "externalPosId": null }
+      ],
+      "modifierGroups": [
+        {
+          "groupId": "string",
+          "name": "Extras",
+          "minSelect": 0,
+          "maxSelect": 3,
+          "options": [{ "optionId": "string", "name": "Queso extra", "priceDelta": 15 }]
+        }
       ]
     }
   ],
+  "categories": [{ "id": "string", "name": "Bebidas", "sortOrder": 0 }],
   "meta": { "total": 1 }
 }
 ```
@@ -2158,7 +2277,7 @@ future pass rather than silently patched everywhere.
 
 ---
 
-### food.ts (Fases 14–16)
+### food.ts (Fases 14–17)
 
 All require `assertModuleEnabled(orgId, "FOOD_OPS")`. Dish/variant actions replace their
 nested ingredients/variants wholesale in a `$transaction` on every save rather than diffing
@@ -2169,11 +2288,15 @@ add/remove — see §4 "Food Ops" for why.
 | `createFoodSale` | `(formData: FormData) => Promise<void>` | Logs one day's aggregate revenue entry |
 | `createFoodInventoryItem` | `(formData: FormData) => Promise<void>` | Adds an insumo (accepts `category`: `EDIBLE`\|`NON_EDIBLE`) |
 | `createFoodSupplier` | `(formData: FormData) => Promise<void>` | Adds a supplier contact |
-| `createFoodDish` / `updateFoodDish` | `(dishId?, data: { name, variants: [{ label, price, ingredients: [{inventoryItemId, quantity}] }] }) => Promise<void>` | Creates/replaces a dish and all its variants+recipes in one transaction |
+| `createFoodDish` / `updateFoodDish` | `(dishId?, data: { name, categoryId?, modifierGroupIds?, variants: [{ label, price, ingredients: [{inventoryItemId, quantity}] }] }) => Promise<void>` | Creates/replaces a dish, its category assignment, its modifier-group links, and all its variants+recipes in one transaction |
 | `toggleFoodDishActive` | `(dishId: string, isActive: boolean) => Promise<void>` | Soft-disable — dishes are never hard-deleted |
 | `createFoodOperatingCost` / `updateFoodOperatingCost` / `toggleFoodOperatingCostActive` | see signatures in code | Fixed monthly cost CRUD |
 | `logFoodDishSales` | `(data: { date: string, entries: [{variantId, quantity}] }) => Promise<void>` | Upserts per-variant daily units sold — **replaces**, not adds, on re-save |
 | `updateFoodTargetCostPct` | `(pct: number) => Promise<void>` | Sets `Organization.foodTargetCostPct` (1–90), feeds the price recommendation formula |
+| `createFoodDishCategory` / `updateFoodDishCategory` | `(id?, data: { name, sortOrder? }) => Promise<void>` | Menu category CRUD (Fase 17) |
+| `deleteFoodDishCategory` | `(categoryId: string) => Promise<void>` | Genuine hard delete — see §4 for why this one entity doesn't soft-disable |
+| `createFoodModifierGroup` / `updateFoodModifierGroup` | `(id?, data: { name, minSelect, maxSelect, options: [{name, priceDelta}] }) => Promise<void>` | Modifier group CRUD (Fase 17); update fully replaces the option list in a transaction, same pattern as dish variants |
+| `deleteFoodModifierGroup` | `(groupId: string) => Promise<void>` | Genuine hard delete — cascades to its options and any dish links |
 
 ---
 
@@ -2749,8 +2872,9 @@ reymen-ai-ops-platform/
 │   │   ├── api/
 │   │   │   ├── auth/[...nextauth]/ # NextAuth handlers
 │   │   │   ├── portal/leads/export/ # CSV export route
-│   │   │   ├── v1/food/menu/       # Read-only menu projection for a future POS (Fase 16)
+│   │   │   ├── v1/food/menu/       # Menu projection (dishes+variants+category+modifiers) for a POS
 │   │   │   ├── v1/knowledge-base/  # Dual-auth KB query endpoint
+│   │   │   ├── webhooks/pos/orders/ # POS order-ingestion webhook (Fase 17, not n8n)
 │   │   │   └── webhooks/n8n/
 │   │   │       ├── automations/    # Receive automation events
 │   │   │       ├── conversations/  # Receive conversation messages
@@ -3306,6 +3430,41 @@ similar symptoms:
   (`node .next/standalone/server.js`), with `.next/static` and `public/` manually copied into the
   standalone output first (they aren't included automatically). Scripts or docs that still say
   `next start` for a standalone build need updating.
+
+---
+
+### 17. Categories, Modifiers, and a POS Sales Webhook (Fase 17)
+
+A restaurant partner building a separate POS app (a different, standalone repo — not part of this
+codebase) asked for three things from the Reymen side so its menu screen and checkout flow had
+somewhere to read from and post to: menu categories, modifier groups (size of ice, extras,
+término de cocción...), and a webhook to log completed orders. All three landed together because
+they share one consumer (§4 "POS integration").
+
+- **Categories and modifiers are new top-level entities, not fields bolted onto `FoodDish`.**
+  `FoodDishCategory` is a simple named grouping; `FoodModifierGroup`/`FoodModifierOption` model
+  the "pick N of these options, optionally with an extra charge" shape a POS checkout screen needs.
+  Modifiers attach to the **dish**, not the variant (§4) — a modifier like "sin cebolla" doesn't
+  care which size was ordered.
+- **Hard delete instead of the soft-disable pattern the rest of Food uses** (§4) — the deciding
+  factor was data dependency, not consistency for its own sake: `FoodDish`/`FoodOperatingCost`
+  have sales/analytics history rows that would orphan on a hard delete; categories and modifier
+  groups don't, so `onDelete: SetNull`/`Cascade` on the relations is enough.
+- **`GET /api/v1/food/menu` (§9) grew, `POST /api/webhooks/pos/orders` (§7) is brand new.** The
+  menu endpoint now embeds each dish's category and modifier groups so a single request gives a
+  POS everything it needs to render a checkout screen. The webhook reuses the n8n webhooks'
+  entire reliability stack (§8's `isWebhookAuthorized`/`checkRateLimit`/`ingestWebhookEvent`)
+  under its own `source: "pos"` — proof that stack was never actually n8n-specific, just used
+  exclusively by n8n until now.
+- **`processFoodPosOrder()` accumulates, `logFoodDishSales()` replaces — same table, different
+  callers, deliberately different semantics** (§4, §7). This is the one place in the module where
+  two write paths touch the same unique constraint with opposite behavior; it's called out
+  directly in the Prisma schema comment on `FoodDishSale`, not just here, so a future reader
+  hitting one code path in isolation still finds the reasoning.
+- **Reference implementation, not the finished integration:** this phase builds the Reymen-side
+  surface only. The actual POS application is a separate codebase; verifying the full request
+  lifecycle (POS UI → this webhook → `FoodDishSale`/`FoodSale`) happens once that project can
+  make real HTTP calls against a deployed instance, not from this repo's test suite.
 
 ---
 
