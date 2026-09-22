@@ -224,10 +224,16 @@ export async function getFoodDailySales(organizationId: string, days = 7): Promi
   });
 }
 
-// ─── FOOD OPS — Platillos y costeo (Fase 2: Rentabilidad) ────────────
-// Fuente única del costo por platillo — todo lo demás en este bloque
-// (punto de equilibrio, utilidad neta, insights, recomendaciones) llama a
-// getFoodDishesWithCost() en vez de recalcular el costo por su cuenta.
+// ─── FOOD OPS — Platillos, variantes y costeo (Fase 2: Rentabilidad) ─
+// Un FoodDish es el producto de menú ("Berry Bloom"); cada FoodDishVariant
+// es una presentación vendible con su propio precio y su propia receta
+// ("Chico"/"Grande", o DEFAULT_VARIANT_LABEL si el platillo no maneja
+// tamaños). getFoodDishesWithCost() es la fuente única del costo por
+// variante — todo lo demás en este bloque (punto de equilibrio, utilidad
+// neta, insights, recomendaciones) llama a esta función (vía
+// flattenVariants) en vez de recalcular el costo por su cuenta.
+
+export const DEFAULT_VARIANT_LABEL = "Único";
 
 export interface FoodDishIngredientLine {
   inventoryItemId: string;
@@ -238,18 +244,29 @@ export interface FoodDishIngredientLine {
   lineCost: number;
 }
 
-export interface FoodDishWithCost {
+export interface FoodDishVariantWithCost {
   id: string;
-  name: string;
+  dishId: string;
+  label: string;
   price: number;
-  isActive: boolean;
   cost: number;
   marginAmount: number;
-  // null solo si price es 0 (el formulario exige > 0, pero un platillo
-  // desactivado hace tiempo podría tener datos viejos) -- se evita dividir
+  // null solo si price es 0 (el formulario exige > 0, pero una variante
+  // desactivada hace tiempo podría tener datos viejos) -- se evita dividir
   // entre cero en vez de mostrar un porcentaje sin sentido.
   marginPct: number | null;
   ingredients: FoodDishIngredientLine[];
+  // "Berry Bloom — Grande", o solo "Café Americano" cuando el platillo
+  // tiene una única variante con el label por defecto -- para no mostrar
+  // "Café Americano — Único" en ningún lado de la UI.
+  displayName: string;
+}
+
+export interface FoodDishWithCost {
+  id: string;
+  name: string;
+  isActive: boolean;
+  variants: FoodDishVariantWithCost[];
 }
 
 export async function getFoodDishesWithCost(
@@ -259,32 +276,56 @@ export async function getFoodDishesWithCost(
   const dishes = await prisma.foodDish.findMany({
     where: { organizationId, ...(opts.activeOnly ? { isActive: true } : {}) },
     include: {
-      ingredients: {
-        include: { inventoryItem: { select: { name: true, unit: true, unitCost: true } } },
+      variants: {
+        include: {
+          ingredients: {
+            include: { inventoryItem: { select: { name: true, unit: true, unitCost: true } } },
+          },
+        },
+        orderBy: { label: "asc" },
       },
     },
     orderBy: { name: "asc" },
   });
 
   return dishes.map((d) => {
-    const ingredients: FoodDishIngredientLine[] = d.ingredients.map((i) => {
-      const unitCost = Number(i.inventoryItem.unitCost ?? 0);
-      const quantity = Number(i.quantity);
+    const singleDefaultVariant = d.variants.length === 1 && d.variants[0].label === DEFAULT_VARIANT_LABEL;
+    const variants: FoodDishVariantWithCost[] = d.variants.map((v) => {
+      const ingredients: FoodDishIngredientLine[] = v.ingredients.map((i) => {
+        const unitCost = Number(i.inventoryItem.unitCost ?? 0);
+        const quantity = Number(i.quantity);
+        return {
+          inventoryItemId: i.inventoryItemId,
+          name: i.inventoryItem.name,
+          unit: i.inventoryItem.unit,
+          quantity,
+          unitCost,
+          lineCost: Math.round(unitCost * quantity * 100) / 100,
+        };
+      });
+      const cost = Math.round(ingredients.reduce((sum, i) => sum + i.lineCost, 0) * 100) / 100;
+      const price = Number(v.price);
+      const marginAmount = Math.round((price - cost) * 100) / 100;
+      const marginPct = price > 0 ? Math.round((marginAmount / price) * 1000) / 10 : null;
       return {
-        inventoryItemId: i.inventoryItemId,
-        name: i.inventoryItem.name,
-        unit: i.inventoryItem.unit,
-        quantity,
-        unitCost,
-        lineCost: Math.round(unitCost * quantity * 100) / 100,
+        id: v.id,
+        dishId: d.id,
+        label: v.label,
+        price,
+        cost,
+        marginAmount,
+        marginPct,
+        ingredients,
+        displayName: singleDefaultVariant ? d.name : `${d.name} — ${v.label}`,
       };
     });
-    const cost = Math.round(ingredients.reduce((sum, i) => sum + i.lineCost, 0) * 100) / 100;
-    const price = Number(d.price);
-    const marginAmount = Math.round((price - cost) * 100) / 100;
-    const marginPct = price > 0 ? Math.round((marginAmount / price) * 1000) / 10 : null;
-    return { id: d.id, name: d.name, price, isActive: d.isActive, cost, marginAmount, marginPct, ingredients };
+    return { id: d.id, name: d.name, isActive: d.isActive, variants };
   });
+}
+
+/** Aplana platillos→variantes en una sola lista — la unidad real de precio/costo/venta. */
+export function flattenVariants(dishes: FoodDishWithCost[]): FoodDishVariantWithCost[] {
+  return dishes.flatMap((d) => d.variants);
 }
 
 // ─── FOOD OPS — Gastos fijos ──────────────────────────────────────────
@@ -314,14 +355,15 @@ export async function getTotalMonthlyFixedCosts(organizationId: string): Promise
 
 // ─── FOOD OPS — Punto de equilibrio ───────────────────────────────────
 
-export interface FoodBreakEvenPerDish {
+export interface FoodBreakEvenPerVariant {
+  variantId: string;
   dishId: string;
   name: string;
   price: number;
   cost: number;
   contributionMargin: number;
-  // null si el margen de contribución es 0 o negativo -- ese platillo
-  // nunca cubre los gastos fijos por sí solo, sin importar cuántos se
+  // null si el margen de contribución es 0 o negativo -- esa variante
+  // nunca cubre los gastos fijos por sí sola, sin importar cuántas se
   // vendan (mostrar un número ahí sería engañoso, no solo impreciso).
   breakEvenUnits: number | null;
 }
@@ -335,9 +377,9 @@ export interface FoodBreakEvenBlended {
 
 export interface FoodBreakEvenResult {
   fixedCostsMonthly: number;
-  perDish: FoodBreakEvenPerDish[];
-  // null cuando no hay ninguna venta por platillo registrada en los
-  // últimos 30 días -- se omite en vez de inventar una mezcla de ventas.
+  perVariant: FoodBreakEvenPerVariant[];
+  // null cuando no hay ninguna venta registrada en los últimos 30 días --
+  // se omite en vez de inventar una mezcla de ventas.
   blended: FoodBreakEvenBlended | null;
 }
 
@@ -346,36 +388,38 @@ export async function getFoodBreakEven(organizationId: string): Promise<FoodBrea
     getTotalMonthlyFixedCosts(organizationId),
     getFoodDishesWithCost(organizationId, { activeOnly: true }),
   ]);
+  const variants = flattenVariants(dishes);
 
-  const perDish: FoodBreakEvenPerDish[] = dishes.map((d) => ({
-    dishId: d.id,
-    name: d.name,
-    price: d.price,
-    cost: d.cost,
-    contributionMargin: d.marginAmount,
-    breakEvenUnits: d.marginAmount > 0 ? Math.ceil(fixedCostsMonthly / d.marginAmount) : null,
+  const perVariant: FoodBreakEvenPerVariant[] = variants.map((v) => ({
+    variantId: v.id,
+    dishId: v.dishId,
+    name: v.displayName,
+    price: v.price,
+    cost: v.cost,
+    contributionMargin: v.marginAmount,
+    breakEvenUnits: v.marginAmount > 0 ? Math.ceil(fixedCostsMonthly / v.marginAmount) : null,
   }));
 
   const since = daysAgo(30);
-  const dishSales = await prisma.foodDishSale.groupBy({
-    by: ["dishId"],
+  const variantSales = await prisma.foodDishSale.groupBy({
+    by: ["variantId"],
     where: { organizationId, occurredAt: { gte: since } },
     _sum: { quantity: true },
   });
 
   let blended: FoodBreakEvenBlended | null = null;
-  if (dishSales.length > 0) {
-    const dishById = new Map(dishes.map((d) => [d.id, d]));
+  if (variantSales.length > 0) {
+    const variantById = new Map(variants.map((v) => [v.id, v]));
     let totalUnits = 0;
     let totalMargin = 0;
     let totalRevenue = 0;
-    for (const row of dishSales) {
-      const dish = dishById.get(row.dishId);
-      if (!dish) continue; // el platillo pudo desactivarse desde entonces
+    for (const row of variantSales) {
+      const variant = variantById.get(row.variantId);
+      if (!variant) continue; // la variante pudo desactivarse/borrarse desde entonces
       const qty = row._sum.quantity ?? 0;
       totalUnits += qty;
-      totalMargin += dish.marginAmount * qty;
-      totalRevenue += dish.price * qty;
+      totalMargin += variant.marginAmount * qty;
+      totalRevenue += variant.price * qty;
     }
     if (totalUnits > 0 && totalRevenue > 0) {
       const weightedAvgContributionMargin = totalMargin / totalUnits;
@@ -392,14 +436,15 @@ export async function getFoodBreakEven(organizationId: string): Promise<FoodBrea
     }
   }
 
-  return { fixedCostsMonthly, perDish, blended };
+  return { fixedCostsMonthly, perVariant, blended };
 }
 
 // ─── FOOD OPS — Utilidad neta ─────────────────────────────────────────
 // Ingresos = FoodSale.netAmount (la fuente real ya existente, sin cambios).
-// COGS = Σ FoodDishSale.quantity × costo del platillo, SOLO para platillos
-// con venta registrada en el período -- coverage dice qué tan completo es
-// ese dato para que la página pueda avisar si la utilidad es parcial.
+// COGS = Σ FoodDishSale.quantity × costo de la variante, SOLO para
+// variantes con venta registrada en el período -- coverage dice qué tan
+// completo es ese dato para que la página pueda avisar si la utilidad es
+// parcial.
 
 export type FoodProfitPeriod = "today" | "7d" | "30d";
 
@@ -411,20 +456,20 @@ export interface FoodNetProfitResult {
   cogs: number;
   fixedCostsProrated: number;
   netProfit: number;
-  coverage: { dishesWithSales: number; totalActiveDishes: number };
+  coverage: { itemsWithSales: number; totalActiveItems: number };
 }
 
 export async function getFoodNetProfit(organizationId: string, period: FoodProfitPeriod): Promise<FoodNetProfitResult> {
   const days = PERIOD_LABEL_DAYS[period];
   const from = period === "today" ? startOfDay(new Date()) : daysAgo(days);
 
-  const [salesAgg, dishSales, dishes, fixedCostsMonthly] = await Promise.all([
+  const [salesAgg, variantSales, dishes, fixedCostsMonthly] = await Promise.all([
     prisma.foodSale.aggregate({
       where: { organizationId, occurredAt: { gte: from } },
       _sum: { netAmount: true },
     }),
     prisma.foodDishSale.groupBy({
-      by: ["dishId"],
+      by: ["variantId"],
       where: { organizationId, occurredAt: { gte: from } },
       _sum: { quantity: true },
     }),
@@ -432,14 +477,15 @@ export async function getFoodNetProfit(organizationId: string, period: FoodProfi
     getTotalMonthlyFixedCosts(organizationId),
   ]);
 
-  const dishById = new Map(dishes.map((d) => [d.id, d]));
+  const variants = flattenVariants(dishes);
+  const variantById = new Map(variants.map((v) => [v.id, v]));
   let cogs = 0;
-  const dishesWithSalesIds = new Set<string>();
-  for (const row of dishSales) {
-    const dish = dishById.get(row.dishId);
-    if (!dish) continue;
-    cogs += dish.cost * (row._sum.quantity ?? 0);
-    dishesWithSalesIds.add(row.dishId);
+  const variantsWithSalesIds = new Set<string>();
+  for (const row of variantSales) {
+    const variant = variantById.get(row.variantId);
+    if (!variant) continue;
+    cogs += variant.cost * (row._sum.quantity ?? 0);
+    variantsWithSalesIds.add(row.variantId);
   }
 
   const revenue = Number(salesAgg._sum.netAmount ?? 0);
@@ -452,13 +498,14 @@ export async function getFoodNetProfit(organizationId: string, period: FoodProfi
     cogs: Math.round(cogs * 100) / 100,
     fixedCostsProrated,
     netProfit,
-    coverage: { dishesWithSales: dishesWithSalesIds.size, totalActiveDishes: dishes.length },
+    coverage: { itemsWithSales: variantsWithSalesIds.size, totalActiveItems: variants.length },
   };
 }
 
 // ─── FOOD OPS — Reducción de costos ───────────────────────────────────
 
-export interface FoodLowMarginDish {
+export interface FoodLowMarginItem {
+  variantId: string;
   dishId: string;
   name: string;
   marginPct: number | null;
@@ -470,30 +517,31 @@ export interface FoodTopCostIngredient {
   inventoryItemId: string;
   name: string;
   unit: string;
-  // Suma del costo de este insumo por PORCIÓN a través de todas tus
-  // recetas activas (no el gasto total de compra, que este módulo no
-  // registra todavía) -- indica qué insumo pesa más en el costo de tu
-  // menú, para saber qué negociar primero con proveedores.
+  // Suma del costo de este insumo por PORCIÓN a través de todas las
+  // variantes activas de tu menú (no el gasto total de compra, que este
+  // módulo no registra todavía) -- indica qué insumo pesa más en el costo
+  // de tu menú, para saber qué negociar primero con proveedores.
   totalRecipeCost: number;
   usedInDishes: number;
 }
 
 export interface FoodCostReductionInsights {
-  lowestMarginDishes: FoodLowMarginDish[];
+  lowestMarginItems: FoodLowMarginItem[];
   topCostIngredients: FoodTopCostIngredient[];
 }
 
 export async function getFoodCostReductionInsights(organizationId: string, limit = 5): Promise<FoodCostReductionInsights> {
   const dishes = await getFoodDishesWithCost(organizationId, { activeOnly: true });
+  const variants = flattenVariants(dishes);
 
-  const lowestMarginDishes = [...dishes]
+  const lowestMarginItems = [...variants]
     .sort((a, b) => (a.marginPct ?? -Infinity) - (b.marginPct ?? -Infinity))
     .slice(0, limit)
-    .map((d) => ({ dishId: d.id, name: d.name, marginPct: d.marginPct, cost: d.cost, price: d.price }));
+    .map((v) => ({ variantId: v.id, dishId: v.dishId, name: v.displayName, marginPct: v.marginPct, cost: v.cost, price: v.price }));
 
   const ingredientTotals = new Map<string, { name: string; unit: string; totalRecipeCost: number; usedInDishes: Set<string> }>();
-  for (const dish of dishes) {
-    for (const ing of dish.ingredients) {
+  for (const variant of variants) {
+    for (const ing of variant.ingredients) {
       const entry = ingredientTotals.get(ing.inventoryItemId) ?? {
         name: ing.name,
         unit: ing.unit,
@@ -501,7 +549,7 @@ export async function getFoodCostReductionInsights(organizationId: string, limit
         usedInDishes: new Set<string>(),
       };
       entry.totalRecipeCost += ing.lineCost;
-      entry.usedInDishes.add(dish.id);
+      entry.usedInDishes.add(variant.dishId);
       ingredientTotals.set(ing.inventoryItemId, entry);
     }
   }
@@ -517,7 +565,7 @@ export async function getFoodCostReductionInsights(organizationId: string, limit
     .sort((a, b) => b.totalRecipeCost - a.totalRecipeCost)
     .slice(0, limit);
 
-  return { lowestMarginDishes, topCostIngredients };
+  return { lowestMarginItems, topCostIngredients };
 }
 
 // ─── FOOD OPS — Recomendaciones para mejorar utilidad ────────────────
@@ -529,8 +577,9 @@ export type FoodProfitRecommendationType = "review_urgent" | "raise_price_or_cut
 
 export interface FoodProfitRecommendation {
   type: FoodProfitRecommendationType;
+  variantId: string;
   dishId: string;
-  dishName: string;
+  name: string;
   reason: string;
 }
 
@@ -539,48 +588,52 @@ const HIGH_MARGIN_PCT = 40;
 
 export async function getFoodProfitRecommendations(organizationId: string): Promise<FoodProfitRecommendation[]> {
   const dishes = await getFoodDishesWithCost(organizationId, { activeOnly: true });
-  if (dishes.length === 0) return [];
+  const variants = flattenVariants(dishes);
+  if (variants.length === 0) return [];
 
   const since = daysAgo(30);
   const salesRows = await prisma.foodDishSale.groupBy({
-    by: ["dishId"],
+    by: ["variantId"],
     where: { organizationId, occurredAt: { gte: since } },
     _sum: { quantity: true },
   });
-  const unitsByDish = new Map(salesRows.map((r) => [r.dishId, r._sum.quantity ?? 0]));
+  const unitsByVariant = new Map(salesRows.map((r) => [r.variantId, r._sum.quantity ?? 0]));
 
   const recommendations: FoodProfitRecommendation[] = [];
 
-  for (const dish of dishes) {
-    if (dish.marginAmount < 0) {
+  for (const variant of variants) {
+    if (variant.marginAmount < 0) {
       recommendations.push({
         type: "review_urgent",
-        dishId: dish.id,
-        dishName: dish.name,
-        reason: `Cuesta $${dish.cost.toFixed(2)} pero se vende en $${dish.price.toFixed(2)} — pierdes dinero en cada uno.`,
+        variantId: variant.id,
+        dishId: variant.dishId,
+        name: variant.displayName,
+        reason: `Cuesta $${variant.cost.toFixed(2)} pero se vende en $${variant.price.toFixed(2)} — pierdes dinero en cada uno.`,
       });
     }
   }
 
-  const soldDishes = dishes.filter((d) => (unitsByDish.get(d.id) ?? 0) > 0);
-  if (soldDishes.length >= 2) {
-    const unitsSorted = soldDishes.map((d) => unitsByDish.get(d.id) ?? 0).sort((a, b) => a - b);
+  const soldVariants = variants.filter((v) => (unitsByVariant.get(v.id) ?? 0) > 0);
+  if (soldVariants.length >= 2) {
+    const unitsSorted = soldVariants.map((v) => unitsByVariant.get(v.id) ?? 0).sort((a, b) => a - b);
     const median = unitsSorted[Math.floor(unitsSorted.length / 2)];
-    for (const dish of soldDishes) {
-      const units = unitsByDish.get(dish.id) ?? 0;
-      if (dish.marginAmount >= 0 && dish.marginPct !== null && dish.marginPct < LOW_MARGIN_PCT && units >= median) {
+    for (const variant of soldVariants) {
+      const units = unitsByVariant.get(variant.id) ?? 0;
+      if (variant.marginAmount >= 0 && variant.marginPct !== null && variant.marginPct < LOW_MARGIN_PCT && units >= median) {
         recommendations.push({
           type: "raise_price_or_cut_cost",
-          dishId: dish.id,
-          dishName: dish.name,
-          reason: `Se vende bien (${units} en 30 días) pero deja solo ${dish.marginPct}% de margen — considera subir el precio o revisar la receta.`,
+          variantId: variant.id,
+          dishId: variant.dishId,
+          name: variant.displayName,
+          reason: `Se vende bien (${units} en 30 días) pero deja solo ${variant.marginPct}% de margen — considera subir el precio o revisar la receta.`,
         });
-      } else if (dish.marginPct !== null && dish.marginPct >= HIGH_MARGIN_PCT && units < median) {
+      } else if (variant.marginPct !== null && variant.marginPct >= HIGH_MARGIN_PCT && units < median) {
         recommendations.push({
           type: "promote",
-          dishId: dish.id,
-          dishName: dish.name,
-          reason: `Buen margen (${dish.marginPct}%) pero poca venta (${units} en 30 días) — es buen candidato para promocionar.`,
+          variantId: variant.id,
+          dishId: variant.dishId,
+          name: variant.displayName,
+          reason: `Buen margen (${variant.marginPct}%) pero poca venta (${units} en 30 días) — es buen candidato para promocionar.`,
         });
       }
     }
@@ -590,11 +643,12 @@ export async function getFoodProfitRecommendations(organizationId: string): Prom
 }
 
 // ─── FOOD OPS — Platillos menos vendidos (para promociones) ─────────
-// Solo entre platillos con AL MENOS una venta registrada en el rango, para
+// Solo entre variantes con AL MENOS una venta registrada en el rango, para
 // no confundir "nunca se ofreció/no se ha capturado" con "se ofreció y
 // casi no se vendió", que son situaciones muy distintas.
 
-export interface FoodLeastSoldDish {
+export interface FoodLeastSoldItem {
+  variantId: string;
   dishId: string;
   name: string;
   unitsSold: number;
@@ -602,19 +656,20 @@ export interface FoodLeastSoldDish {
   marginPct: number | null;
 }
 
-export async function getFoodLeastSoldDishes(organizationId: string, days = 30, limit = 5): Promise<FoodLeastSoldDish[]> {
+export async function getFoodLeastSoldDishes(organizationId: string, days = 30, limit = 5): Promise<FoodLeastSoldItem[]> {
   const dishes = await getFoodDishesWithCost(organizationId, { activeOnly: true });
+  const variants = flattenVariants(dishes);
   const since = daysAgo(days);
   const salesRows = await prisma.foodDishSale.groupBy({
-    by: ["dishId"],
+    by: ["variantId"],
     where: { organizationId, occurredAt: { gte: since } },
     _sum: { quantity: true },
   });
-  const unitsByDish = new Map(salesRows.map((r) => [r.dishId, r._sum.quantity ?? 0]));
+  const unitsByVariant = new Map(salesRows.map((r) => [r.variantId, r._sum.quantity ?? 0]));
 
-  return dishes
-    .filter((d) => unitsByDish.has(d.id))
-    .map((d) => ({ dishId: d.id, name: d.name, unitsSold: unitsByDish.get(d.id) ?? 0, price: d.price, marginPct: d.marginPct }))
+  return variants
+    .filter((v) => unitsByVariant.has(v.id))
+    .map((v) => ({ variantId: v.id, dishId: v.dishId, name: v.displayName, unitsSold: unitsByVariant.get(v.id) ?? 0, price: v.price, marginPct: v.marginPct }))
     .sort((a, b) => a.unitsSold - b.unitsSold)
     .slice(0, limit);
 }

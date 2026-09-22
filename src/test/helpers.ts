@@ -91,8 +91,9 @@ export async function cleanupOrg(orgId: string) {
   await prisma.whatsAppAssistant.deleteMany({ where: { organizationId: orgId } });
   await prisma.templateInstallation.deleteMany({ where: { organizationId: orgId } });
   await prisma.webhookEvent.deleteMany({ where: { organizationId: orgId } });
-  await prisma.foodDishIngredient.deleteMany({ where: { dish: { organizationId: orgId } } });
-  await prisma.foodDishSale.deleteMany({ where: { organizationId: orgId } });
+  // FoodDishVariant/FoodDishVariantIngredient/FoodDishSale cascade from
+  // FoodDish (onDelete: Cascade all the way down), so deleting the dishes
+  // is enough to clean up all three.
   await prisma.foodDish.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodOperatingCost.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodSale.deleteMany({ where: { organizationId: orgId } });

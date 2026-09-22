@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, useFormContext, useWatch, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, Plus, Pencil, Trash2 } from "lucide-react";
@@ -23,24 +23,41 @@ export interface FoodInventoryOption {
   unitCost: number | null;
 }
 
+// Mismo valor que DEFAULT_VARIANT_LABEL en src/lib/food.ts -- se repite
+// aquí a propósito (ese archivo trae Prisma y no puede importarse desde un
+// componente cliente), mismo criterio que recommendPrice() en
+// FoodPriceCalculator.tsx.
+const DEFAULT_VARIANT_LABEL = "Único";
+
 const ingredientSchema = z.object({
   inventoryItemId: z.string().min(1, "Selecciona un insumo"),
   quantity: z.coerce.number().positive("Cantidad debe ser mayor a 0"),
 });
 
-const schema = z.object({
-  name: z.string().min(1, "Nombre requerido"),
+const variantSchema = z.object({
+  label: z.string().min(1, "Nombre de variante requerido"),
   price: z.coerce.number().positive("El precio debe ser mayor a 0"),
   ingredients: z.array(ingredientSchema).min(1, "Agrega al menos un insumo"),
 });
 
+const schema = z.object({
+  name: z.string().min(1, "Nombre requerido"),
+  variants: z.array(variantSchema).min(1, "Agrega al menos una variante"),
+});
+
 type FormData = z.infer<typeof schema>;
+
+interface ExistingVariant {
+  id: string;
+  label: string;
+  price: number;
+  ingredients: { inventoryItemId: string; quantity: number }[];
+}
 
 interface ExistingDish {
   id: string;
   name: string;
-  price: number;
-  ingredients: { inventoryItemId: string; quantity: number }[];
+  variants: ExistingVariant[];
 }
 
 interface FoodDishFormDialogProps {
@@ -48,12 +65,19 @@ interface FoodDishFormDialogProps {
   dish?: ExistingDish;
 }
 
+function emptyVariant(): FormData["variants"][number] {
+  return { label: "", price: undefined as unknown as number, ingredients: [{ inventoryItemId: "", quantity: undefined as unknown as number }] };
+}
+
 function emptyDefaults(): FormData {
-  return { name: "", price: undefined as unknown as number, ingredients: [{ inventoryItemId: "", quantity: undefined as unknown as number }] };
+  return { name: "", variants: [{ ...emptyVariant(), label: DEFAULT_VARIANT_LABEL }] };
 }
 
 function dishDefaults(dish: ExistingDish): FormData {
-  return { name: dish.name, price: dish.price, ingredients: dish.ingredients };
+  return {
+    name: dish.name,
+    variants: dish.variants.map((v) => ({ label: v.label, price: v.price, ingredients: v.ingredients })),
+  };
 }
 
 export function FoodDishFormDialog({ inventoryItems, dish }: FoodDishFormDialogProps) {
@@ -62,24 +86,13 @@ export function FoodDishFormDialog({ inventoryItems, dish }: FoodDishFormDialogP
   const [loading, setLoading] = useState(false);
   const isEdit = !!dish;
 
-  const {
-    register, control, handleSubmit, watch, reset, formState: { errors },
-  } = useForm<FormData>({
+  const form = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: dish ? dishDefaults(dish) : emptyDefaults(),
   });
+  const { register, control, handleSubmit, reset, formState: { errors } } = form;
 
-  const { fields, append, remove } = useFieldArray({ control, name: "ingredients" });
-  const watchedIngredients = watch("ingredients");
-  const watchedPrice = Number(watch("price")) || 0;
-
-  const inventoryById = new Map(inventoryItems.map((i) => [i.id, i]));
-  const liveCost = (watchedIngredients ?? []).reduce((sum, ing) => {
-    const item = inventoryById.get(ing?.inventoryItemId ?? "");
-    const qty = Number(ing?.quantity) || 0;
-    return sum + (item?.unitCost ?? 0) * qty;
-  }, 0);
-  const liveMarginPct = watchedPrice > 0 ? ((watchedPrice - liveCost) / watchedPrice) * 100 : null;
+  const { fields: variantFields, append: appendVariant, remove: removeVariant } = useFieldArray({ control, name: "variants" });
 
   function openDialog() {
     reset(dish ? dishDefaults(dish) : emptyDefaults());
@@ -118,113 +131,204 @@ export function FoodDishFormDialog({ inventoryItems, dish }: FoodDishFormDialogP
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? (lang === "es" ? "Editar platillo" : "Edit dish") : (lang === "es" ? "Nuevo platillo" : "New dish")}
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormProvider {...form}>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
-              <Input placeholder={lang === "es" ? "Tacos al pastor" : "Al pastor tacos"} {...register("name")} />
+              <Label>{lang === "es" ? "Nombre del platillo *" : "Dish name *"}</Label>
+              <Input placeholder={lang === "es" ? "Berry Bloom" : "Berry Bloom"} {...register("name")} />
               {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
             </div>
-            <div className="space-y-2">
-              <Label>{lang === "es" ? "Precio de venta *" : "Sale price *"}</Label>
-              <Input type="number" step="0.01" min="0" {...register("price")} />
-              {errors.price && <p className="text-xs text-red-500">{errors.price.message}</p>}
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>{lang === "es" ? "Insumos y cantidades *" : "Ingredients and quantities *"}</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => append({ inventoryItemId: "", quantity: undefined as unknown as number })}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {lang === "es" ? "Agregar" : "Add"}
-              </Button>
-            </div>
-            {errors.ingredients?.message && <p className="text-xs text-red-500">{errors.ingredients.message}</p>}
-            {inventoryItems.length === 0 && (
-              <p className="text-xs text-amber-600">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <Label>{lang === "es" ? "Variantes (tamaños, presentaciones...) *" : "Variants (sizes, options...) *"}</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => appendVariant(emptyVariant())}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {lang === "es" ? "Agregar variante" : "Add variant"}
+                </Button>
+              </div>
+              {errors.variants?.message && <p className="text-xs text-red-500">{errors.variants.message}</p>}
+              <p className="text-xs text-slate-500">
                 {lang === "es"
-                  ? "Todavía no tienes insumos en tu inventario — agrégalos primero."
-                  : "You don't have any inventory items yet — add some first."}
+                  ? `Si el platillo no maneja tamaños, deja una sola variante llamada "${DEFAULT_VARIANT_LABEL}".`
+                  : `If the dish doesn't have sizes, keep a single variant named "${DEFAULT_VARIANT_LABEL}".`}
               </p>
-            )}
-            <div className="max-h-64 space-y-2 overflow-y-auto pr-0.5">
-              {fields.map((field, index) => (
-                <div key={field.id} className="flex flex-col gap-2 rounded-md border border-slate-200 p-2 sm:flex-row sm:items-end">
-                  <div className="flex-1 space-y-1">
-                    {index === 0 && <Label className="text-xs">{lang === "es" ? "Insumo" : "Ingredient"}</Label>}
-                    <select
-                      {...register(`ingredients.${index}.inventoryItemId` as const)}
-                      className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm outline-none focus:border-brand-500"
-                    >
-                      <option value="">{lang === "es" ? "Selecciona..." : "Select..."}</option>
-                      {inventoryItems.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} ({item.unit})
-                        </option>
-                      ))}
-                    </select>
-                    {errors.ingredients?.[index]?.inventoryItemId && (
-                      <p className="text-xs text-red-500">{errors.ingredients[index]?.inventoryItemId?.message}</p>
-                    )}
-                  </div>
-                  <div className="w-full space-y-1 sm:w-28">
-                    {index === 0 && <Label className="text-xs">{lang === "es" ? "Cantidad" : "Quantity"}</Label>}
-                    <Input type="number" step="0.001" min="0" {...register(`ingredients.${index}.quantity` as const)} />
-                    {errors.ingredients?.[index]?.quantity && (
-                      <p className="text-xs text-red-500">{errors.ingredients[index]?.quantity?.message}</p>
-                    )}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => remove(index)}
-                    disabled={fields.length === 1}
-                    className="text-slate-400 hover:text-red-600 disabled:opacity-30"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+
+              <div className="max-h-[26rem] space-y-3 overflow-y-auto pr-0.5">
+                {variantFields.map((field, index) => (
+                  <VariantEditor
+                    key={field.id}
+                    variantIndex={index}
+                    inventoryItems={inventoryItems}
+                    onRemove={() => removeVariant(index)}
+                    canRemove={variantFields.length > 1}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="rounded-md bg-slate-50 px-3 py-2 text-sm">
-            <span className="text-slate-500">{lang === "es" ? "Costo calculado: " : "Calculated cost: "}</span>
-            <span className="font-semibold text-slate-900">${liveCost.toFixed(2)}</span>
-            {liveMarginPct !== null && (
-              <span
-                className={cn(
-                  "ml-2 text-xs font-medium",
-                  liveMarginPct >= 30 ? "text-emerald-600" : liveMarginPct >= 15 ? "text-amber-600" : "text-red-600"
-                )}
-              >
-                · {lang === "es" ? "Margen" : "Margin"}: {liveMarginPct.toFixed(1)}%
-              </span>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
-            <Button type="submit" disabled={loading}>
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {lang === "es" ? "Guardar" : "Save"}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
+              <Button type="submit" disabled={loading}>
+                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {lang === "es" ? "Guardar" : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </FormProvider>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function VariantEditor({
+  variantIndex, inventoryItems, onRemove, canRemove,
+}: {
+  variantIndex: number;
+  inventoryItems: FoodInventoryOption[];
+  onRemove: () => void;
+  canRemove: boolean;
+}) {
+  const { lang } = usePreferences();
+  const { register, control, formState: { errors } } = useFormContext<FormData>();
+  const { fields: ingredientFields, append: appendIngredient, remove: removeIngredient } = useFieldArray({
+    control,
+    name: `variants.${variantIndex}.ingredients`,
+  });
+
+  const watchedIngredients = useWatch({ control, name: `variants.${variantIndex}.ingredients` });
+  const watchedPrice = Number(useWatch({ control, name: `variants.${variantIndex}.price` })) || 0;
+
+  const inventoryById = new Map(inventoryItems.map((i) => [i.id, i]));
+  const liveCost = (watchedIngredients ?? []).reduce((sum, ing) => {
+    const item = inventoryById.get(ing?.inventoryItemId ?? "");
+    const qty = Number(ing?.quantity) || 0;
+    return sum + (item?.unitCost ?? 0) * qty;
+  }, 0);
+  const liveMarginPct = watchedPrice > 0 ? ((watchedPrice - liveCost) / watchedPrice) * 100 : null;
+
+  const variantErrors = errors.variants?.[variantIndex];
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="space-y-1">
+          <Label className="text-xs">{lang === "es" ? "Nombre de variante *" : "Variant name *"}</Label>
+          <Input placeholder={DEFAULT_VARIANT_LABEL} {...register(`variants.${variantIndex}.label` as const)} />
+          {variantErrors?.label && <p className="text-xs text-red-500">{variantErrors.label.message}</p>}
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">{lang === "es" ? "Precio de venta *" : "Sale price *"}</Label>
+          <Input type="number" step="0.01" min="0" {...register(`variants.${variantIndex}.price` as const)} />
+          {variantErrors?.price && <p className="text-xs text-red-500">{variantErrors.price.message}</p>}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className="text-slate-400 hover:text-red-600 disabled:opacity-30"
+          title={lang === "es" ? "Quitar variante" : "Remove variant"}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label className="text-xs">{lang === "es" ? "Insumos y cantidades *" : "Ingredients and quantities *"}</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => appendIngredient({ inventoryItemId: "", quantity: undefined as unknown as number })}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {lang === "es" ? "Agregar" : "Add"}
+          </Button>
+        </div>
+        {typeof variantErrors?.ingredients?.message === "string" && (
+          <p className="text-xs text-red-500">{variantErrors.ingredients.message}</p>
+        )}
+        {inventoryItems.length === 0 && (
+          <p className="text-xs text-amber-600">
+            {lang === "es"
+              ? "Todavía no tienes insumos en tu inventario — agrégalos primero."
+              : "You don't have any inventory items yet — add some first."}
+          </p>
+        )}
+        <div className="space-y-2">
+          {ingredientFields.map((field, ingIndex) => (
+            <div key={field.id} className="flex flex-col gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-1">
+                <select
+                  {...register(`variants.${variantIndex}.ingredients.${ingIndex}.inventoryItemId` as const)}
+                  className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm outline-none focus:border-brand-500"
+                >
+                  <option value="">{lang === "es" ? "Selecciona..." : "Select..."}</option>
+                  {inventoryItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.unit})
+                    </option>
+                  ))}
+                </select>
+                {variantErrors?.ingredients?.[ingIndex]?.inventoryItemId && (
+                  <p className="text-xs text-red-500">{variantErrors.ingredients[ingIndex]?.inventoryItemId?.message}</p>
+                )}
+              </div>
+              <div className="w-full space-y-1 sm:w-28">
+                <Input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  placeholder={lang === "es" ? "Cantidad" : "Quantity"}
+                  {...register(`variants.${variantIndex}.ingredients.${ingIndex}.quantity` as const)}
+                />
+                {variantErrors?.ingredients?.[ingIndex]?.quantity && (
+                  <p className="text-xs text-red-500">{variantErrors.ingredients[ingIndex]?.quantity?.message}</p>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => removeIngredient(ingIndex)}
+                disabled={ingredientFields.length === 1}
+                className="text-slate-400 hover:text-red-600 disabled:opacity-30"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-sm">
+        <span className="text-slate-500">{lang === "es" ? "Costo calculado: " : "Calculated cost: "}</span>
+        <span className="font-semibold text-slate-900">${liveCost.toFixed(2)}</span>
+        {liveMarginPct !== null && (
+          <span
+            className={cn(
+              "ml-2 text-xs font-medium",
+              liveMarginPct >= 30 ? "text-emerald-600" : liveMarginPct >= 15 ? "text-amber-600" : "text-red-600"
+            )}
+          >
+            · {lang === "es" ? "Margen" : "Margin"}: {liveMarginPct.toFixed(1)}%
+          </span>
+        )}
+      </div>
+    </div>
   );
 }

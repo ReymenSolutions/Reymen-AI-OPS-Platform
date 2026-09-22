@@ -10,21 +10,21 @@ datasource db {
 // ─── TENANT ──────────────────────────────────────────────────────
 
 model Organization {
-  id                       String   @id @default(cuid())
+  id                       String    @id @default(cuid())
   name                     String
-  slug                     String   @unique
+  slug                     String    @unique
   industry                 String?
   logoUrl                  String?
-  isActive                 Boolean  @default(true)
-  plan                     String   @default("starter")
+  isActive                 Boolean   @default(true)
+  plan                     String    @default("starter")
   // IANA timezone name (e.g. "America/Mexico_City") — used to render
   // appointment times and to evaluate AvailabilityRule/reminder windows in
   // the org's local time rather than the server's.
-  timezone                 String   @default("America/Mexico_City")
-  stripeCustomerId         String?  @unique
-  stripeSubscriptionId     String?  @unique
+  timezone                 String    @default("America/Mexico_City")
+  stripeCustomerId         String?   @unique
+  stripeSubscriptionId     String?   @unique
   stripeSubscriptionStatus String?
-  n8nWebhookSecret         String   @unique
+  n8nWebhookSecret         String    @unique
   // Set once the org's onboarding checklist (src/lib/onboarding.ts) is
   // either fully completed or explicitly skipped — null means "still
   // showing the setup nudge on the dashboard" (Fase 10).
@@ -33,9 +33,9 @@ model Organization {
   // calculadora de precio recomendado del módulo Food (precio sugerido =
   // costo del platillo ÷ este %). 30% es el punto de partida típico de la
   // industria restaurantera; editable por organización.
-  foodTargetCostPct        Int      @default(30)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  foodTargetCostPct        Int       @default(30)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   users                 User[]
   leads                 Lead[]
@@ -74,30 +74,30 @@ model Organization {
 // ─── USERS & AUTH ─────────────────────────────────────────────────
 
 model User {
-  id                   String   @id @default(cuid())
-  email                String   @unique
+  id                   String    @id @default(cuid())
+  email                String    @unique
   name                 String?
   image                String?
   passwordHash         String?
-  role                 UserRole @default(CLIENT)
+  role                 UserRole  @default(CLIENT)
   organizationId       String?
-  isActive             Boolean  @default(true)
-  theme                String?  @default("light")
-  language             String?  @default("es")
+  isActive             Boolean   @default(true)
+  theme                String?   @default("light")
+  language             String?   @default("es")
   notificationsSeenAt  DateTime? // last time the user opened the notification bell — items newer than this still count as unread
   totpSecret           String? // base32 TOTP secret; set once enrollment begins
-  totpEnabled          Boolean  @default(false)
-  totpBackupCodeHashes String[] @default([]) // bcrypt hashes, single-use, cleared/regenerated on re-enroll
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  totpEnabled          Boolean   @default(false)
+  totpBackupCodeHashes String[]  @default([]) // bcrypt hashes, single-use, cleared/regenerated on re-enroll
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  organization Organization? @relation(fields: [organizationId], references: [id])
-  accounts     Account[]
-  sessions     Session[]
-  ownedOpportunities     Opportunity[]
-  authoredNotes          Note[]
-  assignedConversations  Conversation[] @relation("ConversationAssignee")
-  sentMessages           Message[]      @relation("MessageSender")
+  organization          Organization?  @relation(fields: [organizationId], references: [id])
+  accounts              Account[]
+  sessions              Session[]
+  ownedOpportunities    Opportunity[]
+  authoredNotes         Note[]
+  assignedConversations Conversation[] @relation("ConversationAssignee")
+  sentMessages          Message[]      @relation("MessageSender")
 
   @@index([organizationId])
   @@index([email])
@@ -230,11 +230,11 @@ model PipelineStage {
 }
 
 model Opportunity {
-  id             String   @id @default(cuid())
-  organizationId String
-  leadId         String
-  pipelineStageId String
-  title          String
+  id                 String    @id @default(cuid())
+  organizationId     String
+  leadId             String
+  pipelineStageId    String
+  title              String
   // Monetary amount as a plain float, matching this schema's existing
   // pragmatic style (Metric.value is also Float) rather than introducing
   // Prisma's Decimal type solely for this — precise accounting isn't a
@@ -363,10 +363,10 @@ enum ConversationStatus {
 }
 
 model Message {
-  id             String      @id @default(cuid())
+  id             String                 @id @default(cuid())
   conversationId String
   role           MessageRole
-  content        String      @db.Text
+  content        String                 @db.Text
   metadata       Json?
   // Same idempotency-key pattern as Lead.externalId — dedupes a retried
   // "new message" webhook (e.g. the provider's own message ID) instead of
@@ -375,13 +375,13 @@ model Message {
   // Set only for role=AGENT (a human reply sent from the portal) — null for
   // USER/ASSISTANT/SYSTEM, which have no platform user as their sender.
   senderId       String?
-  attachmentUrl  String?              @db.Text
+  attachmentUrl  String?                @db.Text
   attachmentType String?
   // Only tracked for outbound sends (role=AGENT/ASSISTANT) — n8n reports
   // status transitions back via the message.status webhook once it hears
   // from the WhatsApp Business API. Null for inbound USER/SYSTEM messages.
   deliveryStatus MessageDeliveryStatus?
-  createdAt      DateTime    @default(now())
+  createdAt      DateTime               @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
   sender       User?        @relation("MessageSender", fields: [senderId], references: [id])
@@ -422,10 +422,10 @@ model Appointment {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
-  organization  Organization           @relation(fields: [organizationId], references: [id])
-  lead          Lead?                  @relation(fields: [leadId], references: [id])
-  service       Service?               @relation(fields: [serviceId], references: [id])
-  reminderLogs  AppointmentReminderLog[]
+  organization Organization             @relation(fields: [organizationId], references: [id])
+  lead         Lead?                    @relation(fields: [leadId], references: [id])
+  service      Service?                 @relation(fields: [serviceId], references: [id])
+  reminderLogs AppointmentReminderLog[]
 
   @@index([organizationId])
   @@index([organizationId, startTime])
@@ -522,25 +522,25 @@ model AppointmentReminderLog {
 // /api/webhooks/n8n/followup-sent.
 
 model FollowUpRule {
-  id             String     @id @default(cuid())
-  organizationId String
-  name           String
+  id                    String     @id @default(cuid())
+  organizationId        String
+  name                  String
   // A lead is only a candidate while its status matches this — leaving the
   // status (e.g. moving to WON/LOST, or being manually re-contacted into
   // CONTACTED) is itself the "stop" condition; no separate flag needed.
-  triggerStatus  LeadStatus
+  triggerStatus         LeadStatus
   // Minutes since the lead last changed (Lead.updatedAt) before the first
   // attempt fires.
-  delayMinutes   Int
+  delayMinutes          Int
   // If set, the rule fires again this many minutes after the previous
   // attempt, up to maxAttempts. Null means "fire at most once per lead".
   repeatIntervalMinutes Int?
-  maxAttempts    Int      @default(1)
-  channel        String   @default("whatsapp")
-  template       String   @db.Text
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  maxAttempts           Int        @default(1)
+  channel               String     @default("whatsapp")
+  template              String     @db.Text
+  isActive              Boolean    @default(true)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -605,22 +605,22 @@ model Metric {
 // ─── WEBHOOK EVENTS ───────────────────────────────────────────────
 
 model WebhookEvent {
-  id             String             @id @default(cuid())
-  organizationId String
-  source         String
-  eventType      String
-  payload        Json
-  status         WebhookEventStatus @default(PENDING)
-  attempts       Int                @default(0)
-  processedAt    DateTime?
-  errorMessage   String?
+  id              String             @id @default(cuid())
+  organizationId  String
+  source          String
+  eventType       String
+  payload         Json
+  status          WebhookEventStatus @default(PENDING)
+  attempts        Int                @default(0)
+  processedAt     DateTime?
+  errorMessage    String?
   // Caller-supplied idempotency key for the raw delivery itself (distinct
   // from Lead/Message.externalId, which identifies the domain entity) —
   // lets the route recognize "I've already ingested this exact delivery"
   // and short-circuit before ever calling a processor, independent of
   // whether that processor call would itself be safe to repeat.
   externalEventId String?
-  createdAt      DateTime           @default(now())
+  createdAt       DateTime           @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -754,9 +754,9 @@ model PromptVersion {
 // without touching a real Conversation/Lead — nothing here is ever synced
 // to WhatsApp or visible to a real contact.
 model AiSandboxSession {
-  id             String   @id @default(cuid())
-  organizationId String
-  name           String   @default("Sesión de prueba")
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String   @default("Sesión de prueba")
   // Which draft/version is under test in this session, pinned at creation
   // for reproducibility — a plain reference (no FK/relation), same
   // lightweight-pointer convention as Lead.assignedTo, since it's read-only
@@ -773,16 +773,16 @@ model AiSandboxSession {
 }
 
 model AiSandboxMessage {
-  id     String      @id @default(cuid())
-  sessionId String
-  role   MessageRole // USER (tester's turn) | ASSISTANT (n8n's generated reply)
-  content String     @db.Text
+  id                   String      @id @default(cuid())
+  sessionId            String
+  role                 MessageRole // USER (tester's turn) | ASSISTANT (n8n's generated reply)
+  content              String      @db.Text
   // KnowledgeBase article ids sent as context for this reply — an honest
   // "what the assistant had available", not a claim about what it actually
   // used; ASSISTANT messages only.
   knowledgeBaseContext String[]
   latencyMs            Int?
-  createdAt            DateTime @default(now())
+  createdAt            DateTime    @default(now())
 
   session AiSandboxSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -1074,8 +1074,8 @@ model FoodInventoryItem {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
-  organization Organization         @relation(fields: [organizationId], references: [id])
-  dishLinks    FoodDishIngredient[]
+  organization Organization                @relation(fields: [organizationId], references: [id])
+  dishLinks    FoodDishVariantIngredient[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1098,64 +1098,85 @@ model FoodSupplier {
 }
 
 // ─── FOOD OPS — Platillos, costeo y rentabilidad (Fase 2) ────────────
-// FoodDish/FoodDishIngredient dan el costo real por platillo (Σ cantidad ×
-// costo unitario del insumo). FoodDishSale es un registro DIARIO adicional
-// y opcional de cuántas unidades de cada platillo se vendieron -- separado
-// a propósito de FoodSale (que sigue siendo solo el total en pesos del día,
-// sin cambios): así utilidad neta y "platillos menos vendidos" se calculan
-// con datos reales solo donde existan, sin forzar a rehacer el flujo de
-// captura de ventas que ya existe ni inventar una mezcla de ventas.
+// Un FoodDish es el "producto de menú" (ej. "Berry Bloom") y siempre tiene
+// una o más FoodDishVariant (ej. "Chico"/"Grande", o "Único" si no maneja
+// tamaños) -- cada variante tiene su propio precio Y su propia receta
+// (FoodDishVariantIngredient), porque un tamaño grande normalmente lleva
+// más insumo, no el mismo costo escalado a ojo. FoodDishSale es un
+// registro DIARIO adicional y opcional de cuántas unidades de CADA
+// VARIANTE se vendieron -- separado a propósito de FoodSale (que sigue
+// siendo solo el total en pesos del día, sin cambios): así utilidad neta y
+// "platillos menos vendidos" se calculan con datos reales solo donde
+// existan, sin forzar a rehacer el flujo de captura de ventas que ya
+// existe ni inventar una mezcla de ventas.
 
 model FoodDish {
   id             String   @id @default(cuid())
   organizationId String
   name           String
-  price          Decimal  @db.Decimal(10, 2)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization         @relation(fields: [organizationId], references: [id])
-  ingredients  FoodDishIngredient[]
-  sales        FoodDishSale[]
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  variants     FoodDishVariant[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
 }
 
-model FoodDishIngredient {
+model FoodDishVariant {
+  id        String   @id @default(cuid())
+  dishId    String
+  // "Único" para un platillo sin tamaños/variantes reales -- así el resto
+  // del modelo (precio, receta, ventas) no necesita un caso especial para
+  // "no tiene variantes". "Chico"/"Grande", "Salmón"/"Pollo", etc. cuando sí.
+  label     String
+  price     Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dish        FoodDish                    @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  ingredients FoodDishVariantIngredient[]
+  sales       FoodDishSale[]
+
+  @@unique([dishId, label])
+  @@index([dishId])
+}
+
+model FoodDishVariantIngredient {
   id              String  @id @default(cuid())
-  dishId          String
+  variantId       String
   inventoryItemId String
-  // Cantidad del insumo que usa una sola porción del platillo, en la misma
-  // unidad que FoodInventoryItem.unit para ese insumo (kg, lt, pza...).
+  // Cantidad del insumo que usa una sola porción de ESTA variante, en la
+  // misma unidad que FoodInventoryItem.unit para ese insumo (kg, lt, pza...).
   // Decimal(10,3) para porciones chicas tipo 0.150 kg.
   quantity        Decimal @db.Decimal(10, 3)
 
-  dish          FoodDish          @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  variant       FoodDishVariant   @relation(fields: [variantId], references: [id], onDelete: Cascade)
   inventoryItem FoodInventoryItem @relation(fields: [inventoryItemId], references: [id])
 
-  @@unique([dishId, inventoryItemId])
-  @@index([dishId])
+  @@unique([variantId, inventoryItemId])
+  @@index([variantId])
 }
 
 model FoodDishSale {
   id             String   @id @default(cuid())
   organizationId String
-  dishId         String
+  variantId      String
   // Fecha de negocio, mismo criterio que FoodSale.occurredAt -- siempre a
   // medianoche local del día que se está registrando (no una hora exacta),
-  // ya que logFoodDishSales() guarda "cuántas unidades de este platillo se
+  // ya que logFoodDishSales() guarda "cuántas unidades de esta variante se
   // vendieron ESE día" como un total diario, no una venta individual.
   occurredAt     DateTime @default(now())
   quantity       Int
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  dish         FoodDish     @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  variant      FoodDishVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
-  @@unique([dishId, occurredAt])
+  @@unique([variantId, occurredAt])
   @@index([organizationId, occurredAt])
 }
 

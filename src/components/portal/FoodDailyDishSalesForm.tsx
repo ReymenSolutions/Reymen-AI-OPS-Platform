@@ -8,9 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { logFoodDishSales } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
 
-export interface FoodDishForSalesEntry {
-  id: string;
-  name: string;
+export interface FoodVariantForSalesEntry {
+  variantId: string;
+  // "Berry Bloom — Chico", o solo "Café Americano" si el platillo tiene
+  // una única variante (ya viene resuelto desde getFoodDishesWithCost).
+  displayName: string;
   todayQuantity: number;
 }
 
@@ -20,18 +22,18 @@ function todayIso() {
   return d.toISOString().slice(0, 10);
 }
 
-export function FoodDailyDishSalesForm({ dishes }: { dishes: FoodDishForSalesEntry[] }) {
+export function FoodDailyDishSalesForm({ variants }: { variants: FoodVariantForSalesEntry[] }) {
   const { lang } = usePreferences();
   const [quantities, setQuantities] = useState<Record<string, string>>(() =>
-    Object.fromEntries(dishes.map((d) => [d.id, String(d.todayQuantity)]))
+    Object.fromEntries(variants.map((v) => [v.variantId, String(v.todayQuantity)]))
   );
   const [loading, setLoading] = useState(false);
 
   async function handleSave() {
     setLoading(true);
     try {
-      const entries = dishes
-        .map((d) => ({ dishId: d.id, quantity: Number(quantities[d.id] ?? 0) }))
+      const entries = variants
+        .map((v) => ({ variantId: v.variantId, quantity: Number(quantities[v.variantId] ?? 0) }))
         .filter((e) => Number.isFinite(e.quantity) && e.quantity >= 0);
       await logFoodDishSales({ date: todayIso(), entries });
       toast.success(lang === "es" ? "Ventas de hoy guardadas" : "Today's sales saved");
@@ -42,7 +44,7 @@ export function FoodDailyDishSalesForm({ dishes }: { dishes: FoodDishForSalesEnt
     }
   }
 
-  if (dishes.length === 0) {
+  if (variants.length === 0) {
     return null;
   }
 
@@ -52,20 +54,20 @@ export function FoodDailyDishSalesForm({ dishes }: { dishes: FoodDishForSalesEnt
         <CardTitle className="text-base">{lang === "es" ? "Ventas de hoy por platillo" : "Today's sales by dish"}</CardTitle>
         <p className="text-xs text-slate-500">
           {lang === "es"
-            ? "Cuántas unidades de cada platillo vendiste hoy. Guardar de nuevo reemplaza el número, no lo suma."
-            : "How many units of each dish you sold today. Saving again replaces the number, it doesn't add to it."}
+            ? "Cuántas unidades de cada platillo (o variante) vendiste hoy. Guardar de nuevo reemplaza el número, no lo suma."
+            : "How many units of each dish (or variant) you sold today. Saving again replaces the number, it doesn't add to it."}
         </p>
       </CardHeader>
       <CardContent className="space-y-2">
-        {dishes.map((dish) => (
-          <div key={dish.id} className="flex items-center justify-between gap-3">
-            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{dish.name}</span>
+        {variants.map((variant) => (
+          <div key={variant.variantId} className="flex items-center justify-between gap-3">
+            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{variant.displayName}</span>
             <input
               type="number"
               min="0"
               step="1"
-              value={quantities[dish.id] ?? "0"}
-              onChange={(e) => setQuantities((prev) => ({ ...prev, [dish.id]: e.target.value }))}
+              value={quantities[variant.variantId] ?? "0"}
+              onChange={(e) => setQuantities((prev) => ({ ...prev, [variant.variantId]: e.target.value }))}
               className="w-20 rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500"
             />
           </div>

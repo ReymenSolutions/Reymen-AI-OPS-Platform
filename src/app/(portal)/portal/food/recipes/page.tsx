@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
-import { getFoodDishesWithCost } from "@/lib/food";
+import { getFoodDishesWithCost, flattenVariants } from "@/lib/food";
 import { getServerT } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,13 +44,13 @@ export default async function FoodRecipesPage() {
     }),
     prisma.foodDishSale.findMany({
       where: { organizationId: orgId, occurredAt: startOfToday() },
-      select: { dishId: true, quantity: true },
+      select: { variantId: true, quantity: true },
     }),
   ]);
 
   const inventoryItems = inventoryItemsRaw.map((i) => ({ ...i, unitCost: i.unitCost !== null ? Number(i.unitCost) : null }));
-  const todayQtyByDish = new Map(todaySales.map((s) => [s.dishId, s.quantity]));
-  const activeDishes = dishes.filter((d) => d.isActive);
+  const todayQtyByVariant = new Map(todaySales.map((s) => [s.variantId, s.quantity]));
+  const activeVariants = flattenVariants(dishes.filter((d) => d.isActive));
 
   return (
     <div>
@@ -74,31 +74,40 @@ export default async function FoodRecipesPage() {
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {dishes.map((dish) => (
-                    <li key={dish.id} className={cn("flex items-center justify-between gap-3 px-6 py-3", !dish.isActive && "opacity-50")}>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                    <li key={dish.id} className={cn("px-6 py-3", !dish.isActive && "opacity-50")}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
                           <p className="truncate text-sm font-medium text-slate-900">{dish.name}</p>
                           {!dish.isActive && <Badge variant="secondary" className="text-[10px]">Inactivo</Badge>}
                         </div>
-                        <p className="text-xs text-slate-500">
-                          Costo: ${dish.cost.toFixed(2)} · Precio: ${dish.price.toFixed(2)}
-                          {dish.marginPct !== null && (
-                            <span className={cn("ml-1 font-medium", marginColor(dish.marginPct))}> · Margen: {dish.marginPct}%</span>
-                          )}
-                        </p>
+                        <div className="flex flex-shrink-0 items-center gap-1">
+                          <FoodDishFormDialog
+                            inventoryItems={inventoryItems}
+                            dish={{
+                              id: dish.id,
+                              name: dish.name,
+                              variants: dish.variants.map((v) => ({
+                                id: v.id,
+                                label: v.label,
+                                price: v.price,
+                                ingredients: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })),
+                              })),
+                            }}
+                          />
+                          <FoodDishActiveToggle dishId={dish.id} isActive={dish.isActive} />
+                        </div>
                       </div>
-                      <div className="flex flex-shrink-0 items-center gap-1">
-                        <FoodDishFormDialog
-                          inventoryItems={inventoryItems}
-                          dish={{
-                            id: dish.id,
-                            name: dish.name,
-                            price: dish.price,
-                            ingredients: dish.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })),
-                          }}
-                        />
-                        <FoodDishActiveToggle dishId={dish.id} isActive={dish.isActive} />
-                      </div>
+                      <ul className="mt-1.5 space-y-0.5 pl-0.5">
+                        {dish.variants.map((v) => (
+                          <li key={v.id} className="text-xs text-slate-500">
+                            {dish.variants.length > 1 && <span className="font-medium text-slate-600">{v.label}: </span>}
+                            Costo: ${v.cost.toFixed(2)} · Precio: ${v.price.toFixed(2)}
+                            {v.marginPct !== null && (
+                              <span className={cn("ml-1 font-medium", marginColor(v.marginPct))}> · Margen: {v.marginPct}%</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     </li>
                   ))}
                 </ul>
@@ -108,7 +117,7 @@ export default async function FoodRecipesPage() {
         </div>
 
         <FoodDailyDishSalesForm
-          dishes={activeDishes.map((d) => ({ id: d.id, name: d.name, todayQuantity: todayQtyByDish.get(d.id) ?? 0 }))}
+          variants={activeVariants.map((v) => ({ variantId: v.id, displayName: v.displayName, todayQuantity: todayQtyByVariant.get(v.id) ?? 0 }))}
         />
       </div>
     </div>

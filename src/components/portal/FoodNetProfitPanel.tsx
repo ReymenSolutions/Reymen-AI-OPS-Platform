@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
 import { usePreferences } from "@/context/preferences";
 
 export interface FoodNetProfitByPeriod {
-  today: { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { dishesWithSales: number; totalActiveDishes: number } };
-  "7d": { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { dishesWithSales: number; totalActiveDishes: number } };
-  "30d": { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { dishesWithSales: number; totalActiveDishes: number } };
+  today: { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { itemsWithSales: number; totalActiveItems: number } };
+  "7d": { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { itemsWithSales: number; totalActiveItems: number } };
+  "30d": { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { itemsWithSales: number; totalActiveItems: number } };
 }
 
 const money = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -62,11 +62,11 @@ export function FoodNetProfitPanel({ data }: { data: FoodNetProfitByPeriod }) {
           <p className="text-[11px] font-medium text-slate-500">{lang === "es" ? "Utilidad neta" : "Net profit"}</p>
           <p className={cn("text-xl font-bold", current.netProfit >= 0 ? "text-emerald-700" : "text-red-700")}>{money(current.netProfit)}</p>
         </div>
-        {current.coverage.totalActiveDishes > 0 && current.coverage.dishesWithSales < current.coverage.totalActiveDishes && (
+        {current.coverage.totalActiveItems > 0 && current.coverage.itemsWithSales < current.coverage.totalActiveItems && (
           <p className="text-xs text-amber-600">
             {lang === "es"
-              ? `Cálculo parcial: solo ${current.coverage.dishesWithSales} de ${current.coverage.totalActiveDishes} platillos activos tienen venta registrada en este período.`
-              : `Partial calculation: only ${current.coverage.dishesWithSales} of ${current.coverage.totalActiveDishes} active dishes have logged sales in this period.`}
+              ? `Cálculo parcial: solo ${current.coverage.itemsWithSales} de ${current.coverage.totalActiveItems} productos activos del menú tienen venta registrada en este período.`
+              : `Partial calculation: only ${current.coverage.itemsWithSales} of ${current.coverage.totalActiveItems} active menu items have logged sales in this period.`}
           </p>
         )}
       </CardContent>

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getFoodOperatingCosts, getTotalMonthlyFixedCosts, getFoodBreakEven, getFoodNetProfit,
   getFoodCostReductionInsights, getFoodProfitRecommendations, getFoodLeastSoldDishes,
-  getFoodDishesWithCost,
+  getFoodDishesWithCost, flattenVariants,
 } from "@/lib/food";
 import { getServerT } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -124,7 +124,7 @@ export default async function FoodProfitabilityPage() {
                   </p>
                 </div>
               )}
-              {breakEven.perDish.length === 0 ? (
+              {breakEven.perVariant.length === 0 ? (
                 <p className="text-sm text-slate-500">Crea platillos en Recetas para ver su punto de equilibrio aquí.</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -137,8 +137,8 @@ export default async function FoodProfitabilityPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {breakEven.perDish.map((row) => (
-                        <tr key={row.dishId}>
+                      {breakEven.perVariant.map((row) => (
+                        <tr key={row.variantId}>
                           <td className="py-2 pr-3 font-medium text-slate-900">{row.name}</td>
                           <td className="py-2 pr-3">{money(row.contributionMargin)}</td>
                           <td className="py-2">
@@ -169,15 +169,15 @@ export default async function FoodProfitabilityPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {costInsights.lowestMarginDishes.length === 0 && costInsights.topCostIngredients.length === 0 ? (
+              {costInsights.lowestMarginItems.length === 0 && costInsights.topCostIngredients.length === 0 ? (
                 <p className="text-sm text-slate-500">Crea platillos con receta en Recetas para ver estos insights.</p>
               ) : (
                 <>
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Platillos con menor margen</p>
                     <ul className="space-y-1.5">
-                      {costInsights.lowestMarginDishes.map((d) => (
-                        <li key={d.dishId} className="flex items-center justify-between text-sm">
+                      {costInsights.lowestMarginItems.map((d) => (
+                        <li key={d.variantId} className="flex items-center justify-between text-sm">
                           <span className="text-slate-700">{d.name}</span>
                           <span className={cn("font-medium", marginColor(d.marginPct))}>{d.marginPct !== null ? `${d.marginPct}%` : "—"}</span>
                         </li>
@@ -218,12 +218,12 @@ export default async function FoodProfitabilityPage() {
                   {recommendations.map((rec, i) => {
                     const style = RECOMMENDATION_STYLE[rec.type];
                     return (
-                      <li key={`${rec.dishId}-${i}`} className="flex items-start gap-2">
+                      <li key={`${rec.variantId}-${i}`} className="flex items-start gap-2">
                         <Badge variant={style.badge as "destructive" | "warning" | "info"} className="mt-0.5 flex-shrink-0 text-[10px]">
                           {style.label}
                         </Badge>
                         <p className="text-sm text-slate-700">
-                          <span className="font-medium text-slate-900">{rec.dishName}:</span> {rec.reason}
+                          <span className="font-medium text-slate-900">{rec.name}:</span> {rec.reason}
                         </p>
                       </li>
                     );
@@ -249,7 +249,7 @@ export default async function FoodProfitabilityPage() {
               ) : (
                 <ul className="space-y-2">
                   {leastSold.map((d) => (
-                    <li key={d.dishId} className="rounded-md bg-slate-50 p-3">
+                    <li key={d.variantId} className="rounded-md bg-slate-50 p-3">
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium text-slate-900">{d.name}</span>
                         <span className="text-slate-500">{d.unitsSold} vendidos en 30 días</span>
@@ -267,7 +267,7 @@ export default async function FoodProfitabilityPage() {
 
         <div className="space-y-6">
           <FoodPriceCalculator
-            dishes={dishesWithCost.map((d) => ({ id: d.id, name: d.name, cost: d.cost }))}
+            dishes={flattenVariants(dishesWithCost).map((v) => ({ id: v.id, name: v.displayName, cost: v.cost }))}
             initialTargetPct={org?.foodTargetCostPct ?? 30}
           />
         </div>

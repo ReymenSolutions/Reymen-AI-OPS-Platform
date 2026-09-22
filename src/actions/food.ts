@@ -158,18 +158,33 @@ export async function createFoodSupplier(formData: FormData) {
 
 // ─── FOOD OPS — Platillos, gastos fijos y rentabilidad (Fase 2) ──────
 
-const dishIngredientSchema = z.object({
+const dishVariantIngredientSchema = z.object({
   inventoryItemId: z.string().min(1),
   quantity: z.coerce.number().positive(),
 });
 
-const dishSchema = z.object({
-  name: z.string().min(1, "Nombre requerido"),
+const dishVariantSchema = z.object({
+  label: z.string().min(1, "Nombre de variante requerido"),
   price: z.coerce.number().positive("El precio debe ser mayor a 0"),
-  ingredients: z.array(dishIngredientSchema),
+  ingredients: z.array(dishVariantIngredientSchema).min(1, "Agrega al menos un insumo"),
 });
 
-export async function createFoodDish(data: { name: string; price: number; ingredients: { inventoryItemId: string; quantity: number }[] }) {
+const dishSchema = z
+  .object({
+    name: z.string().min(1, "Nombre requerido"),
+    variants: z.array(dishVariantSchema).min(1, "Agrega al menos una variante"),
+  })
+  .refine((data) => new Set(data.variants.map((v) => v.label.trim().toLowerCase())).size === data.variants.length, {
+    message: "Los nombres de las variantes deben ser distintos",
+    path: ["variants"],
+  });
+
+type DishInput = {
+  name: string;
+  variants: { label: string; price: number; ingredients: { inventoryItemId: string; quantity: number }[] }[];
+};
+
+export async function createFoodDish(data: DishInput) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
@@ -186,8 +201,13 @@ export async function createFoodDish(data: { name: string; price: number; ingred
     data: {
       organizationId: session.user.organizationId,
       name: parsed.data.name,
-      price: parsed.data.price,
-      ingredients: { create: parsed.data.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
+      variants: {
+        create: parsed.data.variants.map((v) => ({
+          label: v.label,
+          price: v.price,
+          ingredients: { create: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
+        })),
+      },
     },
   });
 
@@ -197,7 +217,7 @@ export async function createFoodDish(data: { name: string; price: number; ingred
     action: "food.dish_create",
     resource: "FoodDish",
     resourceId: dish.id,
-    metadata: { name: dish.name, price: parsed.data.price },
+    metadata: { name: dish.name, variants: parsed.data.variants.length },
   });
 
   revalidatePath("/portal/food/recipes");
@@ -205,10 +225,7 @@ export async function createFoodDish(data: { name: string; price: number; ingred
   revalidatePath("/portal/food");
 }
 
-export async function updateFoodDish(
-  dishId: string,
-  data: { name: string; price: number; ingredients: { inventoryItemId: string; quantity: number }[] }
-) {
+export async function updateFoodDish(dishId: string, data: DishInput) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
@@ -219,17 +236,23 @@ export async function updateFoodDish(
   const dish = await prisma.foodDish.findFirst({ where: { id: dishId, organizationId: session.user.organizationId } });
   if (!dish) throw new Error("Platillo no encontrado");
 
-  // Reemplaza la lista completa de ingredientes en una sola transacción --
-  // más simple y menos propenso a errores que intentar diffear cuáles se
-  // agregaron/quitaron/cambiaron de cantidad desde el formulario.
+  // Reemplaza la lista completa de variantes (y con ellas, sus ingredientes
+  // vía onDelete: Cascade) en una sola transacción -- más simple y menos
+  // propenso a errores que intentar diffear cuáles se agregaron/quitaron/
+  // cambiaron desde el formulario.
   await prisma.$transaction([
-    prisma.foodDishIngredient.deleteMany({ where: { dishId } }),
+    prisma.foodDishVariant.deleteMany({ where: { dishId } }),
     prisma.foodDish.update({
       where: { id: dishId },
       data: {
         name: parsed.data.name,
-        price: parsed.data.price,
-        ingredients: { create: parsed.data.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
+        variants: {
+          create: parsed.data.variants.map((v) => ({
+            label: v.label,
+            price: v.price,
+            ingredients: { create: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
+          })),
+        },
       },
     }),
   ]);
@@ -240,7 +263,7 @@ export async function updateFoodDish(
     action: "food.dish_update",
     resource: "FoodDish",
     resourceId: dishId,
-    metadata: { name: parsed.data.name, price: parsed.data.price },
+    metadata: { name: parsed.data.name, variants: parsed.data.variants.length },
   });
 
   revalidatePath("/portal/food/recipes");
@@ -355,7 +378,7 @@ export async function toggleFoodOperatingCostActive(costId: string, isActive: bo
 }
 
 const dishSaleEntrySchema = z.object({
-  dishId: z.string().min(1),
+  variantId: z.string().min(1),
   quantity: z.coerce.number().int().min(0),
 });
 
@@ -365,13 +388,13 @@ const logDishSalesSchema = z.object({
 });
 
 /**
- * Guarda "cuántas unidades de cada platillo se vendieron" para UN día de
- * negocio. Volver a guardar para el mismo platillo/día REEMPLAZA la
+ * Guarda "cuántas unidades de cada variante se vendieron" para UN día de
+ * negocio. Volver a guardar para la misma variante/día REEMPLAZA la
  * cantidad (no la suma) -- así se puede corregir un error de captura sin
  * duplicar el conteo. Entradas con quantity=0 se guardan igual (permite
- * "hoy no vendí nada de este platillo" como dato real, no como omisión).
+ * "hoy no vendí nada de esta variante" como dato real, no como omisión).
  */
-export async function logFoodDishSales(data: { date: string; entries: { dishId: string; quantity: number }[] }) {
+export async function logFoodDishSales(data: { date: string; entries: { variantId: string; quantity: number }[] }) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
@@ -384,16 +407,16 @@ export async function logFoodDishSales(data: { date: string; entries: { dishId: 
   const occurredAt = new Date(parsed.data.date);
   occurredAt.setHours(0, 0, 0, 0);
 
-  const dishIds = parsed.data.entries.map((e) => e.dishId);
-  const ownedCount = await prisma.foodDish.count({ where: { id: { in: dishIds }, organizationId } });
-  if (ownedCount !== new Set(dishIds).size) throw new Error("Uno o más platillos no son válidos");
+  const variantIds = parsed.data.entries.map((e) => e.variantId);
+  const ownedCount = await prisma.foodDishVariant.count({ where: { id: { in: variantIds }, dish: { organizationId } } });
+  if (ownedCount !== new Set(variantIds).size) throw new Error("Una o más variantes no son válidas");
 
   await prisma.$transaction(
     parsed.data.entries.map((entry) =>
       prisma.foodDishSale.upsert({
-        where: { dishId_occurredAt: { dishId: entry.dishId, occurredAt } },
+        where: { variantId_occurredAt: { variantId: entry.variantId, occurredAt } },
         update: { quantity: entry.quantity },
-        create: { organizationId, dishId: entry.dishId, occurredAt, quantity: entry.quantity },
+        create: { organizationId, variantId: entry.variantId, occurredAt, quantity: entry.quantity },
       })
     )
   );
@@ -403,7 +426,7 @@ export async function logFoodDishSales(data: { date: string; entries: { dishId: 
     userId: session.user.id,
     action: "food.dish_sales_log",
     resource: "FoodDishSale",
-    metadata: { date: parsed.data.date, dishCount: parsed.data.entries.length },
+    metadata: { date: parsed.data.date, variantCount: parsed.data.entries.length },
   });
 
   revalidatePath("/portal/food/recipes");
