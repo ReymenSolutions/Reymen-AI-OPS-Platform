@@ -30,6 +30,7 @@ export const strings = {
     foodSuppliers: "Proveedores",
     foodOperations: "Operación",
     foodAnalytics: "Analítica",
+    foodProfitability: "Rentabilidad",
     smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────
@@ -562,6 +563,7 @@ export const strings = {
     foodSuppliers: "Suppliers",
     foodOperations: "Operations",
     foodAnalytics: "Analytics",
+    foodProfitability: "Profitability",
     smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────

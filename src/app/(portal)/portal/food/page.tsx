@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   DollarSign, Package, ChefHat, ClipboardList, BarChart3, ArrowRight, Receipt, Clock,
   ArrowUpRight, ArrowDownRight, QrCode, MessageCircle, Star, MapPin, ShoppingBag,
-  TrendingUp, Sparkles, Truck, Users,
+  TrendingUp, Sparkles, Truck, Users, Wallet,
 } from "lucide-react";
 
 // Ventana de horario de restaurante que se grafica -- las ventas fuera de
@@ -27,7 +27,8 @@ const AREAS = [
   { href: "/portal/food/sales", key: "foodSales", icon: DollarSign, ready: true },
   { href: "/portal/food/inventory", key: "foodInventory", icon: Package, ready: true },
   { href: "/portal/food/suppliers", key: "foodSuppliers", icon: Users, ready: true },
-  { href: "/portal/food/recipes", key: "foodRecipes", icon: ChefHat, ready: false },
+  { href: "/portal/food/recipes", key: "foodRecipes", icon: ChefHat, ready: true },
+  { href: "/portal/food/profitability", key: "foodProfitability", icon: Wallet, ready: true },
   { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: false },
   { href: "/portal/food/analytics", key: "foodAnalytics", icon: BarChart3, ready: true },
 ] as const;
