@@ -17,6 +17,32 @@ export type ResolveMembershipResult =
   | { ok: false; reason: "not_configured" | "no_company" | "no_membership" | "query_failed" };
 
 /**
+ * Resuelve solo el companyId de SmartCard ligado a un Organization de la
+ * plataforma (companies.external_org_id), sin el resto de la resolución de
+ * membresía (rol, módulos, usuario) que hace resolveSmartcardMembership --
+ * agregado 2026-09-21 para el widget "SmartCard Restaurante" del dashboard
+ * de Food, que muestra métricas a nivel de negocio (no las de una persona
+ * en particular) y no debería fallar solo porque el usuario que ve Food no
+ * tiene, además, una cuenta de SmartCard vinculada por email.
+ */
+export async function getSmartcardCompanyIdForOrg(organizationId: string): Promise<string | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data: company, error } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("external_org_id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[smartcard-company] Error buscando company (getSmartcardCompanyIdForOrg):", error.message);
+    return null;
+  }
+  return company?.id ?? null;
+}
+
+/**
  * Ported from reymen-smartcard's apps/ops/lib/current-company-user.ts +
  * packages/entitlements/src/index.ts (resolveEntitlements/hasModule) —
  * that package lives in a separate monorepo and isn't published, so it
