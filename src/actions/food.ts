@@ -203,6 +203,7 @@ export async function createFoodDish(data: DishInput) {
       name: parsed.data.name,
       variants: {
         create: parsed.data.variants.map((v) => ({
+          organizationId: session.user.organizationId!,
           label: v.label,
           price: v.price,
           ingredients: { create: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
@@ -248,6 +249,7 @@ export async function updateFoodDish(dishId: string, data: DishInput) {
         name: parsed.data.name,
         variants: {
           create: parsed.data.variants.map((v) => ({
+            organizationId: session.user.organizationId!,
             label: v.label,
             price: v.price,
             ingredients: { create: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },

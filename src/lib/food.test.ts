@@ -13,6 +13,7 @@ import {
   getFoodProfitRecommendations,
   getFoodLeastSoldDishes,
   recommendDishPrice,
+  getFoodMenuForPos,
 } from "./food";
 
 async function makeInventoryItem(orgId: string, name: string, unitCost: number, unit = "kg") {
@@ -32,7 +33,7 @@ async function makeDish(
     data: {
       organizationId: orgId,
       name,
-      variants: { create: [{ label: "Único", price, ingredients: { create: ingredients } }] },
+      variants: { create: [{ organizationId: orgId, label: "Único", price, ingredients: { create: ingredients } }] },
     },
     include: { variants: true },
   });
@@ -49,7 +50,7 @@ async function makeDishWithVariants(
     data: {
       organizationId: orgId,
       name,
-      variants: { create: variants.map((v) => ({ label: v.label, price: v.price, ingredients: { create: v.ingredients } })) },
+      variants: { create: variants.map((v) => ({ organizationId: orgId, label: v.label, price: v.price, ingredients: { create: v.ingredients } })) },
     },
     include: { variants: true },
   });
@@ -113,7 +114,7 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
     it("returns marginPct null when price is 0", async () => {
       org = await createTestOrg("Food Dish Zero Price Org");
       await prisma.foodDish.create({
-        data: { organizationId: org.id, name: "Gratis", variants: { create: [{ label: "Único", price: 0 }] } },
+        data: { organizationId: org.id, name: "Gratis", variants: { create: [{ organizationId: org.id, label: "Único", price: 0 }] } },
       });
       const dishes = await getFoodDishesWithCost(org.id);
       expect(dishes[0].variants[0].marginPct).toBeNull();
@@ -121,8 +122,8 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
 
     it("filters inactive dishes when activeOnly is set", async () => {
       org = await createTestOrg("Food Dish ActiveOnly Org");
-      await prisma.foodDish.create({ data: { organizationId: org.id, name: "Activo", isActive: true, variants: { create: [{ label: "Único", price: 10 }] } } });
-      await prisma.foodDish.create({ data: { organizationId: org.id, name: "Inactivo", isActive: false, variants: { create: [{ label: "Único", price: 10 }] } } });
+      await prisma.foodDish.create({ data: { organizationId: org.id, name: "Activo", isActive: true, variants: { create: [{ organizationId: org.id, label: "Único", price: 10 }] } } });
+      await prisma.foodDish.create({ data: { organizationId: org.id, name: "Inactivo", isActive: false, variants: { create: [{ organizationId: org.id, label: "Único", price: 10 }] } } });
 
       expect(await getFoodDishesWithCost(org.id)).toHaveLength(2);
       expect(await getFoodDishesWithCost(org.id, { activeOnly: true })).toHaveLength(1);
@@ -391,6 +392,42 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
     it("falls back to cost for an out-of-range target percentage", () => {
       expect(recommendDishPrice(30, 0)).toBe(30);
       expect(recommendDishPrice(30, 100)).toBe(30);
+    });
+  });
+
+  describe("getFoodMenuForPos", () => {
+    it("returns active dishes with their variants, price, and externalPosId", async () => {
+      org = await createTestOrg("Food Menu Pos Org");
+      const ingredient = await makeInventoryItem(org.id, "Insumo", 5);
+      await makeDishWithVariants(org.id, "Berry Bloom", [
+        { label: "Chico", price: 100, ingredients: [{ inventoryItemId: ingredient.id, quantity: 1 }] },
+        { label: "Grande", price: 160, ingredients: [{ inventoryItemId: ingredient.id, quantity: 2 }] },
+      ]);
+      await prisma.foodDish.create({
+        data: { organizationId: org.id, name: "Inactivo", isActive: false, variants: { create: [{ organizationId: org.id, label: "Único", price: 10 }] } },
+      });
+
+      const menu = await getFoodMenuForPos(org.id);
+      expect(menu).toHaveLength(1); // el platillo inactivo se omite
+      expect(menu[0].name).toBe("Berry Bloom");
+      expect(menu[0].variants).toHaveLength(2);
+      expect(menu[0].variants[0].externalPosId).toBeNull();
+    });
+
+    it("exposes externalPosId once a variant has been mapped to a POS item", async () => {
+      org = await createTestOrg("Food Menu Pos Mapped Org");
+      const dish = await prisma.foodDish.create({
+        data: {
+          organizationId: org.id,
+          name: "Café Americano",
+          variants: { create: [{ organizationId: org.id, label: "Único", price: 40, externalPosId: "pos-item-123" }] },
+        },
+        include: { variants: true },
+      });
+
+      const menu = await getFoodMenuForPos(org.id);
+      expect(menu[0].variants[0].externalPosId).toBe("pos-item-123");
+      expect(menu[0].variants[0].variantId).toBe(dish.variants[0].id);
     });
   });
 });

@@ -328,6 +328,52 @@ export function flattenVariants(dishes: FoodDishWithCost[]): FoodDishVariantWith
   return dishes.flatMap((d) => d.variants);
 }
 
+// ─── FOOD OPS — Menú para consumo externo (POS u otros integradores) ──
+// Proyección liviana (sin costo/ingredientes) pensada para un futuro POS:
+// solo lo que necesita para vender y para mapear su catálogo al nuestro
+// vía externalPosId. No reutiliza getFoodDishesWithCost() a propósito --
+// ese trae el join de insumos completo, que un consumidor de menú no
+// necesita.
+
+export interface FoodMenuVariant {
+  variantId: string;
+  label: string;
+  price: number;
+  externalPosId: string | null;
+}
+
+export interface FoodMenuDish {
+  dishId: string;
+  name: string;
+  variants: FoodMenuVariant[];
+}
+
+export async function getFoodMenuForPos(organizationId: string): Promise<FoodMenuDish[]> {
+  const dishes = await prisma.foodDish.findMany({
+    where: { organizationId, isActive: true },
+    select: {
+      id: true,
+      name: true,
+      variants: {
+        select: { id: true, label: true, price: true, externalPosId: true },
+        orderBy: { label: "asc" },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  return dishes.map((d) => ({
+    dishId: d.id,
+    name: d.name,
+    variants: d.variants.map((v) => ({
+      variantId: v.id,
+      label: v.label,
+      price: Number(v.price),
+      externalPosId: v.externalPosId,
+    })),
+  }));
+}
+
 // ─── FOOD OPS — Gastos fijos ──────────────────────────────────────────
 
 export interface FoodOperatingCostEntry {

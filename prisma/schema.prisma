@@ -65,6 +65,7 @@ model Organization {
   foodInventoryItems    FoodInventoryItem[]
   foodSuppliers         FoodSupplier[]
   foodDishes            FoodDish[]
+  foodDishVariants      FoodDishVariant[]
   foodDishSales         FoodDishSale[]
   foodOperatingCosts    FoodOperatingCost[]
 
@@ -1126,22 +1127,34 @@ model FoodDish {
 }
 
 model FoodDishVariant {
-  id        String   @id @default(cuid())
-  dishId    String
+  id             String   @id @default(cuid())
+  dishId         String
+  // Denormalizado desde dish.organizationId (mismo criterio que
+  // FoodDishSale.organizationId) -- permite indexar/filtrar por org y
+  // aplicar la unicidad de externalPosId sin pasar por dish en cada query.
+  organizationId String
   // "Único" para un platillo sin tamaños/variantes reales -- así el resto
   // del modelo (precio, receta, ventas) no necesita un caso especial para
   // "no tiene variantes". "Chico"/"Grande", "Salmón"/"Pollo", etc. cuando sí.
-  label     String
-  price     Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  label          String
+  price          Decimal  @db.Decimal(10, 2)
+  // Id de este ítem/variante en un POS externo, una vez que exista esa
+  // integración -- null hasta entonces. Permite mapear "ítem del POS" a
+  // esta variante sin adivinar por nombre (mismo criterio que
+  // Lead.externalId).
+  externalPosId  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  dish        FoodDish                    @relation(fields: [dishId], references: [id], onDelete: Cascade)
-  ingredients FoodDishVariantIngredient[]
-  sales       FoodDishSale[]
+  dish         FoodDish                    @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  organization Organization                @relation(fields: [organizationId], references: [id])
+  ingredients  FoodDishVariantIngredient[]
+  sales        FoodDishSale[]
 
   @@unique([dishId, label])
+  @@unique([organizationId, externalPosId])
   @@index([dishId])
+  @@index([organizationId])
 }
 
 model FoodDishVariantIngredient {
