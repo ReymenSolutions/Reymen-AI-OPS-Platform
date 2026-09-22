@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Technical Documentation
 
-> **Document Version:** 1.0 | **Date:** May 2026  
+> **Document Version:** 1.1 | **Date:** September 2026 (updated through Fase 16 — Food Ops costing/variants, POS integration groundwork, SmartCard bridge, admin user management, Next.js 16 upgrade)  
 > **Language:** English/Spanish (technical terms in English, explanations bilingual)  
 > **Audience:** Developers, DevOps, and technical team members
 
@@ -31,13 +31,17 @@
 
 ## 1. Platform Overview
 
-**Reymen AI OPS Platform** is a multi-tenant SaaS application that provides AI-powered business operations automation for SMBs. It combines a CRM, WhatsApp AI assistant, knowledge base management, and automated workflow execution through a unified portal.
+**Reymen AI OPS Platform** is a multi-tenant SaaS application that provides AI-powered business operations automation for SMBs. It combines a CRM, WhatsApp AI assistant, knowledge base management, automated workflow execution, and — as of Fases 14–16 — two additional commercial verticals (Food Ops for restaurants, a SmartCard NFC/QR bridge) through a unified portal, each gated by the same commercial module entitlement system (§17 item 7).
 
 ### What it is
 
-- A **Next.js 15** web application with App Router serving both a client-facing portal and an internal admin panel.
+- A **Next.js 16** web application with App Router serving both a client-facing portal and an internal admin panel.
 - A **multi-tenant CRM** where each tenant (organization) has isolated data, leads, automations, and settings.
 - A **bidirectional integration layer** between the portal and **n8n** (the open-source workflow automation engine).
+- A **multi-vertical module platform**: beyond CRM/WhatsApp/Automations, `FOOD_OPS` (restaurant sales,
+  inventory, recipe costing, break-even/net-profit analytics — §4, §17 items 13–14) and `NFC_QR`
+  (a bridge into the separate `reymen-smartcard` product — §17 item 12) are commercial modules an
+  organization can have `ACTIVE`, same as any other.
 
 ### Who it's for
 
@@ -70,7 +74,7 @@ A core architectural decision is that **clients never see n8n**. The n8n URL, wo
          ┌─────────────────┴─────────────────┐
          │                                   │
   ┌──────▼──────┐                    ┌───────▼──────┐
-  │  Next.js 15 │                    │     n8n      │
+  │  Next.js 16 │                    │     n8n      │
   │  App Router │   Internal HTTP    │  (workflow   │
   │  (Port 3000)│◄──────────────────►│   engine)   │
   │             │   webhooks         │  (Port 5678) │
@@ -118,7 +122,7 @@ Every database query in the portal is scoped by `organizationId` extracted from 
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `next` | ^15.3.2 | React framework with App Router, Server Actions, and Server Components |
+| `next` | ^16.3.5 | React framework with App Router, Server Actions, and Server Components |
 | `react` / `react-dom` | ^19.0.0 | UI rendering library |
 | `next-auth` | ^5.0.0-beta.25 | Authentication (NextAuth v5 / Auth.js) |
 | `@auth/prisma-adapter` | ^2.7.4 | Connects NextAuth sessions to Prisma |
@@ -981,6 +985,165 @@ enum InstallationStatus {
 
 ---
 
+### Models: Food Ops (Fases 14–16) — restaurant sales, inventory, recipes, costing
+
+A second commercial line of business (`PlatformModule.FOOD_OPS`), built the same way CRM/WhatsApp
+were: real models gated by `requireModule`/`assertModuleEnabled` (§17 item 7), no demo data
+presented as real except two explicitly-badged blocks on the dashboard (`DemoBadge`,
+`DEMO_TOP_DISHES`/`DEMO_RECENT_PURCHASES` in `food/page.tsx`) that don't have a backing model yet.
+
+**Phase 1 — the simple stuff (daily aggregates, no recipes):**
+
+```prisma
+model FoodSale {
+  id             String   @id @default(cuid())
+  organizationId String
+  occurredAt     DateTime @default(now()) // business date, not necessarily createdAt
+  channel        String?  // free text ("Mostrador", "Domicilio"...), same pattern as Lead.source
+  grossAmount    Decimal  @db.Decimal(10, 2)
+  netAmount      Decimal  @db.Decimal(10, 2)
+}
+
+model FoodInventoryItem {
+  id             String                @id @default(cuid())
+  organizationId String
+  name           String
+  unit           String                // "kg", "lt", "pza"... free text
+  category       FoodInventoryCategory @default(EDIBLE)
+  currentStock   Decimal               @default(0) @db.Decimal(10, 2)
+  minStock       Decimal               @default(0) @db.Decimal(10, 2)
+  unitCost       Decimal?              @db.Decimal(10, 2)
+
+  @@unique([organizationId, name])
+}
+
+enum FoodInventoryCategory {
+  EDIBLE
+  NON_EDIBLE
+}
+
+model FoodSupplier {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  contactName    String?
+  phone          String?
+  email          String?
+}
+```
+
+`FoodSale` is still the only source of truth for daily revenue (`getFoodSalesSummary()`,
+`getFoodHourlySales()`, the net-profit calc below) — it was never replaced, only supplemented.
+`getFoodDailySales()`/`getFoodHourlySales()` compute "vs. yesterday"/"vs. previous 30 days" trend
+percentages purely by comparing rolling windows of this table; no external benchmark.
+
+**Phase 2 — dishes, recipes, real costing (Fase 15/16):**
+
+A restaurant menu item is a `FoodDish` (the name shown on the menu) with one or more
+`FoodDishVariant` (what's actually priced and sold — "Chico"/"Grande", "Salmón"/"Pollo", or just
+one variant labeled `"Único"` for a dish with no options). This two-level split replaced an
+earlier single-price-per-dish design once the platform needed to represent a menu that genuinely
+sells the same dish at different sizes: each variant carries **its own** price and **its own**
+recipe, because a large size doesn't just cost proportionally more — it's a different, separately-
+priced product with its own ingredient list.
+
+```prisma
+model FoodDish {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  isActive       Boolean @default(true) // soft-disable, never hard-deleted
+
+  @@unique([organizationId, name])
+}
+
+model FoodDishVariant {
+  id             String  @id @default(cuid())
+  dishId         String
+  organizationId String  // denormalized from dish.organizationId — see below
+  label          String  // "Único" | "Chico" | "Grande" | "Salmón" | ...
+  price          Decimal @db.Decimal(10, 2)
+  externalPosId  String? // POS integration hook — see below
+
+  @@unique([dishId, label])
+  @@unique([organizationId, externalPosId])
+}
+
+model FoodDishVariantIngredient {
+  id              String  @id @default(cuid())
+  variantId       String
+  inventoryItemId String
+  quantity        Decimal @db.Decimal(10, 3) // per one portion of THIS variant
+
+  @@unique([variantId, inventoryItemId])
+}
+
+model FoodDishSale {
+  id             String   @id @default(cuid())
+  organizationId String
+  variantId      String
+  occurredAt     DateTime @default(now()) // one row per variant per business day
+  quantity       Int
+
+  @@unique([variantId, occurredAt])
+}
+
+model FoodOperatingCost {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String  // "Renta del local", "Nómina"...
+  amountMonthly  Decimal @db.Decimal(10, 2)
+  isActive       Boolean @default(true)
+}
+```
+
+`Organization.foodTargetCostPct` (`Int`, default `30`) is the one Food-specific org setting —
+the target ingredient-cost percentage the price recommendation formula divides by (see below).
+
+**Why `FoodDishSale` is separate from `FoodSale`:** `FoodSale` (Phase 1) is still the only real
+source for total daily revenue. `FoodDishSale` is an *optional, additive* daily log of "how many
+units of this exact variant sold today" — deliberately not required, so a restaurant can keep
+using the simple total-only flow forever and only real, entered numbers ever feed the analytics
+below (never a fabricated sales mix). Saving again for the same variant/day **replaces** the
+quantity, it doesn't add to it — corrects a typo without double-counting.
+
+**The cost/margin pipeline (`src/lib/food.ts`):** every profitability number in the module flows
+through one function, `getFoodDishesWithCost(orgId)` → `flattenVariants()`, never recomputed
+ad hoc:
+
+- **Cost** of a variant = `Σ (ingredient.quantity × inventoryItem.unitCost)` over its own recipe rows.
+- **Margin** = `price − cost`; **margin %** = `margin / price` (`null` if price is 0, never a
+  divide-by-zero).
+- **Break-even** (`getFoodBreakEven`) has two views: **per-variant** (`fixedCosts ÷ that variant's
+  margin` — always available, no sales history needed) and **blended** (weighted-average margin
+  across the real 30-day sales mix from `FoodDishSale` — only shown when that data exists, never
+  invented).
+- **Net profit** (`getFoodNetProfit`, period `today`/`7d`/`30d`) = `FoodSale.netAmount` (revenue) −
+  `Σ FoodDishSale.quantity × variant.cost` (COGS, only for variants with logged sales) − fixed
+  costs prorated to the period. Returns a `coverage` object (`itemsWithSales`/`totalActiveItems`)
+  so the UI can flag a partial/underestimated figure instead of presenting it as complete.
+- **Recommendations** (`getFoodProfitRecommendations`) compare each variant's margin against
+  fixed thresholds (`LOW_MARGIN_PCT=15`, `HIGH_MARGIN_PCT=40`) and its 30-day sales volume against
+  the **median** of the menu's own sold variants (not an absolute unit count — scales to a small
+  stand or a chain without configuration): negative margin → `review_urgent`; high volume + low
+  margin → `raise_price_or_cut_cost`; low volume + high margin → `promote`.
+- **Recommended price** (`recommendDishPrice`, pure function) = `cost ÷ (targetCostPct / 100)` —
+  the standard restaurant-industry formula. Duplicated verbatim (not imported) inside
+  `FoodPriceCalculator.tsx` because `lib/food.ts` imports Prisma at module scope and would bundle
+  it into client JS if imported from a `"use client"` file — same reasoning applies to why
+  `FoodDishFormDialog.tsx` doesn't import `DEFAULT_VARIANT_LABEL` from `lib/food.ts` either.
+
+**POS integration groundwork, not the integration itself (Fase 16):** `FoodDishVariant.externalPosId`
+(nullable, `@@unique([organizationId, externalPosId])`, same dedup pattern as `Lead.externalId`)
+exists so a future point-of-sale system can be mapped to this catalog without guessing by name —
+but nothing writes to it yet. `GET /api/v1/food/menu` (§9) is the one integration surface that's
+actually live: a read-only projection of active dishes/variants/price/`externalPosId`, gated by
+`FOOD_OPS` and authenticated the same dual way as `/api/v1/knowledge-base`. An order-ingestion
+webhook and switching `FoodDishSale` from "replace" to "accumulate" semantics were deliberately
+left unbuilt until there's a real POS payload shape to build against, rather than guessing one.
+
+---
+
 ## 5. Authentication & RBAC
 
 ### JWT Strategy
@@ -1766,6 +1929,45 @@ Cookie: next-auth.session-token=...
 
 ---
 
+### GET `/api/v1/food/menu`
+
+| Property | Value |
+|----------|-------|
+| Auth | `x-api-key` header OR NextAuth session |
+| Gate | Requires `FOOD_OPS` module `ACTIVE` for the resolved org — `403` otherwise |
+| Returns | Active dishes + their variants (price, `externalPosId`) for an org |
+
+Read-only projection built ahead of a future POS integration (§4 "Food Ops" — Fase 16); nothing
+writes to it yet, no order-ingestion counterpart exists.
+
+**Query parameters:**
+- `orgId` (required if using API key auth)
+
+**Request (external integrator caller):**
+```http
+GET /api/v1/food/menu?orgId=org_cuid
+x-api-key: {ORG_N8N_WEBHOOK_SECRET}
+```
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "dishId": "string",
+      "name": "Berry Bloom",
+      "variants": [
+        { "variantId": "string", "label": "Chico", "price": 100, "externalPosId": null },
+        { "variantId": "string", "label": "Grande", "price": 160, "externalPosId": null }
+      ]
+    }
+  ],
+  "meta": { "total": 1 }
+}
+```
+
+---
+
 ### GET `/api/portal/leads/export`
 
 | Property | Value |
@@ -1803,6 +2005,20 @@ All Server Actions are located in `src/actions/`. They use the `"use server"` di
 | `changePlan` | `(orgId: string, plan: string) => Promise<{ success: true, plan: string }>` | Updates organization plan; validates against `["starter","professional","enterprise"]` |
 | `updateClientStatus` | `(orgId: string, isActive: boolean) => Promise<{ success: true }>` | Activates or deactivates an organization |
 | `assignAutomation` | `(orgId: string, data: { name, type, description?, n8nWorkflowId? }) => Promise<{ success: true, automationId: string }>` | Creates an Automation record for a client |
+
+All require `isAdmin(session.user.role)`.
+
+---
+
+### admin/users.ts
+
+| Action | Signature | Description |
+|--------|-----------|-------------|
+| `createOrgUser` | `(orgId: string, data: { name, email, role, password }) => Promise<{ success: true }>` | Creates a user under an existing organization |
+| `updateOrgUser` | `(userId: string, data: { name, role }) => Promise<{ success: true }>` | Updates a user's name/role |
+| `setUserActive` | `(userId: string, isActive: boolean) => Promise<{ success: true }>` | Activates/deactivates any user (org-bound or standalone) |
+| `createStandaloneUser` | `(data: { name, email, role, password }) => Promise<{ success: true }>` | Creates an admin user with **no** `organizationId` — for internal Reymen staff, not a client |
+| `getAllUsers` | `() => Promise<User[]>` | Global user directory (org-bound + standalone), backs `/admin/users` |
 
 All require `isAdmin(session.user.role)`.
 
@@ -1939,6 +2155,25 @@ future pass rather than silently patched everywhere.
 |--------|-----------|-------------|
 | `createAppointment` | `(data: { title, description?, startTime, endTime }) => Promise<{ success: true }>` | Creates appointment; validates `endTime > startTime` |
 | `updateAppointmentStatus` | `(appointmentId: string, status: AppointmentStatus) => Promise<{ success: true }>` | Updates status; verifies org ownership |
+
+---
+
+### food.ts (Fases 14–16)
+
+All require `assertModuleEnabled(orgId, "FOOD_OPS")`. Dish/variant actions replace their
+nested ingredients/variants wholesale in a `$transaction` on every save rather than diffing
+add/remove — see §4 "Food Ops" for why.
+
+| Action | Signature | Description |
+|--------|-----------|-------------|
+| `createFoodSale` | `(formData: FormData) => Promise<void>` | Logs one day's aggregate revenue entry |
+| `createFoodInventoryItem` | `(formData: FormData) => Promise<void>` | Adds an insumo (accepts `category`: `EDIBLE`\|`NON_EDIBLE`) |
+| `createFoodSupplier` | `(formData: FormData) => Promise<void>` | Adds a supplier contact |
+| `createFoodDish` / `updateFoodDish` | `(dishId?, data: { name, variants: [{ label, price, ingredients: [{inventoryItemId, quantity}] }] }) => Promise<void>` | Creates/replaces a dish and all its variants+recipes in one transaction |
+| `toggleFoodDishActive` | `(dishId: string, isActive: boolean) => Promise<void>` | Soft-disable — dishes are never hard-deleted |
+| `createFoodOperatingCost` / `updateFoodOperatingCost` / `toggleFoodOperatingCostActive` | see signatures in code | Fixed monthly cost CRUD |
+| `logFoodDishSales` | `(data: { date: string, entries: [{variantId, quantity}] }) => Promise<void>` | Upserts per-variant daily units sold — **replaces**, not adds, on re-save |
+| `updateFoodTargetCostPct` | `(pct: number) => Promise<void>` | Sets `Organization.foodTargetCostPct` (1–90), feeds the price recommendation formula |
 
 ---
 
@@ -2181,6 +2416,18 @@ immediately.
 | `SENTRY_DSN` (server) / `NEXT_PUBLIC_SENTRY_DSN` (client) | Error tracking | Without these, `sentry.server.config.ts` / `sentry.edge.config.ts` / `instrumentation-client.ts` initialize Sentry with no DSN, so error capture is a no-op — errors are only visible in server logs, not in Sentry. Not knowing about this in production means silently losing visibility into crashes. |
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Source map upload at build time | Build-time only, unrelated to runtime error capture. Without them, Sentry still receives errors (if `SENTRY_DSN` is set) but stack traces point at minified code instead of original source. |
 | `NEXT_PUBLIC_APP_NAME` | Branding text | Falls back to a hardcoded default app name. |
+
+### SmartCard bridge (Fase 14) — a different pattern from everything else in this table
+
+Every other integration in this document talks to n8n via HMAC-signed HTTP. SmartCard is not
+that: it reads **directly from `reymen-smartcard`'s own Supabase project** (a separate repo,
+Supabase Auth instead of this app's NextAuth) — a shared-database integration, not a webhook one.
+
+| Variable | Required | What breaks without it |
+|----------|----------|--------------------------|
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Only for the `NFC_QR` module's live stats (card scans, WhatsApp clicks) | Must be the **exact same Supabase project** `reymen-smartcard` itself uses — this app is reading that repo's tables, not its own. Without them, `getSmartcardCompanyIdForOrg()`/`getCompanyCardStats()` return `null`/empty and the SmartCard dashboard widget just shows zeros, nothing crashes. |
+| `SMARTCARD_SSO_SECRET` | Only for the "Ir a SmartCard" single-sign-on hand-off | Must equal the same-named var in the `reymen-smartcard` repo — it verifies the signed, 60-second-TTL token minted by `createSmartcardSsoToken()` (`src/lib/smartcard-sso.ts`). Without it (or a mismatch), the redirect fails to sign the user in there. |
+| `SMARTCARD_OPS_URL` | Only for the SSO redirect | The public URL of the `reymen-smartcard` ops app (e.g. `https://ops.reymen.mx`) the token redirects to. |
 
 ### Required for a specific endpoint (fails closed, not silently disabled)
 
@@ -2446,10 +2693,12 @@ reymen-ai-ops-platform/
 │   ├── actions/                    # Next.js Server Actions ("use server")
 │   │   ├── admin/
 │   │   │   ├── clients.ts          # createClient, changePlan, updateClientStatus, assignAutomation
+│   │   │   ├── users.ts            # createOrgUser, updateOrgUser, setUserActive, createStandaloneUser, getAllUsers
 │   │   │   └── templates.ts        # createTemplate, publishTemplate, addTemplateVersion, installTemplateForClient
 │   │   ├── ai-lab.ts               # sandbox sessions, test cases, A/B experiments (Fase 7)
 │   │   ├── appointments.ts         # createAppointment, updateAppointmentStatus
 │   │   ├── conversations.ts        # escalateConversation, resolveConversation
+│   │   ├── food.ts                 # dish/variant/recipe CRUD, operating costs, dish sales log (Fases 14–16)
 │   │   ├── knowledge-base.ts       # createArticle, updateArticle, deleteArticle, toggleArticle
 │   │   ├── leads.ts                # createLead, updateLeadStatus, deleteLead
 │   │   ├── onboarding.ts           # skipOnboarding() (Fase 10)
@@ -2470,7 +2719,8 @@ reymen-ai-ops-platform/
 │   │   │   │   ├── metrics/        # Global charts
 │   │   │   │   ├── requests/       # All client requests
 │   │   │   │   ├── settings/       # System stats + env vars
-│   │   │   │   └── templates/      # Template management + [templateId] detail
+│   │   │   │   ├── templates/      # Template management + [templateId] detail
+│   │   │   │   └── users/          # Global user directory (org-bound + standalone, Fase 15)
 │   │   │   └── layout.tsx          # Admin layout with AdminSidebar
 │   │   ├── (auth)/                 # Auth route group (public)
 │   │   │   ├── login/page.tsx      # Login form
@@ -2482,6 +2732,9 @@ reymen-ai-ops-platform/
 │   │   │   │   ├── conversations/  # Conversation list + [id] thread
 │   │   │   │   ├── ai-lab/         # Sandbox, test cases, A/B experiments (Fase 7)
 │   │   │   │   ├── dashboard/      # Client KPI dashboard
+│   │   │   │   ├── food/           # Sales, inventory, suppliers, recipes, profitability (Fases 14–16)
+│   │   │   │   │   ├── recipes/        # Dish + variant CRUD, daily units-sold entry
+│   │   │   │   │   └── profitability/  # Fixed costs, break-even, net profit, price calculator
 │   │   │   │   ├── knowledge-base/ # KB article management
 │   │   │   │   ├── leads/          # Lead CRM table
 │   │   │   │   ├── onboarding/     # Real, module-aware setup checklist (Fase 10)
@@ -2489,12 +2742,14 @@ reymen-ai-ops-platform/
 │   │   │   │   ├── reports/        # Charts + ROI calculator
 │   │   │   │   ├── requests/       # Support requests
 │   │   │   │   ├── settings/       # Org config + team management
+│   │   │   │   ├── smartcard/      # Native SmartCard panel + SSO hand-off (Fase 14)
 │   │   │   │   ├── templates/      # Template marketplace
 │   │   │   │   └── whatsapp/       # WhatsApp AI config
 │   │   │   └── layout.tsx          # Portal layout with PortalSidebar
 │   │   ├── api/
 │   │   │   ├── auth/[...nextauth]/ # NextAuth handlers
 │   │   │   ├── portal/leads/export/ # CSV export route
+│   │   │   ├── v1/food/menu/       # Read-only menu projection for a future POS (Fase 16)
 │   │   │   ├── v1/knowledge-base/  # Dual-auth KB query endpoint
 │   │   │   └── webhooks/n8n/
 │   │   │       ├── automations/    # Receive automation events
@@ -2929,6 +3184,128 @@ It only ever activates a module the plan includes that isn't already `ACTIVE` (s
 something to activate. Verified live: suspended `CRM` for a real org on Starter, confirmed the button
 appeared and the reference copy/badges rendered correctly, clicked it, and confirmed `CRM` came back
 `ACTIVE`/`SUBSCRIBED` — i.e. exactly its pre-test state, so no cleanup was needed.
+
+---
+
+### 12. SmartCard: a Shared-Database Bridge Instead of a Webhook (Fase 14)
+
+Every other external integration in this document (§7, §8) follows the n8n-invisibility pattern:
+HMAC-signed HTTP, this app owns its own data. SmartCard (`PlatformModule.NFC_QR`) doesn't, on
+purpose — `reymen-smartcard` is a separate, already-built product (its own repo, Supabase Auth
+instead of this app's NextAuth) rather than something worth rebuilding here. Two different
+integration shapes exist side by side:
+
+- **Read**: `getSmartcardCompanyIdForOrg()` / `getCompanyCardStats()` (`src/lib/smartcard-company.ts`)
+  query `reymen-smartcard`'s Supabase tables **directly**, using `SUPABASE_URL`/
+  `SUPABASE_SERVICE_ROLE_KEY` pointed at *that repo's* project (§13) — not a call to an API this app
+  controls. The query logic itself is ported/duplicated from that repo's own entitlements package
+  (not published, can't be imported), adapted for two differences noted in the file's own comments.
+  Used by the Food dashboard's "SmartCard Restaurante" widget and the portal's own SmartCard stats.
+- **Sign-in hand-off**: clicking "SmartCard" in the portal doesn't proxy or embed anything — it mints
+  a short-lived (60s), HMAC-signed token (`createSmartcardSsoToken()`, `src/lib/smartcard-sso.ts`)
+  and redirects to `reymen-smartcard`'s own `/api/sso/smartcard`, which verifies it with the
+  **same** `SMARTCARD_SSO_SECRET` (ported/duplicated verification function, not a shared package)
+  and signs the user in there via a Supabase Admin API magic link. No second password, no second
+  signup. `c1b9408` later brought a native panel into `/portal/smartcard` for stats that don't need
+  the hand-off; the SSO redirect still exists for anything that needs the actual other app's UI.
+- Inviting a SmartCard team member originally reused Supabase Auth's own invite flow, which turned
+  out to be broken at the source; it was replaced with the portal's native team-invite flow instead,
+  and a bug where a failed invite crashed instead of surfacing a normal error was fixed by making the
+  invite path return a result object rather than throwing.
+
+---
+
+### 13. Food Ops: a Second Vertical Built the Same Way as CRM (Fase 15)
+
+`FOOD_OPS` (restaurant operations) followed the exact same discipline as every module before it —
+real models behind `requireModule`/`assertModuleEnabled` (item 7), nothing invented — built in the
+same order Fase 1 established: schema → module assignable from admin → Server Actions → portal
+pages → i18n → nav entry. See §4 "Food Ops" for the full model set. Two things worth calling out
+that aren't obvious from the schema alone:
+
+- The dashboard (`food/page.tsx`) genuinely mixes real and demo data in the same screen, and is
+  explicit about which is which rather than papering over the gap — `DemoBadge` marks the two blocks
+  (`DEMO_TOP_DISHES`, `DEMO_RECENT_PURCHASES`) that don't have a backing model, right next to KPI
+  cards and an hourly-sales chart built from real `FoodSale` rows. Once `FoodDishSale` (§4) has
+  enough real history for a given org, "Platillos más vendidos" could be swapped to it — not done
+  yet, out of scope for the phase that introduced per-dish sales tracking.
+- `MODULE_LABEL_EN` (the English half of `MODULE_LABEL`, §1) is duplicated by necessity — two
+  literal object dictionaries, no shared derivation — and `FOOD_OPS` was initially added to only one
+  of them, so the module rendered its Spanish name even with the language toggle set to English.
+  Worth remembering next time a module is added: update both copies, or the gap won't surface until
+  someone actually switches languages.
+
+---
+
+### 14. Dish → Variant Refactor: One Menu Item, Many Sellable Presentations (Fase 16)
+
+The first cut of Food's costing feature (Fase 15) gave every dish exactly one price — accurate for
+most of the menu, wrong for anything sold in sizes. The initial workaround was creating separate
+dishes per size ("Berry Bloom (Chico)", "Berry Bloom (Grande)"), which worked but polluted the menu
+list and made "how many Berry Blooms sold today" impossible to answer without adding the two rows
+back together by hand. §4's `FoodDish`/`FoodDishVariant` split replaced that: one dish, N variants,
+each with its own price **and its own recipe** — a large smoothie isn't the small one's cost scaled
+by a multiplier, it's a separately-measured ingredient list, so the split had to go all the way down
+to `FoodDishVariantIngredient` and `FoodDishSale.variantId`, not stop at price.
+
+This was a live-data migration, not a greenfield model: the first real client profile created under
+the old one-price-per-dish design (35 dishes, no recipes/sales captured yet) had to be reshaped
+without loss. Because the affected tables were still empty of ingredient/sale rows for that org, the
+migration added the new columns/tables, and a one-off script re-seeded the same 35 items as proper
+dish+variant pairs (merging the "(Chico)"/"(Grande)" name-suffix workaround back into one dish per
+product) — verified by re-diffing name/price before and after, not just trusting the script ran.
+
+---
+
+### 15. Admin User Management, Theme Persistence, and a Platform Polish Batch
+
+A batch of small, independently-reported fixes landed together rather than as separate phases —
+worth documenting as a batch since none of them individually justified a "Fase N," but together they
+touch RBAC, session state, and UI consistency in ways future changes should be aware of:
+
+- **Admin-driven user management** (`admin/users.ts`, §10): admins can now add/edit/deactivate users
+  scoped to a specific client org, *and* create standalone admin users with no `organizationId` at
+  all — previously the only way to create a user was the client-signup flow, which assumed every
+  user belongs to exactly one client organization.
+- **Theme/language persistence across login**: `src/app/layout.tsx` builds its own lightweight
+  `NextAuth(authConfig)` instance (mirroring `proxy.ts`'s edge-safe pattern) to read
+  `session.user.theme`/`language` as the *primary* source for the initial render, falling back to
+  the `reymen-theme`/`reymen-lang` cookies only when there's no session — previously a user's
+  dark-mode/English preference reset to the cookie default on every fresh login.
+- **Notification bell unread count**: `User.notificationsSeenAt` now tracks when the bell was last
+  opened; `GET /api/notifications` computes `unreadCount` as items newer than that timestamp (the
+  list itself still shows everything pending), and opening the bell POSTs to clear it.
+- **Clients list rows are fully clickable** (not just a "Ver detalle" link inside each row) — a
+  small interaction fix, listed here because it's the kind of thing that's easy to silently regress
+  when a row's internal layout changes later.
+- **Full i18n audit** (`0a9a286`) removed hardcoded Spanish strings platform-wide in favor of
+  `t.xxx` lookups, and a follow-up pass fixed specific dark-mode combinations (`bg-brand-50` info
+  boxes rendering near-illegible text) that only showed up once every string was actually running
+  through the theme-aware components.
+- **Mobile responsiveness pass** (`2411b0a`) on the portal/admin shell and highest-traffic pages —
+  the recurring root cause, worth remembering for new pages, was a `min-w-0` missing on a flex child
+  next to an unshrinkable element (an `<input>`, a stat number), which silently forces the whole row
+  to overflow instead of wrapping.
+
+---
+
+### 16. Next.js 16 Upgrade and a Security Patch Batch
+
+Upgraded `next` 15 → 16 specifically to pick up a patched `postcss` (an XSS/path-traversal advisory
+in the transitive dependency tree), plus a separate pass patching other flagged transitive
+dependencies. Two things broke as a direct result and are worth knowing if a future upgrade hits
+similar symptoms:
+
+- Next 16 renamed the middleware convention file; `middleware.ts` became `src/proxy.ts` (and its
+  test file followed: `proxy.test.ts`). The `/api/auth` matcher-exclusion fix (the guard that keeps
+  Auth.js's own routes from being caught by the app's auth-gate matcher) had to be re-verified after
+  the rename — a regression here previously caused login to fail with a 502 in production, so this
+  is a change worth double-checking on any future middleware/proxy edit, not just at upgrade time.
+- `next start` doesn't work with `output: standalone` (§14/§15 deployment) starting with this
+  version's stricter enforcement — the standalone server must be run directly
+  (`node .next/standalone/server.js`), with `.next/static` and `public/` manually copied into the
+  standalone output first (they aren't included automatically). Scripts or docs that still say
+  `next start` for a standalone build need updating.
 
 ---
 

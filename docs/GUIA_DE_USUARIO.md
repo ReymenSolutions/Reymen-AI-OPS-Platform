@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Guía de Usuario
 
-> **Versión del documento:** 1.0 | **Fecha:** Mayo 2026  
+> **Versión del documento:** 1.1 | **Fecha:** Septiembre 2026 (actualizado con los módulos Food y SmartCard, y gestión de usuarios)  
 > **Idioma:** Español | **Aplicable a:** Portal de Clientes y Panel de Administración
 
 ---
@@ -23,19 +23,22 @@
 13. [Reportes](#13-reportes)
 14. [Solicitudes](#14-solicitudes)
 15. [Configuración](#15-configuración)
+16. [Módulo de Food (Restaurantes)](#16-módulo-de-food-restaurantes)
+17. [SmartCard](#17-smartcard)
 
 ### Sección B — Guía del Administrador (Panel Admin)
-16. [Acceso al Panel Admin](#16-acceso-al-panel-admin)
-17. [Dashboard Admin](#17-dashboard-admin)
-18. [Gestión de Clientes](#18-gestión-de-clientes)
-19. [Automatizaciones Globales](#19-automatizaciones-globales)
-20. [Conversaciones Escaladas](#20-conversaciones-escaladas)
-21. [Solicitudes de Clientes](#21-solicitudes-de-clientes)
-22. [Métricas Globales](#22-métricas-globales)
-23. [Templates (Admin)](#23-templates-admin)
-24. [Auditoría](#24-auditoría)
-25. [API Docs](#25-api-docs)
-26. [Configuración del Sistema](#26-configuración-del-sistema)
+18. [Acceso al Panel Admin](#18-acceso-al-panel-admin)
+19. [Dashboard Admin](#19-dashboard-admin)
+20. [Gestión de Clientes](#20-gestión-de-clientes)
+21. [Gestión de Usuarios](#21-gestión-de-usuarios)
+22. [Automatizaciones Globales](#22-automatizaciones-globales)
+23. [Conversaciones Escaladas](#23-conversaciones-escaladas)
+24. [Solicitudes de Clientes](#24-solicitudes-de-clientes)
+25. [Métricas Globales](#25-métricas-globales)
+26. [Templates (Admin)](#26-templates-admin)
+27. [Auditoría](#27-auditoría)
+28. [API Docs](#28-api-docs)
+29. [Configuración del Sistema](#29-configuración-del-sistema)
 
 ---
 
@@ -829,13 +832,68 @@ El usuario quedará desactivado y no podrá iniciar sesión. No se eliminan sus 
 
 ---
 
+## 16. Módulo de Food (Restaurantes)
+
+> Solo visible si tu organización tiene el módulo **Food** activo (Reymen lo activa desde el panel admin).
+
+El módulo de Food está pensado para restaurantes: ventas del día, inventario de insumos, proveedores, recetas con costeo real, y un panel de rentabilidad.
+
+### Dashboard de Food (`/portal/food`)
+
+Resumen visual con ventas de hoy, ticket promedio, pedidos, insumos en stock bajo, ventas por hora, y un widget de SmartCard si también tienes ese módulo. Dos bloques ("Platillos más vendidos", "Compras recientes") muestran datos de ejemplo mientras no haya suficiente historial real — están marcados con una etiqueta **"Datos de ejemplo"**, nunca se presentan como reales.
+
+### Ventas (`/portal/food/sales`)
+
+Registra el total en pesos vendido por día (bruto y neto, con canal opcional: mostrador, domicilio, app). Es el registro simple de "cuánto vendí hoy" — no requiere saber qué platillos se vendieron.
+
+### Inventario (`/portal/food/inventory`)
+
+Lista de insumos con unidad, stock actual, mínimo, costo unitario, y categoría (**Comestible** / **No comestible**). Un insumo por debajo de su mínimo se marca como "Stock bajo".
+
+### Proveedores (`/portal/food/suppliers`)
+
+Directorio simple de contactos de proveedores (nombre, contacto, teléfono, email).
+
+### Recetas (`/portal/food/recipes`)
+
+Aquí se arma el menú real:
+
+1. **Crear un platillo**: nombre (ej. "Berry Bloom") + una o más **variantes** — si el platillo no tiene tamaños, deja una sola variante llamada "Único"; si tiene tamaños u opciones (Chico/Grande, Salmón/Pollo), agrega una variante por cada una.
+2. **Cada variante tiene su propia receta**: elige los insumos del inventario y la cantidad que usa esa porción. El costo y el margen se calculan solos, en vivo, mientras capturas.
+3. **Ventas de hoy por platillo**: un campo de cantidad por cada variante activa — cuántas unidades vendiste hoy de cada una. Guardar de nuevo reemplaza el número (no lo suma), para poder corregir un error de captura.
+
+> Un platillo sin receta capturada muestra costo $0.00 y margen 100% — no es un error, es que todavía no le has agregado insumos.
+
+### Rentabilidad (`/portal/food/profitability`)
+
+- **Gastos fijos mensuales**: renta, nómina, servicios — súmalos aquí para que el resto de los cálculos los tome en cuenta.
+- **Punto de equilibrio**: cuántas unidades de cada platillo necesitas vender para cubrir tus gastos fijos, por platillo y (si ya tienes historial de ventas) combinado según tu mezcla real de ventas.
+- **Utilidad neta**: ingresos − costo de insumos − gastos fijos, con selector de período (Hoy / 7 días / 30 días). Si no todos tus platillos tienen venta registrada en el período, te avisa que el cálculo es parcial.
+- **Reducción de costos**: qué platillos dejan menor margen y qué insumos pesan más en el costo total de tu menú.
+- **Recomendaciones para mejorar utilidad**: alertas automáticas generadas a partir de margen + volumen de venta real (ej. "se vende mucho pero deja poco margen — considera subir el precio").
+- **Promociones recomendadas**: platillos que casi no se venden, para que consideres un descuento o combo.
+- **Calculadora de precio recomendado**: elige un platillo (o captura un costo manual) y tu % de costo objetivo — te sugiere el precio de venta ideal.
+
+---
+
+## 17. SmartCard
+
+> Solo visible si tu organización tiene el módulo **SmartCard** activo.
+
+SmartCard es la tarjeta digital NFC/QR de tu negocio (menú, contacto, ubicación en un solo toque). Vive en un sistema separado (`reymen-smartcard`); el portal te da acceso a ella de dos formas:
+
+- **Estadísticas** (`/portal/smartcard`): escaneos, clics a WhatsApp, y (si aplica) reseñas y clics a ubicación, directamente en el portal — no necesitas salir de aquí para verlas.
+- **Panel completo**: un botón te lleva al panel completo de SmartCard ya con tu sesión iniciada automáticamente (no necesitas una segunda contraseña).
+
+---
+
 ---
 
 # SECCIÓN B — GUÍA DEL ADMINISTRADOR (Panel de Administración)
 
 ---
 
-## 16. Acceso al Panel Admin
+## 18. Acceso al Panel Admin
 
 El Panel de Administración está diseñado exclusivamente para el equipo interno de Reymen. **Los clientes no tienen acceso a este panel.**
 
@@ -874,7 +932,7 @@ El menú lateral del panel incluye:
 
 ---
 
-## 17. Dashboard Admin
+## 19. Dashboard Admin
 
 El Dashboard administrativo (`/admin/dashboard`) muestra métricas globales de toda la plataforma.
 
@@ -893,7 +951,7 @@ El dashboard admin te da una visión macro de la salud de la plataforma: si hay 
 
 ---
 
-## 18. Gestión de Clientes
+## 20. Gestión de Clientes
 
 La sección de Clientes (`/admin/clients`) es donde gestionas todas las organizaciones que usan la plataforma.
 
@@ -970,7 +1028,26 @@ Para reactivar, sigue el mismo proceso.
 
 ---
 
-## 19. Automatizaciones Globales
+## 21. Gestión de Usuarios
+
+El directorio de usuarios (`/admin/users`) muestra **todos** los usuarios de la plataforma — los que pertenecen a un cliente y los usuarios internos de Reymen sin organización — en un solo lugar, distinto de la pestaña "Equipo" dentro del detalle de cada cliente.
+
+### Usuarios de un cliente específico
+
+Desde la página de detalle de un cliente (§20), en la pestaña **Equipo** puedes:
+1. **Agregar un usuario**: nombre, email, rol, contraseña inicial.
+2. **Editar** nombre o rol de un usuario existente.
+3. **Activar/Desactivar**: un usuario desactivado no puede iniciar sesión, pero sus datos se conservan.
+
+### Usuarios internos (sin organización)
+
+Desde el directorio global (`/admin/users`) puedes además **crear un usuario administrador sin organización** — para el propio equipo de Reymen, no para un cliente. Este tipo de usuario no aparece en ningún cliente y no cuenta contra el límite de usuarios de ningún plan.
+
+Desde el mismo directorio puedes activar/desactivar **cualquier** usuario de la plataforma, sea de un cliente o interno, sin tener que entrar primero al detalle de su organización.
+
+---
+
+## 22. Automatizaciones Globales
 
 La sección de Automatizaciones (`/admin/automations`) muestra **todas las automatizaciones de todos los clientes** en una sola vista.
 
@@ -994,7 +1071,7 @@ Permite identificar rápidamente:
 
 ---
 
-## 20. Conversaciones Escaladas
+## 23. Conversaciones Escaladas
 
 La sección de Escalaciones (`/admin/escalations`) muestra todas las conversaciones con estado **ESCALATED** en toda la plataforma.
 
@@ -1016,7 +1093,7 @@ Por cada conversación escalada:
 
 ---
 
-## 21. Solicitudes de Clientes
+## 24. Solicitudes de Clientes
 
 La sección de Solicitudes (`/admin/requests`) centraliza todas las solicitudes de soporte de todos los clientes.
 
@@ -1045,7 +1122,7 @@ Puedes actualizar el estado de una solicitud directamente desde la lista sin abr
 
 ---
 
-## 22. Métricas Globales
+## 25. Métricas Globales
 
 La sección de Métricas (`/admin/metrics`) ofrece gráficas agregadas de toda la plataforma.
 
@@ -1058,7 +1135,7 @@ La sección de Métricas (`/admin/metrics`) ofrece gráficas agregadas de toda l
 
 ---
 
-## 23. Templates (Admin)
+## 26. Templates (Admin)
 
 La sección de Templates del Admin (`/admin/templates`) es donde el equipo de Reymen crea y publica los templates que los clientes pueden instalar desde su marketplace.
 
@@ -1122,7 +1199,7 @@ El sistema creará la automatización en la cuenta del cliente y la vinculará a
 
 ---
 
-## 24. Auditoría
+## 27. Auditoría
 
 La sección de Auditoría (`/admin/audit`) muestra un registro inmutable de todas las acciones importantes realizadas en la plataforma.
 
@@ -1166,7 +1243,7 @@ Usa el selector de cliente en la parte superior para filtrar el log de una organ
 
 ---
 
-## 25. API Docs
+## 28. API Docs
 
 La sección de API Docs (`/admin/api-docs`) contiene la referencia técnica de los webhooks disponibles para la integración con n8n.
 
@@ -1204,7 +1281,7 @@ const signature = 'sha256=' + crypto
 
 ---
 
-## 26. Configuración del Sistema
+## 29. Configuración del Sistema
 
 La sección de Configuración (`/admin/settings`) muestra el estado técnico de la plataforma.
 
