@@ -1,37 +1,116 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
+import { prisma } from "@/lib/prisma";
+import { getFoodDishesWithCost } from "@/lib/food";
 import { getServerT } from "@/lib/i18n-server";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { Badge } from "@/components/ui/badge";
+import { FoodDishFormDialog } from "@/components/portal/FoodDishFormDialog";
+import { FoodDishActiveToggle } from "@/components/portal/FoodDishActiveToggle";
+import { FoodDailyDishSalesForm } from "@/components/portal/FoodDailyDishSalesForm";
+import { cn } from "@/lib/utils";
 import { ChefHat } from "lucide-react";
 
-// Vista de solo lectura -- todavía no existe un modelo de Recetas
-// (ingredientes, cantidades, costo por ingrediente, costo total, relación
-// venta-consumo). Se deja como página real y navegable, en vez de
-// esconderla, para que el módulo Food se pueda ver completo desde ahora;
-// construir el modelo real es un siguiente paso explícito, no algo que
-// esta página deba simular con datos falsos.
+function marginColor(marginPct: number | null): string {
+  if (marginPct === null) return "text-slate-400";
+  if (marginPct < 15) return "text-red-600";
+  if (marginPct < 30) return "text-amber-600";
+  return "text-emerald-600";
+}
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 export default async function FoodRecipesPage() {
   const session = await auth();
   if (!session?.user.organizationId) return redirect("/login");
   await requireModule(session.user.organizationId, "FOOD_OPS");
 
-  const t = await getServerT();
+  const orgId = session.user.organizationId;
+
+  const [t, dishes, inventoryItemsRaw, todaySales] = await Promise.all([
+    getServerT(),
+    getFoodDishesWithCost(orgId),
+    prisma.foodInventoryItem.findMany({
+      where: { organizationId: orgId },
+      select: { id: true, name: true, unit: true, unitCost: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.foodDishSale.findMany({
+      where: { organizationId: orgId, occurredAt: startOfToday() },
+      select: { dishId: true, quantity: true },
+    }),
+  ]);
+
+  const inventoryItems = inventoryItemsRaw.map((i) => ({ ...i, unitCost: i.unitCost !== null ? Number(i.unitCost) : null }));
+  const todayQtyByDish = new Map(todaySales.map((s) => [s.dishId, s.quantity]));
+  const activeDishes = dishes.filter((d) => d.isActive);
 
   return (
     <div>
-      <PageHeader title={t.foodRecipes} description="Ingredientes, cantidades y costo por receta." />
-      <Card>
-        <CardContent className="py-12">
-          <EmptyState
-            icon={ChefHat}
-            title="Todavía no está construido"
-            description="Recetas necesita su propio modelo (ingredientes ligados a Inventario, costo por porción, relación venta-consumo) antes de tener datos reales aquí."
-          />
-        </CardContent>
-      </Card>
+      <PageHeader
+        title={t.foodRecipes}
+        description="Ingredientes, cantidades y costo por receta."
+        actions={<FoodDishFormDialog inventoryItems={inventoryItems} />}
+      />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Platillos</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {dishes.length === 0 ? (
+                <div className="p-6">
+                  <EmptyState icon={ChefHat} title="Sin platillos todavía" description="Crea el primero con el botón de arriba." />
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {dishes.map((dish) => (
+                    <li key={dish.id} className={cn("flex items-center justify-between gap-3 px-6 py-3", !dish.isActive && "opacity-50")}>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium text-slate-900">{dish.name}</p>
+                          {!dish.isActive && <Badge variant="secondary" className="text-[10px]">Inactivo</Badge>}
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Costo: ${dish.cost.toFixed(2)} · Precio: ${dish.price.toFixed(2)}
+                          {dish.marginPct !== null && (
+                            <span className={cn("ml-1 font-medium", marginColor(dish.marginPct))}> · Margen: {dish.marginPct}%</span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        <FoodDishFormDialog
+                          inventoryItems={inventoryItems}
+                          dish={{
+                            id: dish.id,
+                            name: dish.name,
+                            price: dish.price,
+                            ingredients: dish.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })),
+                          }}
+                        />
+                        <FoodDishActiveToggle dishId={dish.id} isActive={dish.isActive} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <FoodDailyDishSalesForm
+          dishes={activeDishes.map((d) => ({ id: d.id, name: d.name, todayQuantity: todayQtyByDish.get(d.id) ?? 0 }))}
+        />
+      </div>
     </div>
   );
 }

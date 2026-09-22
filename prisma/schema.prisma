@@ -29,6 +29,11 @@ model Organization {
   // either fully completed or explicitly skipped — null means "still
   // showing the setup nudge on the dashboard" (Fase 10).
   onboardingCompletedAt    DateTime?
+  // % objetivo de costo de insumos sobre el precio de venta, usado por la
+  // calculadora de precio recomendado del módulo Food (precio sugerido =
+  // costo del platillo ÷ este %). 30% es el punto de partida típico de la
+  // industria restaurantera; editable por organización.
+  foodTargetCostPct        Int      @default(30)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
@@ -59,6 +64,9 @@ model Organization {
   foodSales             FoodSale[]
   foodInventoryItems    FoodInventoryItem[]
   foodSuppliers         FoodSupplier[]
+  foodDishes            FoodDish[]
+  foodDishSales         FoodDishSale[]
+  foodOperatingCosts    FoodOperatingCost[]
 
   @@index([slug])
 }
@@ -1049,18 +1057,25 @@ model FoodSale {
   @@index([organizationId, occurredAt])
 }
 
+enum FoodInventoryCategory {
+  EDIBLE
+  NON_EDIBLE
+}
+
 model FoodInventoryItem {
-  id             String   @id @default(cuid())
+  id             String                @id @default(cuid())
   organizationId String
   name           String
   unit           String // "kg", "lt", "pza", etc. -- texto libre, mismo criterio que FoodSale.channel
-  currentStock   Decimal  @default(0) @db.Decimal(10, 2)
-  minStock       Decimal  @default(0) @db.Decimal(10, 2)
-  unitCost       Decimal? @db.Decimal(10, 2)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  category       FoodInventoryCategory @default(EDIBLE)
+  currentStock   Decimal               @default(0) @db.Decimal(10, 2)
+  minStock       Decimal               @default(0) @db.Decimal(10, 2)
+  unitCost       Decimal?              @db.Decimal(10, 2)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization Organization         @relation(fields: [organizationId], references: [id])
+  dishLinks    FoodDishIngredient[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1074,6 +1089,86 @@ model FoodSupplier {
   phone          String?
   email          String?
   notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+// ─── FOOD OPS — Platillos, costeo y rentabilidad (Fase 2) ────────────
+// FoodDish/FoodDishIngredient dan el costo real por platillo (Σ cantidad ×
+// costo unitario del insumo). FoodDishSale es un registro DIARIO adicional
+// y opcional de cuántas unidades de cada platillo se vendieron -- separado
+// a propósito de FoodSale (que sigue siendo solo el total en pesos del día,
+// sin cambios): así utilidad neta y "platillos menos vendidos" se calculan
+// con datos reales solo donde existan, sin forzar a rehacer el flujo de
+// captura de ventas que ya existe ni inventar una mezcla de ventas.
+
+model FoodDish {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  price          Decimal  @db.Decimal(10, 2)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id])
+  ingredients  FoodDishIngredient[]
+  sales        FoodDishSale[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model FoodDishIngredient {
+  id              String  @id @default(cuid())
+  dishId          String
+  inventoryItemId String
+  // Cantidad del insumo que usa una sola porción del platillo, en la misma
+  // unidad que FoodInventoryItem.unit para ese insumo (kg, lt, pza...).
+  // Decimal(10,3) para porciones chicas tipo 0.150 kg.
+  quantity        Decimal @db.Decimal(10, 3)
+
+  dish          FoodDish          @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  inventoryItem FoodInventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@unique([dishId, inventoryItemId])
+  @@index([dishId])
+}
+
+model FoodDishSale {
+  id             String   @id @default(cuid())
+  organizationId String
+  dishId         String
+  // Fecha de negocio, mismo criterio que FoodSale.occurredAt -- siempre a
+  // medianoche local del día que se está registrando (no una hora exacta),
+  // ya que logFoodDishSales() guarda "cuántas unidades de este platillo se
+  // vendieron ESE día" como un total diario, no una venta individual.
+  occurredAt     DateTime @default(now())
+  quantity       Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  dish         FoodDish     @relation(fields: [dishId], references: [id], onDelete: Cascade)
+
+  @@unique([dishId, occurredAt])
+  @@index([organizationId, occurredAt])
+}
+
+model FoodOperatingCost {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  // Siempre normalizado a un monto mensual -- cubre renta, nómina,
+  // servicios, etc. Sin frecuencia variable por ahora (ver comentario en
+  // el plan): si hace falta un gasto anual o único, se divide entre 12 al
+  // capturarlo en vez de agregar una enum de frecuencia todavía sin uso real.
+  amountMonthly  Decimal  @db.Decimal(10, 2)
+  isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

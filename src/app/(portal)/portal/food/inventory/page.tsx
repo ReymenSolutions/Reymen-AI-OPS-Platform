@@ -56,7 +56,12 @@ export default async function FoodInventoryPage() {
                     return (
                       <li key={item.id} className="flex items-center justify-between px-6 py-3">
                         <div>
-                          <p className="text-sm font-medium text-slate-900">{item.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-slate-900">{item.name}</p>
+                            <Badge variant="secondary" className="text-[10px]">
+                              {item.category === "NON_EDIBLE" ? "No comestible" : "Comestible"}
+                            </Badge>
+                          </div>
                           <p className="text-xs text-slate-500">
                             Mínimo: {Number(item.minStock)} {item.unit}
                             {item.unitCost !== null && ` · Costo unitario: $${Number(item.unitCost).toFixed(2)}`}
@@ -91,7 +96,14 @@ export default async function FoodInventoryPage() {
                 <label htmlFor="unit" className="text-xs font-medium text-slate-600">Unidad</label>
                 <input id="unit" name="unit" type="text" placeholder="kg, lt, pza..." required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="category" className="text-xs font-medium text-slate-600">Categoría</label>
+                <select id="category" name="category" defaultValue="EDIBLE" className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500">
+                  <option value="EDIBLE">Comestible</option>
+                  <option value="NON_EDIBLE">No comestible</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
                 <div className="flex flex-1 flex-col gap-1">
                   <label htmlFor="currentStock" className="text-xs font-medium text-slate-600">Stock actual</label>
                   <input id="currentStock" name="currentStock" type="number" step="0.01" min="0" defaultValue={0} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
