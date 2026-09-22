@@ -66,7 +66,24 @@ export default auth((req) => {
 });
 
 export const config = {
+  // 2026-09-22 — /api/auth se excluye aquí a propósito. El wrapper auth()
+  // de NextAuth, al envolver TODO el middleware, resuelve la sesión (y con
+  // ella el cookie de csrf-token) ANTES de que corra nuestro callback de
+  // abajo — incluso para rutas que el callback luego deja pasar con
+  // NextResponse.next() (como isAuthApiRoute). Como /api/auth/* no estaba
+  // excluido del matcher, una sola petición a /api/auth/csrf (o al login)
+  // terminaba pasando dos veces por la lógica de Auth.js: una en el
+  // middleware (resolviendo req.auth) y otra en el route handler real de
+  // /api/auth/[...nextauth]/route.ts — cada una generando su PROPIA cookie
+  // (csrf-token, y en el login, el session-token). El navegador/cliente
+  // recibía dos Set-Cookie del mismo nombre con valores distintos, lo que
+  // producía "MissingCSRF" intermitente, y en el login exitoso duplicaba
+  // también la cookie de sesión, inflando los headers de la respuesta lo
+  // suficiente para que nginx los rechazara con "upstream sent too big
+  // header" (502 Bad Gateway) — confirmado en vivo en el VPS de preview.
+  // Excluir /api/auth aquí hace que esas rutas las maneje ÚNICAMENTE su
+  // propio route handler, sin que el middleware las toque.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|public).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|public|api/auth).*)",
   ],
 };
