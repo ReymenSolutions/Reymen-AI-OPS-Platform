@@ -55,11 +55,11 @@ async function main() {
   // Seeded orgs are created after migrations run (in CI: migrate deploy,
   // then db:seed), so they never receive the migration's backfill — grant
   // them the same 3 core modules directly, upsert-style so re-seeding is safe.
-  for (const module of ["CRM", "AI_WHATSAPP", "AUTOMATIONS"] as const) {
+  for (const mod of ["CRM", "AI_WHATSAPP", "AUTOMATIONS"] as const) {
     await prisma.organizationModule.upsert({
-      where: { organizationId_module: { organizationId: demoOrg.id, module } },
+      where: { organizationId_module: { organizationId: demoOrg.id, module: mod } },
       update: {},
-      create: { organizationId: demoOrg.id, module, status: "ACTIVE", source: "SUBSCRIBED" },
+      create: { organizationId: demoOrg.id, module: mod, status: "ACTIVE", source: "SUBSCRIBED" },
     });
   }
   console.log("✅ Demo org modules granted (CRM, AI_WHATSAPP, AUTOMATIONS)");
@@ -90,11 +90,11 @@ async function main() {
   });
   console.log(`✅ Wolf org: ${wolfOrg.name} | Usuario: ${wolfOrg.users[0]?.name ?? "ya existía"}`);
 
-  for (const module of ["CRM", "AI_WHATSAPP", "AUTOMATIONS"] as const) {
+  for (const mod of ["CRM", "AI_WHATSAPP", "AUTOMATIONS"] as const) {
     await prisma.organizationModule.upsert({
-      where: { organizationId_module: { organizationId: wolfOrg.id, module } },
+      where: { organizationId_module: { organizationId: wolfOrg.id, module: mod } },
       update: {},
-      create: { organizationId: wolfOrg.id, module, status: "ACTIVE", source: "SUBSCRIBED" },
+      create: { organizationId: wolfOrg.id, module: mod, status: "ACTIVE", source: "SUBSCRIBED" },
     });
   }
   console.log("✅ Wolf org modules granted (CRM, AI_WHATSAPP, AUTOMATIONS)");
