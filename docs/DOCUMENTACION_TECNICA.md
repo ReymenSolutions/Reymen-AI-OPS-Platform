@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Technical Documentation
 
-> **Document Version:** 1.2 | **Date:** September 2026 (updated through Fase 17 — Food Ops menu categories/modifiers, POS sales webhook, SmartCard bridge, admin user management, Next.js 16 upgrade)  
+> **Document Version:** 1.3 | **Date:** September 2026 (updated through Fase 17 — Food Ops menu categories/modifiers, POS sales webhook with cancellation support, separate POS read-only key, SmartCard bridge, admin user management, Next.js 16 upgrade)  
 > **Language:** English/Spanish (technical terms in English, explanations bilingual)  
 > **Audience:** Developers, DevOps, and technical team members
 
@@ -1683,12 +1683,22 @@ instead of `"n8n"`, since it isn't one.
   "occurredAt": "2026-09-22T18:30:00.000Z",
   "channel": "POS",
   "grossAmount": 250,
-  "netAmount": 225,
+  "netAmount": 215.52,
   "items": [
     { "variantId": "cuid_of_a_FoodDishVariant", "quantity": 2 }
   ]
 }
 ```
+
+**`grossAmount` vs `netAmount`:** `grossAmount` is the amount actually charged to the customer
+(what's on the ticket, tax included, tip excluded). `netAmount` is that same amount **without
+IVA** — `grossAmount / 1.16` in Mexico's 16% case — never "after discounts"; the POS doesn't apply
+discounts, so there's no separate concept to represent there. This matters beyond bookkeeping:
+`netAmount` is the exact field `getFoodNetProfit()` (§4) reads as "Ingresos" for the utilidad-neta
+calculation, so if it included IVA, every profitability number derived from POS sales would be
+inflated by the tax collected on the government's behalf, not the restaurant's own revenue. The
+manual portal entry (`createFoodSale`, §10) uses the same definition for its own "Bruto"/"Neto"
+fields — this isn't a POS-specific rule.
 
 **Behavior (`processFoodPosOrder()` in `src/lib/food.ts`):**
 - Requires `FOOD_OPS` to be enabled for the org (throws otherwise — the same 422 path as any
@@ -1714,6 +1724,15 @@ A failed validation (missing FOOD_OPS, malformed payload, foreign variant) retur
 return on failure, since this is an actively-developed external integration where a POS
 developer needs to see *why* an order was rejected.
 
+**Cancellations:** there's no separate cancel endpoint. A cancelled/adjusted order is sent as a
+new POST to this same route with `items[].quantity` **negative** (any nonzero integer is
+accepted, positive or negative) and `grossAmount`/`netAmount` negated to match. The same
+`increment` upsert subtracts from the day's accumulated `FoodDishSale.quantity`, and the new
+`FoodSale` row's negative amounts net out in the existing daily-revenue sums (`_sum` aggregations
+in `getFoodDailySales()`/`getFoodHourlySales()`, §4) — no special-casing needed anywhere else in
+the module. A `quantity` of exactly `0` is rejected (nothing to record); non-integer quantities
+are rejected too.
+
 ---
 
 ## 8. Webhook Security
@@ -1736,6 +1755,24 @@ security review — inbound authentication is now **per-organization**:
 - `N8N_WEBHOOK_SECRET` (the env var) is now used **only** for outbound signatures —
   platform → n8n calls in `src/lib/n8n.ts`. It plays no role in verifying inbound
   webhooks anymore.
+
+### A separate read-only key for POS menu reads (Fase 17)
+
+`Organization.foodPosReadKey` (nullable, `@unique`, null until an admin generates one) exists so
+a POS **device** never has to hold `n8nWebhookSecret` — the secret that can sign an order webhook
+and thus write sales data. The read key can only authenticate `GET /api/v1/food/menu`; it isn't
+accepted anywhere a signature is checked. `n8nWebhookSecret` still works there too (backward
+compat with whatever already reads that endpoint), so this is additive, not a breaking change.
+
+- Generated/rotated from the same webhook info dialog as `n8nWebhookSecret`
+  (`rotateFoodPosReadKey` action, `src/actions/admin/clients.ts`), shown only when the org has
+  `FOOD_OPS` enabled.
+- Compared via the same constant-time `secretsMatch()` used everywhere else — never a plain `===`
+  on a secret value.
+- The intended split: the signing secret (`n8nWebhookSecret`) lives only on the POS's own
+  server/backend, which is the thing actually posting to `/api/webhooks/pos/orders`; this read
+  key can safely live on the point-of-sale terminal itself, since leaking it only exposes the
+  menu, never write access.
 
 ### HMAC-SHA256 Verification
 
@@ -2040,12 +2077,14 @@ Cookie: next-auth.session-token=...
 
 | Property | Value |
 |----------|-------|
-| Auth | `x-api-key` header OR NextAuth session |
+| Auth | `x-api-key` header (matches either `n8nWebhookSecret` or the separate `foodPosReadKey`, §8) OR NextAuth session |
 | Gate | Requires `FOOD_OPS` module `ACTIVE` for the resolved org — `403` otherwise |
 | Returns | Active dishes with their variants, category, and assigned modifier groups, plus the org's category list |
 
 Read-only projection for an external POS to render its menu from (§4 "Food Ops"). Order
 ingestion is the write-side counterpart, `POST /api/webhooks/pos/orders` (§7) — not this route.
+A POS device should authenticate here with `foodPosReadKey`, not `n8nWebhookSecret` — see §8 for
+why that split exists.
 
 **Query parameters:**
 - `orgId` (required if using API key auth)
@@ -2124,6 +2163,8 @@ All Server Actions are located in `src/actions/`. They use the `"use server"` di
 | `changePlan` | `(orgId: string, plan: string) => Promise<{ success: true, plan: string }>` | Updates organization plan; validates against `["starter","professional","enterprise"]` |
 | `updateClientStatus` | `(orgId: string, isActive: boolean) => Promise<{ success: true }>` | Activates or deactivates an organization |
 | `assignAutomation` | `(orgId: string, data: { name, type, description?, n8nWorkflowId? }) => Promise<{ success: true, automationId: string }>` | Creates an Automation record for a client |
+| `rotateOrgWebhookSecret` | `(orgId: string) => Promise<{ success: true, secret: string }>` | Regenerates `n8nWebhookSecret`; old value stops working immediately |
+| `rotateFoodPosReadKey` | `(orgId: string) => Promise<{ success: true, secret: string }>` | Generates or regenerates `foodPosReadKey` (§8, Fase 17) |
 
 All require `isAdmin(session.user.role)`.
 

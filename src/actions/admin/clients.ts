@@ -147,6 +147,28 @@ export async function rotateOrgWebhookSecret(orgId: string) {
   return { success: true, secret: newSecret };
 }
 
+// Llave separada de n8nWebhookSecret, exclusiva para que un POS externo lea
+// GET /api/v1/food/menu (Fase 17) -- ver el comentario en el schema sobre
+// por qué esto vive aparte de la llave que firma el webhook de órdenes.
+export async function rotateFoodPosReadKey(orgId: string) {
+  const session = await auth();
+  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+
+  const newKey = generateWebhookSecret();
+  await prisma.organization.update({ where: { id: orgId }, data: { foodPosReadKey: newKey } });
+
+  await logAudit({
+    userId: session.user.id,
+    organizationId: orgId,
+    action: "client.food_pos_read_key_rotate",
+    resource: "Organization",
+    resourceId: orgId,
+  });
+
+  revalidatePath(`/admin/clients/${orgId}`);
+  return { success: true, secret: newKey };
+}
+
 export async function assignAutomation(
   orgId: string,
   data: { name: string; type: string; description?: string; n8nWorkflowId?: string }

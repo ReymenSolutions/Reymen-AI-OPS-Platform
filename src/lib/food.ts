@@ -852,14 +852,14 @@ export function recommendDishPrice(cost: number, targetCostPct: number): number 
 
 export interface FoodPosOrderItem {
   variantId: string;
-  quantity: number;
+  quantity: number; // entero != 0; negativo = cancelación/ajuste de una orden previa
 }
 
 export interface FoodPosOrderPayload {
   occurredAt?: string; // ISO 8601; por defecto ahora
   channel?: string; // por defecto "POS"
-  grossAmount: number;
-  netAmount: number;
+  grossAmount: number; // puede ser negativo para una cancelación -- ver items.quantity
+  netAmount: number; // monto SIN IVA -- nunca "bruto menos descuentos"
   items: FoodPosOrderItem[];
 }
 
@@ -877,8 +877,11 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
     throw new Error("La orden debe traer al menos un item");
   }
   for (const item of body.items) {
-    if (!item?.variantId || typeof item.quantity !== "number" || item.quantity <= 0) {
-      throw new Error("Cada item requiere variantId y quantity > 0");
+    // quantity puede ser negativa -- una cancelación/ajuste de una orden ya
+    // reportada se manda como el mismo variantId con quantity negativa; el
+    // upsert de abajo la resta de lo acumulado el mismo día de negocio.
+    if (!item?.variantId || typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity === 0) {
+      throw new Error("Cada item requiere variantId y quantity entero distinto de 0");
     }
   }
 

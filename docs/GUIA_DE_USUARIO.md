@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Guía de Usuario
 
-> **Versión del documento:** 1.2 | **Fecha:** Septiembre 2026 (actualizado con categorías y modificadores de menú, conexión con POS externo, módulos Food y SmartCard, y gestión de usuarios)  
+> **Versión del documento:** 1.3 | **Fecha:** Septiembre 2026 (actualizado con categorías y modificadores de menú, conexión con POS externo, cancelaciones y llave de solo lectura para POS, módulos Food y SmartCard, y gestión de usuarios)  
 > **Idioma:** Español | **Aplicable a:** Portal de Clientes y Panel de Administración
 
 ---
@@ -894,10 +894,12 @@ organización tiene uno conectado — ver más abajo.
 
 Si tu restaurante usa (o va a usar) un punto de venta propio, Reymen puede conectarse con él para
 recibir automáticamente las ventas de cada orden, sin que tengas que capturarlas a mano en
-"Ventas de hoy por platillo". Contacta a tu proveedor de Reymen para obtener la clave de conexión
-de tu organización (la misma que usan las automatizaciones) — el punto de venta la usa para leer
-tu menú (con categorías y modificadores incluidos) y para reportar cada orden cerrada. Esto es
-opcional: mientras no tengas un POS conectado, todo sigue funcionando igual con captura manual.
+"Ventas de hoy por platillo". Contacta a tu proveedor de Reymen para obtener las claves de
+conexión de tu organización — hay dos: una que el propio dispositivo del punto de venta usa para
+leer tu menú (con categorías y modificadores incluidos), y otra, distinta, que solo debe vivir en
+el servidor de quien administra tu punto de venta, para reportar cada orden cerrada (y sus
+cancelaciones, si una orden se anula después de reportada). Esto es opcional: mientras no tengas
+un POS conectado, todo sigue funcionando igual con captura manual.
 
 ---
 
@@ -1022,6 +1024,13 @@ Haz clic en el nombre de cualquier cliente para abrir su página de detalle (`/a
 - **Automatizaciones:** las automatizaciones instaladas para este cliente.
 - **Leads:** resumen de leads.
 - **Solicitudes:** solicitudes abiertas del cliente.
+
+### Credenciales de integración (webhooks y POS)
+
+Desde el botón **"Credenciales n8n"** en la página de detalle del cliente puedes ver y rotar:
+
+- **x-reymen-secret**: el secreto que autentica los webhooks de n8n (leads, conversaciones, scoring) de esa organización. Rotarlo invalida el valor anterior de inmediato — hay que actualizarlo también en el workflow de n8n.
+- **X-API-KEY (solo lectura, POS)**: solo visible si el cliente tiene el módulo **Food** activo. Es una llave aparte, pensada para que el punto de venta del restaurante lea su menú sin necesitar el secreto que firma órdenes. Haz clic en **"Generar"** la primera vez, o en **"Rotar"** para reemplazarla — en ambos casos, comparte el nuevo valor con quien administre el punto de venta.
 
 ### Cambiar el Plan de un Cliente
 

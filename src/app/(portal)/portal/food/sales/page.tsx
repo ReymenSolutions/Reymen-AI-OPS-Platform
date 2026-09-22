@@ -102,7 +102,7 @@ export default async function FoodSalesPage() {
                   <input id="grossAmount" name="grossAmount" type="number" step="0.01" min="0" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
                 <div className="flex flex-1 flex-col gap-1">
-                  <label htmlFor="netAmount" className="text-xs font-medium text-slate-600">Neto</label>
+                  <label htmlFor="netAmount" className="text-xs font-medium text-slate-600">Neto (sin IVA)</label>
                   <input id="netAmount" name="netAmount" type="number" step="0.01" min="0" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
               </div>

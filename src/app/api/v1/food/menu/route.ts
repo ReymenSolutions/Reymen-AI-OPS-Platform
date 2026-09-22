@@ -9,7 +9,10 @@ import { getFoodMenuForPos, getFoodDishCategories } from "@/lib/food";
 // de modificadores asignados) para un futuro integrador externo (POS
 // propio, kiosko, etc.) -- mismo esquema de auth que /api/v1/knowledge-base:
 // X-Api-Key contra el n8nWebhookSecret de ESA organización, o sesión de
-// NextAuth para llamadas desde el navegador.
+// NextAuth para llamadas desde el navegador. También acepta la llave
+// separada foodPosReadKey (Fase 17) para que el dispositivo POS pueda leer
+// el menú sin guardar la misma llave que firma /api/webhooks/pos/orders --
+// esa firma debe quedarse en el servidor del POS, no en el punto de venta.
 // GET /api/v1/food/menu?orgId=xxx
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -25,10 +28,14 @@ export async function GET(req: NextRequest) {
 
     const org = await prisma.organization.findUnique({
       where: { id: paramOrgId },
-      select: { id: true, n8nWebhookSecret: true },
+      select: { id: true, n8nWebhookSecret: true, foodPosReadKey: true },
     });
 
-    if (!org || !secretsMatch(apiKey, org.n8nWebhookSecret)) {
+    const authorized =
+      !!org &&
+      (secretsMatch(apiKey, org.n8nWebhookSecret) || (!!org.foodPosReadKey && secretsMatch(apiKey, org.foodPosReadKey)));
+
+    if (!authorized) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

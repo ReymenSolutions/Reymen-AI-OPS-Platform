@@ -590,7 +590,7 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       ).rejects.toThrow(/módulo Food no está habilitado/);
     });
 
-    it("rejects a payload with no items or a non-positive quantity", async () => {
+    it("rejects a payload with no items, a zero quantity, or a non-integer quantity", async () => {
       org = await createTestOrg("Food Pos Order Invalid Payload Org");
       await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
       const variant = await makePosDish(org.id);
@@ -598,7 +598,25 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       await expect(processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [] }, org.id)).rejects.toThrow(/al menos un item/);
       await expect(
         processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 0 }] }, org.id)
-      ).rejects.toThrow(/quantity > 0/);
+      ).rejects.toThrow(/entero distinto de 0/);
+      await expect(
+        processFoodPosOrder({ grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 1.5 }] }, org.id)
+      ).rejects.toThrow(/entero distinto de 0/);
+    });
+
+    it("accepts a negative quantity as a cancellation that nets out a prior order", async () => {
+      org = await createTestOrg("Food Pos Order Cancellation Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+
+      await processFoodPosOrder({ grossAmount: 100, netAmount: 86.21, items: [{ variantId: variant.id, quantity: 3 }] }, org.id);
+      await processFoodPosOrder({ grossAmount: -100, netAmount: -86.21, items: [{ variantId: variant.id, quantity: -3 }] }, org.id);
+
+      const sale = await prisma.foodDishSale.findFirst({ where: { variantId: variant.id } });
+      expect(sale?.quantity).toBe(0);
+
+      const revenueAgg = await prisma.foodSale.aggregate({ where: { organizationId: org.id }, _sum: { netAmount: true } });
+      expect(Number(revenueAgg._sum.netAmount)).toBe(0);
     });
   });
 });

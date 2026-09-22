@@ -89,4 +89,20 @@ describe("POST /api/webhooks/pos/orders", () => {
     // Solo la primera entrega debió crear un FoodSale -- la reentrega se descarta antes de llegar a processFoodPosOrder.
     expect(countAfter - countBefore).toBe(1);
   });
+
+  it("a negative quantity cancels out a prior order for the same variant/day", async () => {
+    const before = await prisma.foodDishSale.findFirst({ where: { variantId } });
+    const quantityBefore = before?.quantity ?? 0;
+
+    const orderBody = JSON.stringify({ grossAmount: 50, netAmount: 43.1, items: [{ variantId, quantity: 2 }] });
+    const orderRes = await POST(makeRequest(orderBody, { ...signed(orderBody, org.n8nWebhookSecret), "x-reymen-orgid": org.id }));
+    expect(orderRes.status).toBe(200);
+
+    const cancelBody = JSON.stringify({ grossAmount: -50, netAmount: -43.1, items: [{ variantId, quantity: -2 }] });
+    const cancelRes = await POST(makeRequest(cancelBody, { ...signed(cancelBody, org.n8nWebhookSecret), "x-reymen-orgid": org.id }));
+    expect(cancelRes.status).toBe(200);
+
+    const after = await prisma.foodDishSale.findFirst({ where: { variantId } });
+    expect(after?.quantity).toBe(quantityBefore);
+  });
 });

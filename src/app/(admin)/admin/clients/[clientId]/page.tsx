@@ -131,7 +131,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
         description={`${client.slug} · ${client.industry ?? t.adminNoIndustry}`}
         actions={
           <div className="flex items-center gap-2">
-            <OrgWebhookInfoDialog orgId={client.id} secret={client.n8nWebhookSecret} />
+            <OrgWebhookInfoDialog
+              orgId={client.id}
+              secret={client.n8nWebhookSecret}
+              foodPosReadKey={client.foodPosReadKey}
+              showFoodPosKey={hasModule("FOOD_OPS")}
+            />
             <ChangePlanDialog orgId={client.id} currentPlan={client.plan} />
             <ToggleClientStatusButton orgId={client.id} isActive={client.isActive} />
             <Badge variant={client.isActive ? "success" : "destructive"}>
