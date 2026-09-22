@@ -1,0 +1,268 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Loader2, Plus, Power, PowerOff, UserCog } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { createStandaloneUser, setUserActive } from "@/actions/admin/users";
+import { usePreferences } from "@/context/preferences";
+
+const STANDALONE_ROLES = ["ADMIN", "SUPER_ADMIN"] as const;
+type StandaloneRole = (typeof STANDALONE_ROLES)[number];
+
+const ROLE_LABELS_ES: Record<StandaloneRole, string> = {
+  ADMIN: "Admin",
+  SUPER_ADMIN: "Super Admin",
+};
+const ROLE_LABELS_EN: Record<StandaloneRole, string> = {
+  ADMIN: "Admin",
+  SUPER_ADMIN: "Super Admin",
+};
+
+export interface DirectoryUser {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  isActive: boolean;
+  organizationName: string | null;
+}
+
+const createSchema = z.object({
+  name: z.string().min(2, "Mínimo 2 caracteres"),
+  email: z.string().email("Email inválido"),
+  role: z.enum(STANDALONE_ROLES),
+  password: z.string().min(8, "Mínimo 8 caracteres"),
+});
+type CreateFormData = z.infer<typeof createSchema>;
+
+function CreateStandaloneUserDialog() {
+  const { lang } = usePreferences();
+  const roleLabels = lang === "es" ? ROLE_LABELS_ES : ROLE_LABELS_EN;
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<CreateFormData>({
+    resolver: zodResolver(createSchema),
+    defaultValues: { role: "ADMIN" },
+  });
+
+  async function onSubmit(data: CreateFormData) {
+    setLoading(true);
+    try {
+      await createStandaloneUser(data);
+      toast.success(lang === "es" ? "Usuario creado" : "User created");
+      reset({ role: "ADMIN", name: "", email: "", password: "" });
+      setOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear usuario" : "Error creating user"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="h-4 w-4" />
+          {lang === "es" ? "Nuevo usuario" : "New user"}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{lang === "es" ? "Nuevo usuario sin organización" : "New user without an organization"}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-slate-500">
+          {lang === "es"
+            ? "Para cuentas de operación de la plataforma (admins), no asociadas a un cliente."
+            : "For platform operator accounts (admins), not tied to a client."}
+        </p>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>{lang === "es" ? "Nombre completo *" : "Full name *"}</Label>
+            <Input placeholder={lang === "es" ? "Ana Martínez" : "Jane Doe"} {...register("name")} />
+            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label>Email *</Label>
+            <Input type="email" placeholder="ana@reymen.io" {...register("email")} />
+            {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label>{lang === "es" ? "Rol *" : "Role *"}</Label>
+            <Select defaultValue="ADMIN" onValueChange={(v) => setValue("role", v as StandaloneRole)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STANDALONE_ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>{roleLabels[r]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>{lang === "es" ? "Contraseña temporal *" : "Temporary password *"}</Label>
+            <Input type="password" placeholder={lang === "es" ? "Mínimo 8 caracteres" : "At least 8 characters"} {...register("password")} />
+            {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
+            <Button type="submit" disabled={loading}>
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {lang === "es" ? "Crear" : "Create"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ToggleActiveButton({ user, onToggled }: { user: DirectoryUser; onToggled: (id: string, isActive: boolean) => void }) {
+  const { lang } = usePreferences();
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const nextActive = !user.isActive;
+
+  async function handleConfirm() {
+    setLoading(true);
+    try {
+      await setUserActive(user.id, nextActive);
+      onToggled(user.id, nextActive);
+      toast.success(
+        nextActive
+          ? (lang === "es" ? "Usuario activado" : "User activated")
+          : (lang === "es" ? "Usuario desactivado" : "User deactivated")
+      );
+      setOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen(true)}
+        className={`gap-1.5 ${user.isActive ? "text-slate-500 hover:text-red-600" : "text-slate-500 hover:text-emerald-600"}`}
+      >
+        {user.isActive ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+        {user.isActive ? (lang === "es" ? "Desactivar" : "Deactivate") : (lang === "es" ? "Activar" : "Activate")}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {nextActive
+                ? (lang === "es" ? "Activar usuario" : "Activate user")
+                : (lang === "es" ? "Desactivar usuario" : "Deactivate user")}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="py-2 text-sm text-slate-600">
+            {nextActive
+              ? (lang === "es" ? `${user.name ?? user.email} podrá volver a acceder a la plataforma.` : `${user.name ?? user.email} will be able to sign in again.`)
+              : (lang === "es" ? `${user.name ?? user.email} ya no podrá acceder a la plataforma.` : `${user.name ?? user.email} will no longer be able to sign in.`)}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+              {lang === "es" ? "Cancelar" : "Cancel"}
+            </Button>
+            <Button variant={nextActive ? "default" : "destructive"} onClick={handleConfirm} disabled={loading}>
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {nextActive ? (lang === "es" ? "Activar" : "Activate") : (lang === "es" ? "Desactivar" : "Deactivate")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+export function AdminUsersDirectory({ users: initialUsers, canCreateStandalone }: { users: DirectoryUser[]; canCreateStandalone: boolean }) {
+  const { t, lang } = usePreferences();
+  const [users, setUsers] = useState(initialUsers);
+
+  // createStandaloneUser() revalidates this same route, which makes Next.js
+  // refetch the Server Component and pass fresh initialUsers down — but the
+  // optimistic toggle above needs its own local copy, which otherwise
+  // shadows that refresh forever. Re-sync whenever the server sends new data.
+  useEffect(() => {
+    setUsers(initialUsers);
+  }, [initialUsers]);
+
+  function handleToggled(id: string, isActive: boolean) {
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, isActive } : u)));
+  }
+
+  return (
+    <div className="space-y-4">
+      {canCreateStandalone && (
+        <div className="flex justify-end">
+          <CreateStandaloneUserDialog />
+        </div>
+      )}
+
+      {users.length === 0 ? (
+        <Card>
+          <CardContent className="py-16 text-center">
+            <UserCog className="mx-auto h-10 w-10 text-slate-300 mb-3" />
+            <p className="text-sm text-slate-500">{lang === "es" ? "Sin usuarios" : "No users"}</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{lang === "es" ? "Usuario" : "User"}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{lang === "es" ? "Organización" : "Organization"}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{lang === "es" ? "Rol" : "Role"}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">{t.colStatus}</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {users.map((user) => (
+                <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-slate-900">{user.name ?? t.noName}</p>
+                    <p className="text-xs text-slate-400">{user.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">
+                    {user.organizationName ?? <span className="text-slate-400">{lang === "es" ? "Sin organización" : "No organization"}</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="secondary" className="capitalize">{user.role.toLowerCase().replace("_", " ")}</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={user.isActive ? "success" : "destructive"}>
+                      {user.isActive ? t.statusActive : t.inactive}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <ToggleActiveButton user={user} onToggled={handleToggled} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

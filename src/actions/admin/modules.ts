@@ -10,7 +10,7 @@ import type { ModuleSource, ModuleStatus, PlatformModule } from "@prisma/client"
 
 const setModuleSchema = z.object({
   orgId: z.string(),
-  module: z.enum(["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC_QR", "MARKETING_ADS"]),
+  module: z.enum(["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC_QR", "MARKETING_ADS", "FOOD_OPS"]),
   status: z.enum(["ACTIVE", "SUSPENDED", "CANCELLED"]),
   source: z.enum(["SUBSCRIBED", "ADMIN_GRANTED"]),
   notes: z.string().optional(),
@@ -103,7 +103,7 @@ export interface ModuleEntitlementView {
   notes: string | null;
 }
 
-const ALL_MODULES: PlatformModule[] = ["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC_QR", "MARKETING_ADS"];
+const ALL_MODULES: PlatformModule[] = ["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC_QR", "MARKETING_ADS", "FOOD_OPS"];
 
 /** Every module's current state for an org, including ones with no row yet (shown as not-enabled). */
 export async function getOrganizationModules(orgId: string): Promise<ModuleEntitlementView[]> {

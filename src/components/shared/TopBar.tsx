@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useTransition } from "react";
 import {
   Bell, LogOut, MessageSquare, FileText, Sun, Moon, Globe,
-  Image as ImageIcon, KeyRound, RefreshCw, User, Loader2, Upload, Users, X,
+  Image as ImageIcon, KeyRound, RefreshCw, User, Loader2, Upload, Users, X, Menu,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
@@ -73,11 +73,15 @@ function getInitials(name?: string | null, email?: string | null): string {
 
 interface TopBarProps {
   title?: string;
+  /** Renders a hamburger button (visible only below `lg:`) that calls this
+   * to open the off-canvas sidebar drawer. Omitted on pages that don't use
+   * the sidebar shell (e.g. auth pages), where no button renders. */
+  onMenuClick?: () => void;
 }
 
 type ActiveDialog = null | "avatar" | "password" | "switch-account" | "impersonate";
 
-export function TopBar({ title }: TopBarProps) {
+export function TopBar({ title, onMenuClick }: TopBarProps) {
   const { data: session, update } = useSession();
   const { theme, setTheme, lang, setLang, t } = usePreferences();
 
@@ -139,6 +143,13 @@ export function TopBar({ title }: TopBarProps) {
     }
     setNotifOpen(true);
     setUserMenuOpen(false);
+    // Opening the bell counts as having seen the current items — the list
+    // keeps showing them (they're still pending), but the unread badge
+    // clears until something genuinely new shows up.
+    if (notifications.count > 0) {
+      setNotifications((prev) => ({ ...prev, count: 0 }));
+      fetch("/api/notifications", { method: "POST" }).catch(() => {});
+    }
   }
 
   function toggleUserMenu() {
@@ -172,13 +183,23 @@ export function TopBar({ title }: TopBarProps) {
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 5MB)" : "Image too large (max 5MB)");
+    // The raw file is only ever read into a canvas and re-encoded at 200x200
+    // below, so this cap just guards against hanging on a huge decode — the
+    // real size limit is updateAvatar()'s 300KB check on the compressed
+    // result. Phone camera photos routinely run 8-15MB, so keep this high.
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 20MB)" : "Image too large (max 20MB)");
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => {
+      toast.error(lang === "es" ? "No se pudo leer la imagen" : "Could not read the image");
+    };
     reader.onload = (event) => {
       const img = new window.Image();
+      img.onerror = () => {
+        toast.error(lang === "es" ? "Formato de imagen no compatible" : "Unsupported image format");
+      };
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const size = 200;
@@ -194,6 +215,7 @@ export function TopBar({ title }: TopBarProps) {
       img.src = event.target!.result as string;
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   }
 
   function handleSaveAvatar() {
@@ -334,8 +356,17 @@ export function TopBar({ title }: TopBarProps) {
         </div>
       )}
 
-      <header className="relative flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-6">
-        <div className="flex-1">
+      <header className="relative flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-4 sm:px-6">
+        <div className="flex flex-1 items-center gap-3">
+          {onMenuClick && (
+            <button
+              onClick={onMenuClick}
+              className="rounded-md p-2 text-slate-500 hover:bg-slate-100 transition-colors lg:hidden"
+              aria-label={t.menu}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          )}
           {title && <p className="text-sm text-slate-500">{title}</p>}
         </div>
         <Link

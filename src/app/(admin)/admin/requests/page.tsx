@@ -47,7 +47,7 @@ export default async function AdminRequestsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">

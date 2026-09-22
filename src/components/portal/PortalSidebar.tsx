@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
-  Calendar, FileText, LogOut, BookOpen, Bot, SlidersHorizontal,
-  Layers, Upload, Loader2, GitBranch, FlaskConical, Rocket,
+  Calendar, FileText, LogOut, Bot,
+  Upload, Loader2, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -79,25 +79,28 @@ function useNavItems() {
     requests: t.requests,
     settings: t.settings,
     signOut: t.signOut,
+    food: t.food,
+    smartcard: t.smartcard,
   };
 }
 
 // `module: undefined` means the section isn't gated by any commercial module
-// (always shown regardless of what the org has contracted).
-const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule }[] = [
+// (always shown regardless of what the org has contracted). `alsoActiveFor`
+// covers sibling routes folded into this item's own PortalSectionTabs (see
+// src/lib/portal-nav-tabs.ts) — e.g. visiting /portal/prompts should still
+// highlight the "WhatsApp AI" sidebar entry, not leave nothing active.
+const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule; alsoActiveFor?: string[] }[] = [
   { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard },
   { href: "/portal/onboarding", key: "onboarding", icon: Rocket },
   { href: "/portal/leads", key: "leads", icon: Users, module: "CRM" },
   { href: "/portal/pipeline", key: "pipeline", icon: GitBranch, module: "CRM" },
-  { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS" },
-  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, module: "AI_WHATSAPP" },
+  { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS", alsoActiveFor: ["/portal/templates"] },
+  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, module: "AI_WHATSAPP", alsoActiveFor: ["/portal/knowledge-base", "/portal/prompts", "/portal/ai-lab"] },
   { href: "/portal/conversations", key: "conversations", icon: MessageSquare, module: "AI_WHATSAPP" },
-  { href: "/portal/knowledge-base", key: "knowledgeBase", icon: BookOpen, module: "AI_WHATSAPP" },
-  { href: "/portal/prompts", key: "prompts", icon: SlidersHorizontal, module: "AI_WHATSAPP" },
-  { href: "/portal/ai-lab", key: "aiLab", icon: FlaskConical, module: "AI_WHATSAPP" },
   { href: "/portal/appointments", key: "appointments", icon: Calendar },
+  { href: "/portal/food", key: "food", icon: UtensilsCrossed, module: "FOOD_OPS" },
   { href: "/portal/reports", key: "reports", icon: BarChart3 },
-  { href: "/portal/templates", key: "templates", icon: Layers, module: "AUTOMATIONS" },
+  { href: "/portal/smartcard", key: "smartcard", icon: CreditCard, module: "NFC_QR" },
   { href: "/portal/requests", key: "requests", icon: FileText },
   { href: "/portal/settings", key: "settings", icon: Settings },
 ];
@@ -107,9 +110,14 @@ interface PortalSidebarProps {
   orgLogoUrl?: string | null;
   enabledModules: PlatformModule[];
   pendingConversations?: number;
+  /** Off-canvas drawer state below `lg:` — controlled by PortalShell.tsx, which
+   * also renders the hamburger toggle in TopBar. No effect at `lg:` and up,
+   * where the sidebar is always visible exactly as before. */
+  mobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
-export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModules, pendingConversations = 0 }: PortalSidebarProps) {
+export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModules, pendingConversations = 0, mobileOpen, onMobileClose }: PortalSidebarProps) {
   const pathname = usePathname();
   const { t, lang } = usePreferences();
   const labels = useNavItems();
@@ -124,13 +132,23 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 5MB)" : "Image too large (max 5MB)");
+    // The raw file is only ever read into a canvas and re-encoded at 200x200
+    // below, so this cap just guards against hanging on a huge decode — the
+    // real size limit is updateOrgLogo()'s check on the compressed result.
+    // Phone camera photos routinely run 8-15MB, so keep this high.
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 20MB)" : "Image too large (max 20MB)");
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => {
+      toast.error(lang === "es" ? "No se pudo leer la imagen" : "Could not read the image");
+    };
     reader.onload = (event) => {
       const img = new window.Image();
+      img.onerror = () => {
+        toast.error(lang === "es" ? "Formato de imagen no compatible" : "Unsupported image format");
+      };
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const size = 200;
@@ -172,13 +190,28 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
         via the same `sidebar*` hook classNames so both sidebars stay in
         sync from one CSS block instead of two.
       */}
-      <aside className="sidebar flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950">
+      {/* Off-canvas backdrop — below `lg:` only, closes the drawer on click */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          "sidebar fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950 transition-transform duration-200 ease-in-out",
+          "lg:static lg:z-auto lg:translate-x-0 lg:transition-none",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
         {/* Logo / Org — clickable to update logo */}
-        <button
-          onClick={() => { setLogoUrl(currentLogoUrl ?? ""); setLogoDialogOpen(true); }}
-          className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 w-full text-left group hover:bg-white/5 transition-colors"
-        >
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 hover:bg-white/5 transition-colors">
+          <button
+            onClick={() => { setLogoUrl(currentLogoUrl ?? ""); setLogoDialogOpen(true); }}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left group"
+          >
             <div className="relative flex-shrink-0">
               {currentLogoUrl ? (
                 <img src={currentLogoUrl} alt={orgName} className="h-8 w-8 rounded-lg object-cover" />
@@ -195,18 +228,26 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
               <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{orgName}</p>
               <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">{t.aiOps}</p>
             </div>
-          </div>
-        </button>
+          </button>
+          <button
+            onClick={onMobileClose}
+            className="ml-2 flex-shrink-0 rounded-md p-1.5 text-brand-100 hover:bg-white/10 hover:text-white transition-colors lg:hidden"
+            aria-label={lang === "es" ? "Cerrar menú" : "Close menu"}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href);
+            const isActive = pathname.startsWith(item.href) || (item.alsoActiveFor?.some((p) => pathname.startsWith(p)) ?? false);
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onMobileClose}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive

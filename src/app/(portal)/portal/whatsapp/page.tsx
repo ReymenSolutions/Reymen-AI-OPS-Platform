@@ -12,7 +12,10 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { AssistantConfigForm } from "@/components/portal/AssistantConfigForm";
 import { AssistantToggle } from "@/components/portal/AssistantToggle";
+import { PortalSectionTabs } from "@/components/portal/PortalSectionTabs";
+import { getAiWhatsappTabs } from "@/lib/portal-nav-tabs";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import type { UserRole } from "@prisma/client";
 
 async function getWhatsAppData(orgId: string) {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -60,6 +63,8 @@ export default async function WhatsAppCenterPage() {
         title={t.whatsappTitle}
         description={t.whatsappDesc}
       />
+
+      <PortalSectionTabs tabs={getAiWhatsappTabs(t, session.user.role as UserRole)} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-4">

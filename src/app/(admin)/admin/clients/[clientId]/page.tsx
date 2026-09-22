@@ -14,6 +14,7 @@ import { ChangePlanDialog } from "@/components/admin/ChangePlanDialog";
 import { ToggleClientStatusButton } from "@/components/admin/ToggleClientStatusButton";
 import { OrgWebhookInfoDialog } from "@/components/admin/OrgWebhookInfoDialog";
 import { OrganizationModulesPanel } from "@/components/admin/OrganizationModulesPanel";
+import { AdminClientUsersPanel } from "@/components/admin/AdminClientUsersPanel";
 import { ConsumptionChart } from "@/components/charts/ConsumptionChart";
 import { getOrganizationModules } from "@/actions/admin/modules";
 import { formatDate } from "@/lib/utils";
@@ -289,25 +290,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
           </Card>
         )}
 
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>{t.users}</CardTitle>
-            <Users className="h-4 w-4 text-slate-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {client.users.map((user) => (
-                <div key={user.id} className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{user.name ?? t.noName}</p>
-                    <p className="text-xs text-slate-400">{user.email}</p>
-                  </div>
-                  <Badge variant="secondary" className="capitalize">{user.role.toLowerCase()}</Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <AdminClientUsersPanel orgId={client.id} users={client.users} />
 
         <Card>
           <CardHeader className="flex-row items-center justify-between">

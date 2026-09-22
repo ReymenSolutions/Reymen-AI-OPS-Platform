@@ -22,6 +22,15 @@ export const strings = {
     settings: "Configuración",
     signOut: "Cerrar sesión",
     aiOps: "AI Ops",
+    menu: "Menú",
+    food: "Food",
+    foodSales: "Ventas",
+    foodInventory: "Inventario",
+    foodRecipes: "Recetas",
+    foodSuppliers: "Proveedores",
+    foodOperations: "Operación",
+    foodAnalytics: "Analítica",
+    smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notificaciones",
@@ -246,6 +255,7 @@ export const strings = {
 
     // ── Admin navigation ──────────────────────────────────────
     adminNavClients: "Clientes",
+    adminNavUsers: "Usuarios",
     adminNavEscalations: "Escalaciones",
     adminNavMetrics: "Métricas",
     adminNavAudit: "Auditoría",
@@ -282,6 +292,7 @@ export const strings = {
     // ── Admin clients ─────────────────────────────────────────
     adminClientsTitle: "Clientes",
     adminOrgsRegistered: "organizaciones registradas",
+    adminUsersRegistered: "usuarios registrados",
     adminNoClients: "Sin clientes aún",
     adminCreateFirstClient: "Crea tu primer cliente para comenzar",
     adminColCompany: "Empresa",
@@ -543,6 +554,15 @@ export const strings = {
     settings: "Settings",
     signOut: "Sign out",
     aiOps: "AI Ops",
+    menu: "Menu",
+    food: "Food",
+    foodSales: "Sales",
+    foodInventory: "Inventory",
+    foodRecipes: "Recipes",
+    foodSuppliers: "Suppliers",
+    foodOperations: "Operations",
+    foodAnalytics: "Analytics",
+    smartcard: "SmartCard",
 
     // ── User menu ────────────────────────────────────────────
     notifications: "Notifications",
@@ -766,6 +786,7 @@ export const strings = {
 
     // ── Admin navigation ──────────────────────────────────────
     adminNavClients: "Clients",
+    adminNavUsers: "Users",
     adminNavEscalations: "Escalations",
     adminNavMetrics: "Metrics",
     adminNavAudit: "Audit",
@@ -802,6 +823,7 @@ export const strings = {
     // ── Admin clients ─────────────────────────────────────────
     adminClientsTitle: "Clients",
     adminOrgsRegistered: "organizations registered",
+    adminUsersRegistered: "users registered",
     adminNoClients: "No clients yet",
     adminCreateFirstClient: "Create your first client to get started",
     adminColCompany: "Company",

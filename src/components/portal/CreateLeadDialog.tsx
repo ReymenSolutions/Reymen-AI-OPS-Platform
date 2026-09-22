@@ -70,7 +70,7 @@ export function CreateLeadDialog() {
             <Input placeholder={lang === "es" ? "María López" : "Jane Doe"} {...register("name")} />
             {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Email</Label>
               <Input type="email" placeholder="maria@email.com" {...register("email")} />

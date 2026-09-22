@@ -130,19 +130,3 @@ export async function updateOrgLogo(logoUrl: string | null) {
   revalidatePath("/admin", "layout");
   return { success: true };
 }
-
-export async function getUserPreferences() {
-  const session = await auth();
-  if (!session?.user.id) return { theme: "light", language: "es", image: null };
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { theme: true, language: true, image: true },
-  });
-
-  return {
-    theme: user?.theme ?? "light",
-    language: user?.language ?? "es",
-    image: user?.image ?? null,
-  };
-}

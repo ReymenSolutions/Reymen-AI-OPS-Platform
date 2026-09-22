@@ -19,6 +19,7 @@ const MODULE_LABEL_ES: Record<PlatformModule, string> = {
   AUTOMATIONS: "Automatizaciones",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
+  FOOD_OPS: "REYMEN Ops Food",
 };
 
 const MODULE_LABEL_EN: Record<PlatformModule, string> = {
@@ -27,11 +28,15 @@ const MODULE_LABEL_EN: Record<PlatformModule, string> = {
   AUTOMATIONS: "Automations",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
+  FOOD_OPS: "REYMEN Ops Food",
 };
 
-// NFC_QR and MARKETING_ADS are reserved for future modules — no functionality
-// exists behind them yet, so they're shown but can't be toggled on here.
-const RESERVED_MODULES: PlatformModule[] = ["NFC_QR", "MARKETING_ADS"];
+// MARKETING_ADS is reserved for a future module — no functionality exists
+// behind it yet, so it's shown but can't be toggled on here. NFC_QR used to
+// be reserved too, but the SmartCard SSO bridge (src/app/(portal)/portal/
+// smartcard/route.ts, gated on requireModule(..., "NFC_QR")) is real and
+// working now — it just needs to be toggle-able here for an admin to grant it.
+const RESERVED_MODULES: PlatformModule[] = ["MARKETING_ADS"];
 
 const STATUS_BADGE_ES: Record<ModuleStatus, { variant: "success" | "secondary" | "destructive"; icon: typeof Check; label: string }> = {
   ACTIVE: { variant: "success", icon: Check, label: "Activo" },

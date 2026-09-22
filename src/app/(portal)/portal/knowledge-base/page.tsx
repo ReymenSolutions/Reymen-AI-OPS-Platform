@@ -9,8 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ArticleDialog } from "@/components/portal/ArticleDialog";
 import { DeleteArticleButton } from "@/components/portal/DeleteArticleButton";
+import { PortalSectionTabs } from "@/components/portal/PortalSectionTabs";
+import { getAiWhatsappTabs } from "@/lib/portal-nav-tabs";
 import { formatDate } from "@/lib/utils";
-import { getServerLang } from "@/lib/i18n-server";
+import { getServerT, getServerLang } from "@/lib/i18n-server";
+import type { UserRole } from "@prisma/client";
 
 async function getArticles(orgId: string) {
   return prisma.knowledgeBase.findMany({
@@ -24,7 +27,7 @@ export default async function KnowledgeBasePage() {
   if (!session?.user.organizationId) return redirect("/login");
   await requireModule(session.user.organizationId, "AI_WHATSAPP");
 
-  const [articles, lang] = await Promise.all([getArticles(session.user.organizationId), getServerLang()]);
+  const [articles, lang, t] = await Promise.all([getArticles(session.user.organizationId), getServerLang(), getServerT()]);
   const activeCount = articles.filter((a) => a.isActive).length;
 
   // Group by category
@@ -42,6 +45,8 @@ export default async function KnowledgeBasePage() {
         description={lang === "es" ? `${articles.length} artículos · ${activeCount} activos` : `${articles.length} articles · ${activeCount} active`}
         actions={<ArticleDialog mode="create" />}
       />
+
+      <PortalSectionTabs tabs={getAiWhatsappTabs(t, session.user.role as UserRole)} />
 
       <div className="mb-4 rounded-lg bg-blue-50 border border-blue-100 p-3">
         <p className="text-sm text-blue-700">

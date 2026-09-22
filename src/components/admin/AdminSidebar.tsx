@@ -19,11 +19,13 @@ import {
   Loader2,
   Webhook,
   Package,
+  UserCog,
+  X,
 } from "lucide-react";
-import { signOut, useSession } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/context/preferences";
-import { updateOrgLogo, updateAvatar, removeAvatar } from "@/actions/profile";
+import { updateOrgLogo } from "@/actions/profile";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -73,6 +75,11 @@ interface AdminSidebarProps {
   personalImageUrl?: string | null;
   /** False for super-admins that have no organization; they manage their personal avatar here instead */
   hasOrganization?: boolean;
+  /** Off-canvas drawer state below `lg:` — controlled by AdminShell.tsx, which
+   * also renders the hamburger toggle in TopBar. No effect at `lg:` and up,
+   * where the sidebar is always visible exactly as before. */
+  mobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
 export function AdminSidebar({
@@ -80,10 +87,11 @@ export function AdminSidebar({
   orgLogoUrl: initialOrgLogoUrl,
   personalImageUrl: initialPersonalImageUrl,
   hasOrganization = false,
+  mobileOpen,
+  onMobileClose,
 }: AdminSidebarProps) {
   const pathname = usePathname();
   const { t, lang } = usePreferences();
-  const { update } = useSession();
 
   const initialImageUrl = hasOrganization ? initialOrgLogoUrl : initialPersonalImageUrl;
 
@@ -96,6 +104,7 @@ export function AdminSidebar({
   const navItems = [
     { href: "/admin/dashboard", label: t.dashboard, icon: LayoutDashboard },
     { href: "/admin/clients", label: t.adminNavClients, icon: Users },
+    { href: "/admin/users", label: t.adminNavUsers, icon: UserCog },
     { href: "/admin/automations", label: t.automations, icon: Zap },
     { href: "/admin/escalations", label: t.adminNavEscalations, icon: AlertTriangle },
     { href: "/admin/requests", label: t.requests, icon: MessageSquare },
@@ -111,13 +120,24 @@ export function AdminSidebar({
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 5MB)" : "Image too large (max 5MB)");
+    // The raw file is only ever read into a canvas and re-encoded at 200x200
+    // below, so this cap just guards against hanging on a huge decode — the
+    // real size limit is updateAvatar()/updateOrgLogo()'s check on the
+    // compressed result. Phone camera photos routinely run 8-15MB, so keep
+    // this high.
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 20MB)" : "Image too large (max 20MB)");
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => {
+      toast.error(lang === "es" ? "No se pudo leer la imagen" : "Could not read the image");
+    };
     reader.onload = (event) => {
       const img = new window.Image();
+      img.onerror = () => {
+        toast.error(lang === "es" ? "Formato de imagen no compatible" : "Unsupported image format");
+      };
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const size = 200;
@@ -139,12 +159,7 @@ export function AdminSidebar({
   function handleSaveLogo() {
     startTransition(async () => {
       try {
-        if (hasOrganization) {
-          await updateOrgLogo(logoUrl || null);
-        } else if (logoUrl) {
-          await updateAvatar(logoUrl);
-          await update({ image: logoUrl });
-        }
+        await updateOrgLogo(logoUrl || null);
         setCurrentLogoUrl(logoUrl || null);
         setLogoDialogOpen(false);
         toast.success(t.success);
@@ -157,12 +172,7 @@ export function AdminSidebar({
   function handleRemoveLogo() {
     startTransition(async () => {
       try {
-        if (hasOrganization) {
-          await updateOrgLogo(null);
-        } else {
-          await removeAvatar();
-          await update({ image: null });
-        }
+        await updateOrgLogo(null);
         setLogoUrl("");
         setCurrentLogoUrl(null);
         setLogoDialogOpen(false);
@@ -189,34 +199,74 @@ export function AdminSidebar({
         overrides in globals.css, the same pattern already used there,
         instead of `dark:` utilities that would silently never apply.
       */}
-      <aside className="sidebar flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950">
-        {/* Logo — always clickable: org logo when the admin has an org, personal avatar otherwise */}
-        <button
-          onClick={() => {
-            setLogoUrl(currentLogoUrl ?? "");
-            setLogoDialogOpen(true);
-          }}
-          className="sidebar-header group flex h-16 items-center border-b border-white/10 px-6 w-full text-left transition-colors hover:bg-white/5 cursor-pointer"
-        >
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <div className="relative flex-shrink-0">
+      {/* Off-canvas backdrop — below `lg:` only, closes the drawer on click */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          "sidebar fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col border-r border-brand-950 bg-gradient-to-b from-brand-900 to-brand-950 transition-transform duration-200 ease-in-out",
+          "lg:static lg:z-auto lg:translate-x-0 lg:transition-none",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        {/* Logo — clickable to change the org logo when the admin has an org;
+            avatar changes for admins without an org live only in the profile
+            menu (TopBar, top right) now, not duplicated here. */}
+        <div className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 transition-colors hover:bg-white/5">
+          {hasOrganization ? (
+            <button
+              onClick={() => {
+                setLogoUrl(currentLogoUrl ?? "");
+                setLogoDialogOpen(true);
+              }}
+              className="group flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+            >
+              <div className="relative flex-shrink-0">
+                {currentLogoUrl ? (
+                  <img src={currentLogoUrl} alt={adminName} className="h-8 w-8 rounded-lg object-cover" />
+                ) : (
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600">
+                    <Zap className="h-4 w-4 text-white" />
+                  </div>
+                )}
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Upload className="h-3 w-3 text-white" />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{adminName}</p>
+                <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">Admin</p>
+              </div>
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               {currentLogoUrl ? (
-                <img src={currentLogoUrl} alt={adminName} className="h-8 w-8 rounded-lg object-cover" />
+                <img src={currentLogoUrl} alt={adminName} className="h-8 w-8 flex-shrink-0 rounded-lg object-cover" />
               ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-brand-600">
                   <Zap className="h-4 w-4 text-white" />
                 </div>
               )}
-              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Upload className="h-3 w-3 text-white" />
+              <div className="min-w-0">
+                <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{adminName}</p>
+                <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">Admin</p>
               </div>
             </div>
-            <div className="min-w-0">
-              <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{adminName}</p>
-              <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">Admin</p>
-            </div>
-          </div>
-        </button>
+          )}
+          <button
+            onClick={onMobileClose}
+            className="ml-2 flex-shrink-0 rounded-md p-1.5 text-brand-100 hover:bg-white/10 hover:text-white transition-colors lg:hidden"
+            aria-label={lang === "es" ? "Cerrar menú" : "Close menu"}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
@@ -227,6 +277,7 @@ export function AdminSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onMobileClose}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
@@ -259,7 +310,7 @@ export function AdminSidebar({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5 text-brand-600" />
-              {hasOrganization ? t.orgLogoTitle : t.changeAvatarTitle}
+              {t.orgLogoTitle}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
