@@ -850,9 +850,15 @@ export function recommendDishPrice(cost: number, targetCostPct: number): number 
 // logFoodDishSales() (captura manual, REEMPLAZA la cantidad del día), aquí
 // cada orden SUMA -- un POS manda una orden a la vez, no un total diario.
 
+export interface FoodPosOrderModifier {
+  optionId: string;
+  quantity: number; // entero != 0; mismo criterio que item.quantity (negativo = cancelación)
+}
+
 export interface FoodPosOrderItem {
   variantId: string;
   quantity: number; // entero != 0; negativo = cancelación/ajuste de una orden previa
+  modifiers?: FoodPosOrderModifier[]; // opcional -- si se omite, no se registra venta de modificadores para este item
 }
 
 export interface FoodPosOrderPayload {
@@ -883,6 +889,14 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
     if (!item?.variantId || typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity === 0) {
       throw new Error("Cada item requiere variantId y quantity entero distinto de 0");
     }
+    if (item.modifiers !== undefined) {
+      if (!Array.isArray(item.modifiers)) throw new Error("modifiers debe ser un arreglo");
+      for (const mod of item.modifiers) {
+        if (!mod?.optionId || typeof mod.quantity !== "number" || !Number.isInteger(mod.quantity) || mod.quantity === 0) {
+          throw new Error("Cada modifier requiere optionId y quantity entero distinto de 0");
+        }
+      }
+    }
   }
 
   const occurredAt = body.occurredAt ? new Date(body.occurredAt) : new Date();
@@ -896,6 +910,20 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
   });
   if (owned.length !== new Set(variantIds).size) {
     throw new Error("Una o más variantes de la orden no pertenecen a esta organización");
+  }
+
+  const modifierEntries = body.items.flatMap((item) => item.modifiers ?? []);
+  const optionIds = modifierEntries.map((m) => m.optionId);
+  let optionNameById = new Map<string, string>();
+  if (optionIds.length > 0) {
+    const owningOptions = await prisma.foodModifierOption.findMany({
+      where: { id: { in: optionIds }, group: { organizationId } },
+      select: { id: true, name: true },
+    });
+    if (owningOptions.length !== new Set(optionIds).size) {
+      throw new Error("Uno o más modificadores de la orden no pertenecen a esta organización");
+    }
+    optionNameById = new Map(owningOptions.map((o) => [o.id, o.name]));
   }
 
   await prisma.$transaction([
@@ -913,6 +941,19 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
         where: { variantId_occurredAt: { variantId: item.variantId, occurredAt: businessDay } },
         update: { quantity: { increment: item.quantity } },
         create: { organizationId, variantId: item.variantId, occurredAt: businessDay, quantity: item.quantity },
+      })
+    ),
+    ...modifierEntries.map((mod) =>
+      prisma.foodModifierOptionSale.upsert({
+        where: { optionId_occurredAt: { optionId: mod.optionId, occurredAt: businessDay } },
+        update: { quantity: { increment: mod.quantity } },
+        create: {
+          organizationId,
+          optionId: mod.optionId,
+          optionName: optionNameById.get(mod.optionId)!,
+          occurredAt: businessDay,
+          quantity: mod.quantity,
+        },
       })
     ),
   ]);

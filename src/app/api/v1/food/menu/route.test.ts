@@ -77,4 +77,62 @@ describe("GET /api/v1/food/menu", () => {
     const res = await GET(makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgB.id}`, { "x-api-key": "some-guess" }));
     expect(res.status).toBe(401);
   });
+
+  describe("ETag / meta.version", () => {
+    it("returns an ETag header and the same value as meta.version", async () => {
+      authMock.mockResolvedValue(null);
+      const res = await GET(makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgA.id}`, { "x-api-key": orgA.n8nWebhookSecret }));
+      const etag = res.headers.get("etag");
+      expect(etag).toBeTruthy();
+      const body = await res.json();
+      expect(etag).toBe(`"${body.meta.version}"`);
+    });
+
+    it("returns 304 with no body when If-None-Match matches the current ETag", async () => {
+      authMock.mockResolvedValue(null);
+      const first = await GET(makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgA.id}`, { "x-api-key": orgA.n8nWebhookSecret }));
+      const etag = first.headers.get("etag")!;
+
+      const second = await GET(
+        makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgA.id}`, { "x-api-key": orgA.n8nWebhookSecret, "if-none-match": etag })
+      );
+      expect(second.status).toBe(304);
+      const text = await second.text();
+      expect(text).toBe("");
+    });
+
+    it("CRITICAL: a delete that doesn't touch the most-recently-modified row still changes the ETag", async () => {
+      // Guards against the exact bug the POS integrator flagged: hashing
+      // max(updatedAt) instead of the response content would leave the
+      // ETag unchanged when an OLDER row (not the most recently modified
+      // one) is deleted, so a cached POS would keep selling something that
+      // no longer exists.
+      const orgC = await createTestOrg("Food Menu Route Org C (etag delete)");
+      await prisma.organizationModule.create({ data: { organizationId: orgC.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+
+      const oldDish = await prisma.foodDish.create({
+        data: { organizationId: orgC.id, name: "Old Dish (deleted later)", variants: { create: [{ organizationId: orgC.id, label: "Único", price: 10 }] } },
+      });
+      // Se toca (actualiza) un platillo DISTINTO más recientemente que oldDish.
+      await prisma.foodDish.update({ where: { id: oldDish.id }, data: {} });
+      const newerDish = await prisma.foodDish.create({
+        data: { organizationId: orgC.id, name: "Newer Dish", variants: { create: [{ organizationId: orgC.id, label: "Único", price: 20 }] } },
+      });
+
+      authMock.mockResolvedValue(null);
+      const before = await GET(makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgC.id}`, { "x-api-key": orgC.n8nWebhookSecret }));
+      const etagBefore = before.headers.get("etag");
+
+      // Borra el platillo MÁS VIEJO -- newerDish sigue siendo el "más reciente".
+      await prisma.foodDish.delete({ where: { id: oldDish.id } });
+
+      const after = await GET(makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgC.id}`, { "x-api-key": orgC.n8nWebhookSecret }));
+      expect(after.status).toBe(200); // nunca debe salir 304 aquí -- el contenido sí cambió
+      const etagAfter = after.headers.get("etag");
+      expect(etagAfter).not.toBe(etagBefore);
+
+      void newerDish;
+      await cleanupOrg(orgC.id);
+    });
+  });
 });

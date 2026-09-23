@@ -105,4 +105,24 @@ describe("POST /api/webhooks/pos/orders", () => {
     const after = await prisma.foodDishSale.findFirst({ where: { variantId } });
     expect(after?.quantity).toBe(quantityBefore);
   });
+
+  it("records a modifier option sale when items include an optional modifiers array", async () => {
+    const group = await prisma.foodModifierGroup.create({
+      data: { organizationId: org.id, name: "Extras (webhook test)", options: { create: [{ name: "Extra queso", priceDelta: 15 }] } },
+      include: { options: true },
+    });
+    const optionId = group.options[0].id;
+
+    const body = JSON.stringify({
+      grossAmount: 40,
+      netAmount: 34.5,
+      items: [{ variantId, quantity: 1, modifiers: [{ optionId, quantity: 1 }] }],
+    });
+    const res = await POST(makeRequest(body, { ...signed(body, org.n8nWebhookSecret), "x-reymen-orgid": org.id }));
+    expect(res.status).toBe(200);
+
+    const modSale = await prisma.foodModifierOptionSale.findFirst({ where: { optionId } });
+    expect(modSale?.quantity).toBe(1);
+    expect(modSale?.optionName).toBe("Extra queso");
+  });
 });

@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
@@ -53,9 +54,27 @@ export async function GET(req: NextRequest) {
   }
 
   const [dishes, categories] = await Promise.all([getFoodMenuForPos(orgId), getFoodDishCategories(orgId)]);
-  return NextResponse.json({
+  const content = {
     data: dishes,
     categories: categories.map((c) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder })),
-    meta: { total: dishes.length },
-  });
+    total: dishes.length,
+  };
+
+  // El hash es del contenido exacto de la respuesta, no de un max(updatedAt)
+  // -- un max(updatedAt) no cambia cuando se borra una fila que no era la
+  // más reciente (ej. una categoría vieja), así que un POS con esa fila en
+  // caché nunca se enteraría del borrado vía 304. El hash de contenido es
+  // exacto por construcción: cualquier cambio real en la respuesta, incluido
+  // un borrado, cambia el hash.
+  const version = createHash("sha256").update(JSON.stringify(content)).digest("hex").slice(0, 32);
+  const etag = `"${version}"`;
+
+  if (req.headers.get("if-none-match") === etag) {
+    return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+  }
+
+  return NextResponse.json(
+    { data: content.data, categories: content.categories, meta: { total: content.total, version } },
+    { headers: { ETag: etag } }
+  );
 }

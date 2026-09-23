@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Technical Documentation
 
-> **Document Version:** 1.3 | **Date:** September 2026 (updated through Fase 17 — Food Ops menu categories/modifiers, POS sales webhook with cancellation support, separate POS read-only key, SmartCard bridge, admin user management, Next.js 16 upgrade)  
+> **Document Version:** 1.4 | **Date:** September 2026 (updated through Fase 17b — Food Ops menu categories/modifiers, POS sales webhook with cancellations, modifier-sale tracking, content-hash ETag/304 caching, separate POS read-only key, SmartCard bridge, admin user management, Next.js 16 upgrade)  
 > **Language:** English/Spanish (technical terms in English, explanations bilingual)  
 > **Audience:** Developers, DevOps, and technical team members
 
@@ -1158,7 +1158,40 @@ guarded by a `window.confirm()` in the UI) — unlike `FoodDish`/`FoodOperatingC
 `isActive` because sales/analytics history references them. Nothing in the analytics pipeline
 references a category or modifier group directly, so a hard delete with `onDelete: SetNull`
 (category) / `Cascade` (the join table) is safe and doesn't need an "inactive categories" filter
-nobody asked for.
+nobody asked for. `FoodModifierOptionSale` (Fase 17b, below) had to respect this same decision
+rather than adding a real FK back to `FoodModifierOption` and reopening the exact problem
+soft-disable was meant to avoid.
+
+**Tracking modifier sales — `FoodModifierOptionSale` (Fase 17b):** the POS webhook (below) can
+optionally report which modifier options were sold with each item, via `items[].modifiers`. This
+closes a real gap: a "Queso extra" modifier adds to the order's `grossAmount`/`netAmount` already,
+but until this, Reymen had no record that it was sold at all — no popularity data, and no future
+path to deducting its ingredients or costing it once that linkage exists (still out of scope, see
+above). The model:
+
+```prisma
+model FoodModifierOptionSale {
+  id             String   @id @default(cuid())
+  organizationId String
+  optionId       String   // sin FK -- ver el párrafo de arriba
+  optionName     String   // foto del nombre al momento de la venta
+  occurredAt     DateTime @default(now())
+  quantity       Int
+
+  @@unique([optionId, occurredAt])
+}
+```
+
+`optionId` is a plain string, not a relation — `FoodModifierOption` is one of the two entities in
+this module that's actually hard-deleted, so a real FK with `onDelete: Cascade` would silently
+destroy this sales history the day someone deletes the option, and `onDelete: SetNull` would leave
+rows nobody could attribute to anything. `optionName` is captured once, at the moment of sale, so
+a report stays legible even after the option is renamed or deleted later — the same reasoning
+`AuditLog.metadata` snapshots use elsewhere in this codebase. `processFoodPosOrder()` validates
+every `optionId` in the payload belongs to the calling org (via `option.group.organizationId`)
+before writing anything, same ownership check as `variantId`, and upserts with the same
+increment-not-replace semantics as `FoodDishSale` — including accepting a negative `quantity` for
+a cancellation.
 
 **Why `FoodDishSale` is separate from `FoodSale`:** `FoodSale` (Phase 1) is still the only real
 source for total daily revenue. `FoodDishSale` is an *optional, additive* daily log of "how many
@@ -1685,10 +1718,19 @@ instead of `"n8n"`, since it isn't one.
   "grossAmount": 250,
   "netAmount": 215.52,
   "items": [
-    { "variantId": "cuid_of_a_FoodDishVariant", "quantity": 2 }
+    {
+      "variantId": "cuid_of_a_FoodDishVariant",
+      "quantity": 2,
+      "modifiers": [{ "optionId": "cuid_of_a_FoodModifierOption", "quantity": 2 }]
+    }
   ]
 }
 ```
+
+`items[].modifiers` is optional (Fase 17b) — omit it entirely if the POS doesn't track which
+modifier options were sold. Each entry needs a nonzero integer `quantity`, same rule as the item's
+own `quantity` (negative for a cancellation). See `FoodModifierOptionSale` (§4) for what this
+feeds and why it isn't a real foreign key to `FoodModifierOption`.
 
 **`grossAmount` vs `netAmount`:** `grossAmount` is the amount actually charged to the customer
 (what's on the ticket, tax included, tip excluded). `netAmount` is that same amount **without
@@ -1705,9 +1747,12 @@ fields — this isn't a POS-specific rule.
   other validation failure, see below).
 - Validates every `variantId` belongs to the calling organization before writing anything —
   an order referencing another org's variant is rejected whole, not partially applied.
+- Validates every `modifiers[].optionId` belongs to the calling organization the same way, before
+  writing anything.
 - In one `$transaction`: creates a `FoodSale` row (so this order also counts toward the existing
-  daily-revenue totals) and **upserts** each `FoodDishSale` row with
-  `quantity: { increment: item.quantity }` instead of a flat replace.
+  daily-revenue totals), **upserts** each `FoodDishSale` row with
+  `quantity: { increment: item.quantity }` instead of a flat replace, and does the same
+  increment-upsert into `FoodModifierOptionSale` for every modifier reported.
 
 **Why this accumulates instead of replacing (unlike manual entry):** `logFoodDishSales()` (the
 portal's own daily units-sold form, §10) intentionally **replaces** the day's quantity on
@@ -2120,9 +2165,24 @@ x-api-key: {ORG_N8N_WEBHOOK_SECRET}
     }
   ],
   "categories": [{ "id": "string", "name": "Bebidas", "sortOrder": 0 }],
-  "meta": { "total": 1 }
+  "meta": { "total": 1, "version": "a1b2c3..." }
 }
 ```
+
+**Caching (`meta.version` + `ETag`/`304`, Fase 17b):** the response carries an `ETag` header, and
+`meta.version` is that same value unquoted. Both are a SHA-256 hash (truncated to 32 hex chars)
+of the exact response content (`data`+`categories`+`total`) — **not** a `max(updatedAt)` across
+the underlying rows. That distinction matters: an integrator originally proposed hashing
+`updatedAt`, but a hard delete of a row that wasn't the most recently modified one (an old,
+untouched category, for instance) never changes that maximum, so a cached `304` would keep the
+menu showing something that no longer exists. Hashing the actual serialized content is exact by
+construction — any change the response would reflect, deletions included, changes the hash.
+Send the previous response's `ETag` back as `If-None-Match` on the next request; a match returns
+`304` with an empty body (still with the `ETag` header set), a miss returns the full `200`
+payload with a new one. There is no delta/incremental sync — a changed `ETag` means re-fetch the
+whole menu, which was a deliberate choice over incremental sync (see §17 Key Patterns) once it
+became clear that `FoodModifierGroup`/`FoodDishCategory` are genuinely hard-deleted (§4), so
+there's no changelog a delta could be computed against without adding one.
 
 ---
 
@@ -3506,6 +3566,22 @@ they share one consumer (§4 "POS integration").
   surface only. The actual POS application is a separate codebase; verifying the full request
   lifecycle (POS UI → this webhook → `FoodDishSale`/`FoodSale`) happens once that project can
   make real HTTP calls against a deployed instance, not from this repo's test suite.
+
+**Fase 17b — refinements requested once the POS side actually integrated (§4, §7, §9):**
+building against the real contract surfaced gaps a spec review alone wouldn't have: `netAmount`'s
+exact definition (without IVA, never "minus discounts") needed to be stated explicitly rather than
+left to a plausible-looking example that turned out inconsistent with any real tax rate; order
+cancellations needed *some* mechanism, resolved as negative quantities on the same webhook rather
+than a second endpoint; a POS **device** needed a way to read the menu without holding the secret
+that can also sign orders, hence `Organization.foodPosReadKey` as a second, narrower-scoped key;
+the naive `max(updatedAt)` approach originally floated for `ETag`/`304` caching turned out to miss
+deletions of a row that isn't the most-recently-modified one, so `GET /api/v1/food/menu` hashes
+the actual response content instead — exact by construction; and modifier option sales
+(`FoodModifierOptionSale`) needed their own table specifically *because* `FoodModifierOption` is
+hard-deleted (§4) — the one case in this phase where "just add a foreign key" would have silently
+undone the soft-disable design decision two paragraphs up. The pattern across all five: a
+production integration finds edge cases a written spec doesn't, and each one got resolved by
+extending the existing design rather than bolting on a special case.
 
 ---
 

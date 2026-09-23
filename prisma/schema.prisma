@@ -44,39 +44,40 @@ model Organization {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
-  users                 User[]
-  leads                 Lead[]
-  automations           Automation[]
-  conversations         Conversation[]
-  appointments          Appointment[]
-  requests              Request[]
-  metrics               Metric[]
-  auditLogs             AuditLog[]
-  webhookEvents         WebhookEvent[]
-  whatsappAssistant     WhatsAppAssistant?
-  knowledgeBase         KnowledgeBase[]
-  prompts               Prompt[]
-  templateInstallations TemplateInstallation[]
-  modules               OrganizationModule[]
-  pipelineStages        PipelineStage[]
-  opportunities         Opportunity[]
-  notes                 Note[]
-  services              Service[]
-  availabilityRules     AvailabilityRule[]
-  reminderRules         AppointmentReminderRule[]
-  followUpRules         FollowUpRule[]
-  aiSandboxSessions     AiSandboxSession[]
-  promptTestCases       PromptTestCase[]
-  promptExperiments     PromptExperiment[]
-  foodSales             FoodSale[]
-  foodInventoryItems    FoodInventoryItem[]
-  foodSuppliers         FoodSupplier[]
-  foodDishes            FoodDish[]
-  foodDishCategories    FoodDishCategory[]
-  foodDishVariants      FoodDishVariant[]
-  foodDishSales         FoodDishSale[]
-  foodOperatingCosts    FoodOperatingCost[]
-  foodModifierGroups    FoodModifierGroup[]
+  users                   User[]
+  leads                   Lead[]
+  automations             Automation[]
+  conversations           Conversation[]
+  appointments            Appointment[]
+  requests                Request[]
+  metrics                 Metric[]
+  auditLogs               AuditLog[]
+  webhookEvents           WebhookEvent[]
+  whatsappAssistant       WhatsAppAssistant?
+  knowledgeBase           KnowledgeBase[]
+  prompts                 Prompt[]
+  templateInstallations   TemplateInstallation[]
+  modules                 OrganizationModule[]
+  pipelineStages          PipelineStage[]
+  opportunities           Opportunity[]
+  notes                   Note[]
+  services                Service[]
+  availabilityRules       AvailabilityRule[]
+  reminderRules           AppointmentReminderRule[]
+  followUpRules           FollowUpRule[]
+  aiSandboxSessions       AiSandboxSession[]
+  promptTestCases         PromptTestCase[]
+  promptExperiments       PromptExperiment[]
+  foodSales               FoodSale[]
+  foodInventoryItems      FoodInventoryItem[]
+  foodSuppliers           FoodSupplier[]
+  foodDishes              FoodDish[]
+  foodDishCategories      FoodDishCategory[]
+  foodDishVariants        FoodDishVariant[]
+  foodDishSales           FoodDishSale[]
+  foodOperatingCosts      FoodOperatingCost[]
+  foodModifierGroups      FoodModifierGroup[]
+  foodModifierOptionSales FoodModifierOptionSale[]
 
   @@index([slug])
 }
@@ -1285,6 +1286,37 @@ model FoodDishModifierGroup {
   @@unique([dishId, groupId])
   @@index([dishId])
   @@index([groupId])
+}
+
+// Cuántas veces se vendió cada opción de modificador (Fase 17b: el POS
+// manda un `modifiers: [{optionId, quantity}]` opcional por item de orden).
+// A propósito NO tiene una relación real (FK) a FoodModifierOption: esa
+// entidad SÍ se borra físicamente (a diferencia de FoodDish/FoodDishVariant,
+// que solo se desactivan) -- un FK con onDelete: Cascade aquí destruiría
+// este historial de ventas el día que alguien borre la opción, justo el
+// problema que el soft-disable evita en el resto del módulo. En vez de
+// eso, optionId es un string suelto y optionName es una foto del nombre al
+// momento de la venta, para que el reporte siga siendo legible aunque la
+// opción ya no exista. Sin costo de insumo todavía -- mismo alcance que
+// FoodModifierOption, es insumo para un futuro costeo de modificadores,
+// no lo resuelve por sí sola.
+model FoodModifierOptionSale {
+  id             String   @id @default(cuid())
+  organizationId String
+  optionId       String
+  optionName     String
+  // Mismo criterio de "día de negocio" que FoodDishSale.occurredAt, y la
+  // misma semántica de acumulación por parte del webhook del POS (suma,
+  // no reemplaza) -- ver el comentario en FoodDishSale.
+  occurredAt     DateTime @default(now())
+  quantity       Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([optionId, occurredAt])
+  @@index([organizationId, occurredAt])
 }
 
 model FoodOperatingCost {

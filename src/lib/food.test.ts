@@ -618,6 +618,86 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       const revenueAgg = await prisma.foodSale.aggregate({ where: { organizationId: org.id }, _sum: { netAmount: true } });
       expect(Number(revenueAgg._sum.netAmount)).toBe(0);
     });
+
+    async function makeModifierOption(orgId: string, groupName: string, optionName: string) {
+      const group = await prisma.foodModifierGroup.create({
+        data: { organizationId: orgId, name: groupName, options: { create: [{ name: optionName, priceDelta: 10 }] } },
+        include: { options: true },
+      });
+      return group.options[0];
+    }
+
+    it("records a modifier option sale and accumulates it across orders", async () => {
+      org = await createTestOrg("Food Pos Order Modifiers Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+      const option = await makeModifierOption(org.id, "Extras", "Queso extra");
+
+      await processFoodPosOrder(
+        { grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 1, modifiers: [{ optionId: option.id, quantity: 1 }] }] },
+        org.id
+      );
+      await processFoodPosOrder(
+        { grossAmount: 100, netAmount: 90, items: [{ variantId: variant.id, quantity: 1, modifiers: [{ optionId: option.id, quantity: 2 }] }] },
+        org.id
+      );
+
+      const sale = await prisma.foodModifierOptionSale.findFirst({ where: { optionId: option.id } });
+      expect(sale?.quantity).toBe(3);
+      expect(sale?.optionName).toBe("Queso extra");
+    });
+
+    it("keeps the modifier sale's snapshot name after the option is later deleted", async () => {
+      org = await createTestOrg("Food Pos Order Modifier Delete Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+      const option = await makeModifierOption(org.id, "Término", "Bien cocido");
+
+      await processFoodPosOrder(
+        { grossAmount: 50, netAmount: 43, items: [{ variantId: variant.id, quantity: 1, modifiers: [{ optionId: option.id, quantity: 1 }] }] },
+        org.id
+      );
+
+      // Borrar el grupo hace cascade sobre FoodModifierOption -- pero
+      // FoodModifierOptionSale no tiene FK a esa tabla a propósito, así que
+      // debe sobrevivir con su nombre ya capturado.
+      await prisma.foodModifierGroup.delete({ where: { id: option.groupId } });
+
+      const sale = await prisma.foodModifierOptionSale.findFirst({ where: { optionId: option.id } });
+      expect(sale).not.toBeNull();
+      expect(sale?.optionName).toBe("Bien cocido");
+    });
+
+    it("rejects an order whose modifier option belongs to another organization", async () => {
+      org = await createTestOrg("Food Pos Order Modifier Cross Org");
+      const otherOrg = await createTestOrg("Food Pos Order Modifier Other Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+      const foreignOption = await makeModifierOption(otherOrg.id, "Extras", "Tocino");
+
+      await expect(
+        processFoodPosOrder(
+          { grossAmount: 50, netAmount: 43, items: [{ variantId: variant.id, quantity: 1, modifiers: [{ optionId: foreignOption.id, quantity: 1 }] }] },
+          org.id
+        )
+      ).rejects.toThrow(/modificadores de la orden no pertenecen a esta organización/);
+
+      await cleanupOrg(otherOrg.id);
+    });
+
+    it("rejects a modifier with a zero or non-integer quantity", async () => {
+      org = await createTestOrg("Food Pos Order Modifier Invalid Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+      const option = await makeModifierOption(org.id, "Extras", "Aguacate");
+
+      await expect(
+        processFoodPosOrder(
+          { grossAmount: 50, netAmount: 43, items: [{ variantId: variant.id, quantity: 1, modifiers: [{ optionId: option.id, quantity: 0 }] }] },
+          org.id
+        )
+      ).rejects.toThrow(/Cada modifier requiere/);
+    });
   });
 });
 
