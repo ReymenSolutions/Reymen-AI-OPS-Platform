@@ -912,6 +912,17 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
     throw new Error("Una o más variantes de la orden no pertenecen a esta organización");
   }
 
+  // A diferencia de variantId (el platillo que se vendió -- si no existe,
+  // se rechaza la orden completa), un optionId de modificador que ya no
+  // existe o fue borrado de esta organización NO tira la orden: solo se
+  // ignora esa entrada. El caso real es un POS con el menú en caché
+  // desactualizado (justo lo que el ETag de GET /api/v1/food/menu busca
+  // reducir, pero nunca lo elimina del todo); tirar toda la orden por un
+  // modificador obsoleto perdería el platillo y el ingreso real por algo
+  // que ni siquiera afecta el monto cobrado (el precio ya viene sumado en
+  // grossAmount/netAmount). Sin el nombre de la opción rechazada no hay
+  // forma de registrar ese modificador -- el payload no lo trae -- así que
+  // simplemente se descarta.
   const modifierEntries = body.items.flatMap((item) => item.modifiers ?? []);
   const optionIds = modifierEntries.map((m) => m.optionId);
   let optionNameById = new Map<string, string>();
@@ -920,11 +931,9 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
       where: { id: { in: optionIds }, group: { organizationId } },
       select: { id: true, name: true },
     });
-    if (owningOptions.length !== new Set(optionIds).size) {
-      throw new Error("Uno o más modificadores de la orden no pertenecen a esta organización");
-    }
     optionNameById = new Map(owningOptions.map((o) => [o.id, o.name]));
   }
+  const recognizedModifierEntries = modifierEntries.filter((m) => optionNameById.has(m.optionId));
 
   await prisma.$transaction([
     prisma.foodSale.create({
@@ -943,7 +952,7 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
         create: { organizationId, variantId: item.variantId, occurredAt: businessDay, quantity: item.quantity },
       })
     ),
-    ...modifierEntries.map((mod) =>
+    ...recognizedModifierEntries.map((mod) =>
       prisma.foodModifierOptionSale.upsert({
         where: { optionId_occurredAt: { optionId: mod.optionId, occurredAt: businessDay } },
         update: { quantity: { increment: mod.quantity } },

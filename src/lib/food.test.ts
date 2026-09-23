@@ -668,21 +668,54 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       expect(sale?.optionName).toBe("Bien cocido");
     });
 
-    it("rejects an order whose modifier option belongs to another organization", async () => {
+    it("silently drops a modifier option that belongs to another organization, without rejecting the order", async () => {
       org = await createTestOrg("Food Pos Order Modifier Cross Org");
       const otherOrg = await createTestOrg("Food Pos Order Modifier Other Org");
       await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
       const variant = await makePosDish(org.id);
       const foreignOption = await makeModifierOption(otherOrg.id, "Extras", "Tocino");
 
-      await expect(
-        processFoodPosOrder(
-          { grossAmount: 50, netAmount: 43, items: [{ variantId: variant.id, quantity: 1, modifiers: [{ optionId: foreignOption.id, quantity: 1 }] }] },
-          org.id
-        )
-      ).rejects.toThrow(/modificadores de la orden no pertenecen a esta organización/);
+      await processFoodPosOrder(
+        { grossAmount: 50, netAmount: 43, items: [{ variantId: variant.id, quantity: 1, modifiers: [{ optionId: foreignOption.id, quantity: 1 }] }] },
+        org.id
+      );
+
+      const dishSale = await prisma.foodDishSale.findFirst({ where: { variantId: variant.id } });
+      expect(dishSale?.quantity).toBe(1);
+      const modSale = await prisma.foodModifierOptionSale.findFirst({ where: { optionId: foreignOption.id } });
+      expect(modSale).toBeNull();
 
       await cleanupOrg(otherOrg.id);
+    });
+
+    it("drops only the unrecognized modifier and keeps the recognized ones in the same order", async () => {
+      org = await createTestOrg("Food Pos Order Modifier Partial Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const variant = await makePosDish(org.id);
+      const validOption = await makeModifierOption(org.id, "Extras", "Queso extra");
+
+      await processFoodPosOrder(
+        {
+          grossAmount: 50,
+          netAmount: 43,
+          items: [
+            {
+              variantId: variant.id,
+              quantity: 1,
+              modifiers: [
+                { optionId: validOption.id, quantity: 1 },
+                { optionId: "cmnonexistentoptionid00000000", quantity: 1 },
+              ],
+            },
+          ],
+        },
+        org.id
+      );
+
+      const validSale = await prisma.foodModifierOptionSale.findFirst({ where: { optionId: validOption.id } });
+      expect(validSale?.quantity).toBe(1);
+      const missingSale = await prisma.foodModifierOptionSale.findFirst({ where: { optionId: "cmnonexistentoptionid00000000" } });
+      expect(missingSale).toBeNull();
     });
 
     it("rejects a modifier with a zero or non-integer quantity", async () => {

@@ -1,6 +1,6 @@
 # Reymen AI OPS Platform — Technical Documentation
 
-> **Document Version:** 1.4 | **Date:** September 2026 (updated through Fase 17b — Food Ops menu categories/modifiers, POS sales webhook with cancellations, modifier-sale tracking, content-hash ETag/304 caching, separate POS read-only key, SmartCard bridge, admin user management, Next.js 16 upgrade)  
+> **Document Version:** 1.5 | **Date:** September 2026 (updated through Fase 17c — Food Ops menu categories/modifiers, POS sales webhook with cancellations, lenient modifier-option validation, modifier-sale tracking, content-hash ETag/304 caching, separate POS read-only key, SmartCard bridge, admin user management, Next.js 16 upgrade)  
 > **Language:** English/Spanish (technical terms in English, explanations bilingual)  
 > **Audience:** Developers, DevOps, and technical team members
 
@@ -1187,11 +1187,14 @@ this module that's actually hard-deleted, so a real FK with `onDelete: Cascade` 
 destroy this sales history the day someone deletes the option, and `onDelete: SetNull` would leave
 rows nobody could attribute to anything. `optionName` is captured once, at the moment of sale, so
 a report stays legible even after the option is renamed or deleted later — the same reasoning
-`AuditLog.metadata` snapshots use elsewhere in this codebase. `processFoodPosOrder()` validates
-every `optionId` in the payload belongs to the calling org (via `option.group.organizationId`)
-before writing anything, same ownership check as `variantId`, and upserts with the same
-increment-not-replace semantics as `FoodDishSale` — including accepting a negative `quantity` for
-a cancellation.
+`AuditLog.metadata` snapshots use elsewhere in this codebase. `processFoodPosOrder()` checks every
+`optionId` in the payload against the calling org (via `option.group.organizationId`), but —
+**unlike `variantId`** — an unrecognized one is silently dropped from that item instead of
+rejecting the whole order (Fase 17c, §7): the realistic cause is a POS with a stale cached menu,
+and losing the entire dish sale over a modifier the customer's charge already accounts for would
+be a worse outcome than just not logging that one modifier's popularity. Recognized modifiers
+upsert with the same increment-not-replace semantics as `FoodDishSale` — including accepting a
+negative `quantity` for a cancellation.
 
 **Why `FoodDishSale` is separate from `FoodSale`:** `FoodSale` (Phase 1) is still the only real
 source for total daily revenue. `FoodDishSale` is an *optional, additive* daily log of "how many
@@ -1746,13 +1749,23 @@ fields — this isn't a POS-specific rule.
 - Requires `FOOD_OPS` to be enabled for the org (throws otherwise — the same 422 path as any
   other validation failure, see below).
 - Validates every `variantId` belongs to the calling organization before writing anything —
-  an order referencing another org's variant is rejected whole, not partially applied.
-- Validates every `modifiers[].optionId` belongs to the calling organization the same way, before
-  writing anything.
+  an order referencing another org's variant is rejected whole, not partially applied. This one
+  stays strict on purpose: it's the actual product sold, and the money in `grossAmount`/
+  `netAmount` is already tied to it.
+- `modifiers[].optionId` is handled differently, **on purpose**: an option that doesn't exist or
+  belongs to another organization is silently dropped from that item instead of rejecting the
+  whole order (Fase 17c). The payload shape is still validated strictly (a non-string `optionId`
+  or a zero/non-integer `quantity` still throws) — only the *existence* check is lenient. The
+  realistic trigger is a POS with a stale cached menu (an admin renamed or deleted a modifier
+  option in Reymen after the POS last fetched `GET /api/v1/food/menu`); rejecting the entire order
+  over that would also lose the real dish sale and revenue it carries, over something that doesn't
+  even change the amount charged (the modifier's price is already folded into `grossAmount`).
+  There's no name to fall back to for a dropped modifier — the payload only carries `optionId`,
+  not a label — so it's dropped, not recorded under a placeholder.
 - In one `$transaction`: creates a `FoodSale` row (so this order also counts toward the existing
   daily-revenue totals), **upserts** each `FoodDishSale` row with
   `quantity: { increment: item.quantity }` instead of a flat replace, and does the same
-  increment-upsert into `FoodModifierOptionSale` for every modifier reported.
+  increment-upsert into `FoodModifierOptionSale` for every *recognized* modifier.
 
 **Why this accumulates instead of replacing (unlike manual entry):** `logFoodDishSales()` (the
 portal's own daily units-sold form, §10) intentionally **replaces** the day's quantity on
@@ -3582,6 +3595,14 @@ hard-deleted (§4) — the one case in this phase where "just add a foreign key"
 undone the soft-disable design decision two paragraphs up. The pattern across all five: a
 production integration finds edge cases a written spec doesn't, and each one got resolved by
 extending the existing design rather than bolting on a special case.
+
+**Fase 17c — one more, caught the same way:** the POS side noticed their own retry logic for a
+rejected order stripped out *all* modifiers, including valid ones, because there was no way to
+tell which `optionId` had been rejected. The actual fix belonged on the Reymen side: an
+unrecognized `modifiers[].optionId` (stale POS cache after an admin edits the modifier catalog) now
+gets silently dropped instead of failing the whole order (§7) — `variantId` stays strict, since
+that's the real product and money. The general lesson repeats: don't make the caller work around
+a validation choice when relaxing that one specific check is both safe and simpler for everyone.
 
 ---
 
