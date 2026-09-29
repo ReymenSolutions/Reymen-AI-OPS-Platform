@@ -2,11 +2,19 @@
 
 import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
+import QRCode from "qrcode";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSmartcardAdminClient } from "@/lib/smartcard-supabase";
-import { resolveSmartcardMembership } from "@/lib/smartcard-company";
+import { resolveSmartcardMembership, buildSmartcardPublicUrl } from "@/lib/smartcard-company";
 import { inviteTeamMember } from "@/actions/team";
+
+// Owner/admin/manager can edit a company's own cards and download their QR
+// — widened from owner/admin-only (2026-09-29, explicit ask: a manager
+// shouldn't have to wait on the owner or Reymen for something this
+// routine). Team invites (inviteSmartcardTeamMember below) intentionally
+// keep the narrower owner/admin-only scope — that decision wasn't revisited.
+const CARD_MANAGEMENT_ROLES = ["owner", "admin", "manager"];
 
 // Roles that can be assigned from this form — mirrors reymen-smartcard's
 // apps/ops/app/settings/actions.ts on purpose: "owner" is excluded there
@@ -268,10 +276,7 @@ export async function updateSmartcardCardDestination(
     if (!result.ok) {
       throw new Error("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
     }
-    // Same scope as inviteSmartcardTeamMember above: only owner/admin — a
-    // "cliente" here means Villa Gardenia's own management, not every
-    // staff/agent seat, matching the existing invite-permission precedent.
-    if (!["owner", "admin"].includes(result.membership.roleCode)) {
+    if (!CARD_MANAGEMENT_ROLES.includes(result.membership.roleCode)) {
       throw new Error("No tienes permiso para editar tarjetas.");
     }
 
@@ -333,5 +338,66 @@ export async function updateSmartcardCardDestination(
       console.error("[smartcard/actions] Error actualizando card:", updateError.message);
       throw new Error("No se pudo guardar el cambio. Intenta de nuevo.");
     }
+  }
+}
+
+export type SmartcardCardQrResult =
+  | { success: true; dataUrl: string; url: string }
+  | { success: false; error: string };
+
+/**
+ * Generates a downloadable QR (PNG data URL) for a card's public scan URL
+ * — buildSmartcardPublicUrl (link.reymen.mx/q/{card_code}), confirmed
+ * 2026-09-29 against a real live card. Same company-scoping check as
+ * updateSmartcardCardDestination (cardId is client input on the unscoped
+ * service-role client — never skip the clients!inner(company_id) join),
+ * same CARD_MANAGEMENT_ROLES permission.
+ */
+export async function getSmartcardCardQrCode(cardId: string): Promise<SmartcardCardQrResult> {
+  try {
+    const session = await auth();
+    if (!session?.user.organizationId || !session.user.email) {
+      throw new Error("Sesión inválida.");
+    }
+
+    const result = await resolveSmartcardMembership(session.user.organizationId, session.user.email);
+    if (!result.ok) {
+      throw new Error("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
+    }
+    if (!CARD_MANAGEMENT_ROLES.includes(result.membership.roleCode)) {
+      throw new Error("No tienes permiso para descargar el QR de esta tarjeta.");
+    }
+
+    const supabase = getSmartcardAdminClient();
+    if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+
+    const { data: card, error: cardError } = await supabase
+      .from("cards")
+      .select("id, card_code, clients!inner(company_id)")
+      .eq("id", cardId)
+      .is("deleted_at", null)
+      .maybeSingle<{ id: string; card_code: string | null; clients: { company_id: string } }>();
+
+    if (cardError) {
+      console.error("[smartcard/actions] Error buscando card para QR:", cardError.message);
+      throw new Error("No se pudo cargar la tarjeta. Intenta de nuevo.");
+    }
+    if (!card || card.clients.company_id !== result.membership.companyId) {
+      throw new Error("Esa tarjeta no pertenece a tu empresa.");
+    }
+    if (!card.card_code) {
+      throw new Error("Esta tarjeta todavía no tiene un código asignado.");
+    }
+
+    const url = buildSmartcardPublicUrl(card.card_code);
+    const dataUrl = await QRCode.toDataURL(url, { margin: 1, width: 512 });
+
+    return { success: true, dataUrl, url };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo generar el QR. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] getSmartcardCardQrCode falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
   }
 }

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Loader2, CreditCard, Users, Activity, Pencil } from "lucide-react";
+import { Loader2, CreditCard, Users, Activity, Pencil, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,11 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { usePreferences } from "@/context/preferences";
-import { inviteSmartcardTeamMember, updateSmartcardCardDestination } from "@/actions/portal/smartcard";
+import {
+  inviteSmartcardTeamMember,
+  updateSmartcardCardDestination,
+  getSmartcardCardQrCode,
+} from "@/actions/portal/smartcard";
 import {
   EVENT_TYPE_LABELS_ES,
   type SmartcardMembership,
@@ -140,10 +144,11 @@ export function SmartcardPanel({
   const [isPending, startTransition] = useTransition();
 
   const canManageTeam = ["owner", "admin"].includes(membership.roleCode);
-  // Same permission scope as inviting team members — editing a card is a
-  // company-management action, not a per-person one (cards represent spots
-  // like "Recepción" or "Mesa 1", not individual staff logins).
-  const canEditCards = canManageTeam;
+  // Wider than team invites on purpose (2026-09-29): a manager shouldn't
+  // have to wait on the owner or Reymen for something this routine — cards
+  // represent spots like "Recepción" or "Mesa 1", not individual logins,
+  // so there's no per-person ownership to restrict this to either.
+  const canEditCards = ["owner", "admin", "manager"].includes(membership.roleCode);
   const [editingCard, setEditingCard] = useState<CardStatsEntry | null>(null);
   const [editType, setEditType] = useState("");
   const [editUrl, setEditUrl] = useState("");
@@ -168,6 +173,31 @@ export function SmartcardPanel({
       toast.success(lang === "es" ? "Tarjeta actualizada." : "Card updated.");
       setEditingCard(null);
     });
+  }
+
+  const [downloadingQrCardId, setDownloadingQrCardId] = useState<string | null>(null);
+
+  async function handleDownloadQr(c: CardStatsEntry) {
+    setDownloadingQrCardId(c.cardId);
+    try {
+      const result = await getSmartcardCardQrCode(c.cardId);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      // Trigger a browser download of the generated PNG data URL — no
+      // extra round trip needed, the data: URL itself is the file.
+      const link = document.createElement("a");
+      link.href = result.dataUrl;
+      link.download = `${c.cardCode}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      toast.error(lang === "es" ? "No se pudo generar el QR" : "Couldn't generate the QR");
+    } finally {
+      setDownloadingQrCardId(null);
+    }
   }
   const seatCount = roster.filter((m) => m.status === "invited" || m.status === "active").length;
   const maxTeamMembers = membership.limits.smartcard?.max_team_members as number | undefined;
@@ -323,15 +353,31 @@ export function SmartcardPanel({
                           </td>
                           {canEditCards && (
                             <td className="py-2 text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                onClick={() => openEditCard(c)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                                {lang === "es" ? "Editar" : "Edit"}
-                              </Button>
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                  onClick={() => openEditCard(c)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  {lang === "es" ? "Editar" : "Edit"}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                  disabled={downloadingQrCardId === c.cardId}
+                                  onClick={() => handleDownloadQr(c)}
+                                >
+                                  {downloadingQrCardId === c.cardId ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <QrCode className="h-3.5 w-3.5" />
+                                  )}
+                                  QR
+                                </Button>
+                              </div>
                             </td>
                           )}
                         </tr>

@@ -217,6 +217,18 @@ export interface CardStatsEntry {
   lastActivityAt: string | null;
 }
 
+/**
+ * The public scan URL a card's printed/digital QR encodes — confirmed
+ * 2026-09-29 against a real live card (REY-000007, Villa Gardenia's main
+ * profile, screenshot from the user's own browser):
+ * https://link.reymen.mx/q/{card_code}. Centralized here so QR generation
+ * and anything else needing it share one source of truth for the
+ * domain/path, instead of guessing it again in each caller.
+ */
+export function buildSmartcardPublicUrl(cardCode: string): string {
+  return `https://link.reymen.mx/q/${encodeURIComponent(cardCode)}`;
+}
+
 export interface DestinationTypeOption {
   code: string;
   label: string;
