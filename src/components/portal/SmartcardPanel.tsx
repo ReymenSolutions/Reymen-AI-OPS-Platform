@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { usePreferences } from "@/context/preferences";
+import { SmartcardProfileDialog } from "@/components/portal/SmartcardProfileDialog";
 import {
   inviteSmartcardTeamMember,
   updateSmartcardCardDestination,
@@ -175,6 +176,14 @@ export function SmartcardPanel({
     });
   }
 
+  // A card whose destination is the rich PROFILE type gets a separate
+  // "Editar perfil" flow (SmartcardProfileDialog) instead of the
+  // destination-type+URL dialog above — that dialog still exists and still
+  // works for simple redirect-only cards (WHATSAPP, MAPS, etc.), it just
+  // can't be used to switch a card INTO or edit the content of a profile
+  // (see updateSmartcardCardDestination's own guard on requiresProfile).
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+
   const [downloadingQrCardId, setDownloadingQrCardId] = useState<string | null>(null);
 
   async function handleDownloadQr(c: CardStatsEntry) {
@@ -330,58 +339,73 @@ export function SmartcardPanel({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {cardStats.cards.map((c) => (
-                        <tr key={c.cardId}>
-                          <td className="py-2 pr-3 font-mono text-xs text-slate-700">{c.cardCode}</td>
-                          <td className="py-2 pr-3 text-slate-600">{c.clientName}</td>
-                          <td className="py-2 pr-3">
-                            <Badge variant="secondary" className="text-xs">
-                              {c.status}
-                            </Badge>
-                          </td>
-                          <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
-                          <td className="py-2 pr-3 text-slate-500">
-                            {c.lastActivityAt
-                              ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                })
-                              : lang === "es"
-                                ? "Sin actividad"
-                                : "No activity"}
-                          </td>
-                          {canEditCards && (
-                            <td className="py-2 text-right">
-                              <div className="flex justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                  onClick={() => openEditCard(c)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                  {lang === "es" ? "Editar" : "Edit"}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                  disabled={downloadingQrCardId === c.cardId}
-                                  onClick={() => handleDownloadQr(c)}
-                                >
-                                  {downloadingQrCardId === c.cardId ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <QrCode className="h-3.5 w-3.5" />
-                                  )}
-                                  QR
-                                </Button>
-                              </div>
+                      {cardStats.cards.map((c) => {
+                        const isProfileCard = c.destinationType === "PROFILE" && !!c.profileId;
+                        return (
+                          <tr key={c.cardId}>
+                            <td className="py-2 pr-3 font-mono text-xs text-slate-700">{c.cardCode}</td>
+                            <td className="py-2 pr-3 text-slate-600">{c.clientName}</td>
+                            <td className="py-2 pr-3">
+                              <Badge variant="secondary" className="text-xs">
+                                {c.status}
+                              </Badge>
                             </td>
-                          )}
-                        </tr>
-                      ))}
+                            <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
+                            <td className="py-2 pr-3 text-slate-500">
+                              {c.lastActivityAt
+                                ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+                                    year: "numeric",
+                                    month: "short",
+                                    day: "numeric",
+                                  })
+                                : lang === "es"
+                                  ? "Sin actividad"
+                                  : "No activity"}
+                            </td>
+                            {canEditCards && (
+                              <td className="py-2 text-right">
+                                <div className="flex justify-end gap-1">
+                                  {isProfileCard ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                      onClick={() => setEditingProfileId(c.profileId)}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                      {lang === "es" ? "Editar perfil" : "Edit profile"}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                      onClick={() => openEditCard(c)}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                      {lang === "es" ? "Editar" : "Edit"}
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                    disabled={downloadingQrCardId === c.cardId}
+                                    onClick={() => handleDownloadQr(c)}
+                                  >
+                                    {downloadingQrCardId === c.cardId ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <QrCode className="h-3.5 w-3.5" />
+                                    )}
+                                    QR
+                                  </Button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -565,6 +589,12 @@ export function SmartcardPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SmartcardProfileDialog
+        profileId={editingProfileId}
+        onOpenChange={(open) => !open && setEditingProfileId(null)}
+        lang={lang}
+      />
     </main>
   );
 }

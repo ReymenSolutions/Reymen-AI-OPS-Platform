@@ -6,7 +6,13 @@ import QRCode from "qrcode";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSmartcardAdminClient } from "@/lib/smartcard-supabase";
-import { resolveSmartcardMembership, buildSmartcardPublicUrl } from "@/lib/smartcard-company";
+import {
+  resolveSmartcardMembership,
+  buildSmartcardPublicUrl,
+  getSmartcardProfile,
+  type SmartcardProfile,
+  type ProfileLink,
+} from "@/lib/smartcard-company";
 import { inviteTeamMember } from "@/actions/team";
 
 // Owner/admin/manager can edit a company's own cards and download their QR
@@ -15,6 +21,23 @@ import { inviteTeamMember } from "@/actions/team";
 // routine). Team invites (inviteSmartcardTeamMember below) intentionally
 // keep the narrower owner/admin-only scope — that decision wasn't revisited.
 const CARD_MANAGEMENT_ROLES = ["owner", "admin", "manager"];
+
+/** Shared by every card/profile action below — auth + membership + role. */
+async function requireCardManagementMembership() {
+  const session = await auth();
+  if (!session?.user.organizationId || !session.user.email) {
+    throw new Error("Sesión inválida.");
+  }
+
+  const result = await resolveSmartcardMembership(session.user.organizationId, session.user.email);
+  if (!result.ok) {
+    throw new Error("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
+  }
+  if (!CARD_MANAGEMENT_ROLES.includes(result.membership.roleCode)) {
+    throw new Error("No tienes permiso para hacer eso.");
+  }
+  return result.membership;
+}
 
 // Roles that can be assigned from this form — mirrors reymen-smartcard's
 // apps/ops/app/settings/actions.ts on purpose: "owner" is excluded there
@@ -397,6 +420,236 @@ export async function getSmartcardCardQrCode(cardId: string): Promise<SmartcardC
     const message = err instanceof Error ? err.message : "No se pudo generar el QR. Intenta de nuevo.";
     if (!(err instanceof Error)) {
       console.error("[smartcard/actions] getSmartcardCardQrCode falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
+  }
+}
+
+type SmartcardActionResult = { success: true } | { success: false; error: string };
+
+export type SmartcardProfileResult =
+  | { success: true; profile: SmartcardProfile; links: ProfileLink[] }
+  | { success: false; error: string };
+
+/** Loads a card's linked profile (destination_type PROFILE) for editing. */
+export async function getSmartcardProfileForEdit(profileId: string): Promise<SmartcardProfileResult> {
+  try {
+    const membership = await requireCardManagementMembership();
+    const result = await getSmartcardProfile(profileId, membership.companyId);
+    if (!result) throw new Error("Ese perfil no pertenece a tu empresa.");
+    return { success: true, profile: result.profile, links: result.links };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo cargar el perfil. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] getSmartcardProfileForEdit falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
+  }
+}
+
+export type SmartcardProfileInput = Omit<SmartcardProfile, "id">;
+
+// Fields that must look like a URL when non-empty — phone/whatsapp are free
+// text (the real data has spaces, "+52...", etc.), so deliberately excluded.
+const PROFILE_URL_FIELDS: (keyof SmartcardProfileInput)[] = [
+  "photoUrl",
+  "logoUrl",
+  "website",
+  "mapsUrl",
+  "instagram",
+  "facebook",
+  "linkedin",
+  "tiktok",
+  "youtube",
+];
+
+const PROFILE_FIELD_TO_COLUMN: Record<keyof SmartcardProfileInput, string> = {
+  displayName: "display_name",
+  firstName: "first_name",
+  lastName: "last_name",
+  jobTitle: "job_title",
+  company: "company",
+  bio: "bio",
+  photoUrl: "photo_url",
+  logoUrl: "logo_url",
+  phone: "phone",
+  whatsapp: "whatsapp",
+  email: "email",
+  website: "website",
+  address: "address",
+  mapsUrl: "maps_url",
+  instagram: "instagram",
+  facebook: "facebook",
+  linkedin: "linkedin",
+  tiktok: "tiktok",
+  youtube: "youtube",
+};
+
+/**
+ * Updates the editable subset of a profile — see getSmartcardProfile's own
+ * comment for exactly what's excluded (slug/status/is_noindex/theme) and
+ * why. photoUrl/logoUrl are plain URL-paste fields here, matching
+ * admin.reymen.mx's own fallback path ("También se puede pegar aquí la URL
+ * de una imagen ya alojada en otro lugar") — real file upload to the
+ * profile-media storage bucket is separate, bigger scope, deliberately not
+ * built this round.
+ */
+export async function updateSmartcardProfile(
+  profileId: string,
+  input: SmartcardProfileInput
+): Promise<SmartcardActionResult> {
+  try {
+    const membership = await requireCardManagementMembership();
+    const existing = await getSmartcardProfile(profileId, membership.companyId);
+    if (!existing) throw new Error("Ese perfil no pertenece a tu empresa.");
+
+    const displayName = input.displayName.trim();
+    if (!displayName) throw new Error("El nombre a mostrar es obligatorio.");
+
+    const update: Record<string, string | null> = { display_name: displayName };
+    for (const [field, column] of Object.entries(PROFILE_FIELD_TO_COLUMN) as [
+      keyof SmartcardProfileInput,
+      string,
+    ][]) {
+      if (field === "displayName") continue;
+      const raw = input[field];
+      const value = typeof raw === "string" ? raw.trim() : raw;
+      if (value && PROFILE_URL_FIELDS.includes(field) && !/^https?:\/\//i.test(value)) {
+        throw new Error(`"${value}" no parece una URL válida (debe empezar con http:// o https://).`);
+      }
+      update[column] = value || null;
+    }
+
+    const supabase = getSmartcardAdminClient();
+    if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ ...update, updated_at: new Date().toISOString() })
+      .eq("id", profileId);
+
+    if (error) {
+      console.error("[smartcard/actions] Error actualizando profile:", error.message);
+      throw new Error("No se pudo guardar el perfil. Intenta de nuevo.");
+    }
+
+    revalidatePath("/portal/smartcard");
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo guardar el perfil. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] updateSmartcardProfile falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
+  }
+}
+
+export type SaveProfileLinkResult = { success: true; linkId: string } | { success: false; error: string };
+
+/**
+ * Creates a new profile_links row, or updates one when link.id is given —
+ * re-verifies that id against profileId first (client input, same reasoning
+ * as every other cardId/profileId check in this file). New links go last
+ * (max existing sort_order + 1); icon/type are left null, matching the
+ * admin form's own "Ícono Genérico (por default)" default.
+ */
+export async function saveProfileLink(
+  profileId: string,
+  link: { id?: string; title: string; url: string }
+): Promise<SaveProfileLinkResult> {
+  try {
+    const membership = await requireCardManagementMembership();
+    const existing = await getSmartcardProfile(profileId, membership.companyId);
+    if (!existing) throw new Error("Ese perfil no pertenece a tu empresa.");
+
+    const title = link.title.trim();
+    const url = link.url.trim();
+    if (!title) throw new Error("El link necesita un título.");
+    if (!/^https?:\/\//i.test(url)) throw new Error("La URL debe empezar con http:// o https://");
+
+    const supabase = getSmartcardAdminClient();
+    if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+
+    if (link.id) {
+      const { data: current } = await supabase
+        .from("profile_links")
+        .select("id")
+        .eq("id", link.id)
+        .eq("profile_id", profileId)
+        .maybeSingle();
+      if (!current) throw new Error("Ese link no pertenece a este perfil.");
+
+      const { error } = await supabase
+        .from("profile_links")
+        .update({ title, url, updated_at: new Date().toISOString() })
+        .eq("id", link.id);
+      if (error) {
+        console.error("[smartcard/actions] Error actualizando profile_link:", error.message);
+        throw new Error("No se pudo guardar el link. Intenta de nuevo.");
+      }
+      revalidatePath("/portal/smartcard");
+      return { success: true, linkId: link.id };
+    }
+
+    const nextSortOrder = existing.links.length > 0 ? Math.max(...existing.links.map((l) => l.sortOrder)) + 1 : 0;
+    const { data: created, error } = await supabase
+      .from("profile_links")
+      .insert({ profile_id: profileId, title, url, sort_order: nextSortOrder, is_active: true })
+      .select("id")
+      .single();
+
+    if (error || !created) {
+      console.error("[smartcard/actions] Error creando profile_link:", error?.message);
+      throw new Error("No se pudo agregar el link. Intenta de nuevo.");
+    }
+    revalidatePath("/portal/smartcard");
+    return { success: true, linkId: created.id as string };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo guardar el link. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] saveProfileLink falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Soft-deletes a link (is_active = false), matching this table's own
+ * "Desactivar" affordance in admin.reymen.mx rather than a hard delete —
+ * self-service gets a safer default than REYMEN's own admin tool does.
+ */
+export async function deleteProfileLink(linkId: string, profileId: string): Promise<SmartcardActionResult> {
+  try {
+    const membership = await requireCardManagementMembership();
+    const existing = await getSmartcardProfile(profileId, membership.companyId);
+    if (!existing) throw new Error("Ese perfil no pertenece a tu empresa.");
+
+    const supabase = getSmartcardAdminClient();
+    if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+
+    const { data: current } = await supabase
+      .from("profile_links")
+      .select("id")
+      .eq("id", linkId)
+      .eq("profile_id", profileId)
+      .maybeSingle();
+    if (!current) throw new Error("Ese link no pertenece a este perfil.");
+
+    const { error } = await supabase
+      .from("profile_links")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("id", linkId);
+
+    if (error) {
+      console.error("[smartcard/actions] Error eliminando profile_link:", error.message);
+      throw new Error("No se pudo eliminar el link. Intenta de nuevo.");
+    }
+    revalidatePath("/portal/smartcard");
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo eliminar el link. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] deleteProfileLink falló con un valor no-Error:", err);
     }
     return { success: false, error: message };
   }
