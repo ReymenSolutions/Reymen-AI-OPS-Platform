@@ -213,6 +213,7 @@ export interface CardStatsEntry {
   status: string;
   destinationType: string;
   destinationUrl: string | null;
+  profileId: string | null;
   clientName: string;
   totalEvents: number;
   byType: Record<string, number>;
@@ -318,7 +319,7 @@ export async function getCompanyCardStats(companyId: string): Promise<CompanyCar
 
   const { data: cards, error: cardsError } = await supabase
     .from("cards")
-    .select("id, card_code, status, destination_type, destination_url, client_id")
+    .select("id, card_code, status, destination_type, destination_url, profile_id, client_id")
     .in("client_id", clientIds)
     .is("deleted_at", null);
   if (cardsError) {
@@ -365,6 +366,7 @@ export async function getCompanyCardStats(companyId: string): Promise<CompanyCar
       status: c.status,
       destinationType: c.destination_type,
       destinationUrl: c.destination_url,
+      profileId: c.profile_id,
       clientName: clientNameById.get(c.client_id) ?? "—",
       totalEvents: stats.total,
       byType: stats.byType,
@@ -378,5 +380,128 @@ export async function getCompanyCardStats(companyId: string): Promise<CompanyCar
     totalEvents: companyTotal,
     byType: companyByType,
     cards: cardStats,
+  };
+}
+
+/**
+ * cards.destination_type = PROFILE routes to this — confirmed 2026-09-29
+ * against real data (a JSON dump of the live `profiles` table) after
+ * discovering `admin_profiles` (an earlier, wrong guess going only off the
+ * table name) isn't it; cards.profile_id really references `profiles`,
+ * verified via pg_constraint, not by name-matching.
+ *
+ * Deliberately excludes columns that stay REYMEN/admin-only for now:
+ * `slug` (changes the profile's own vanity URL — link.reymensolutions.mx/
+ * {slug} — out of scope, and risky to let a client change unknowingly),
+ * `status`/`is_noindex` (can take the whole profile offline or out of
+ * search), and `theme_id`/`theme_overrides` (visual theme catalog isn't
+ * wired up here yet). Editable fields below are exactly REYMEN's own
+ * admin.reymen.mx profile-edit form, minus those.
+ */
+export interface SmartcardProfile {
+  id: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  jobTitle: string | null;
+  company: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  logoUrl: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  website: string | null;
+  address: string | null;
+  mapsUrl: string | null;
+  instagram: string | null;
+  facebook: string | null;
+  linkedin: string | null;
+  tiktok: string | null;
+  youtube: string | null;
+}
+
+export interface ProfileLink {
+  id: string;
+  title: string;
+  url: string;
+  sortOrder: number;
+}
+
+const PROFILE_SELECT =
+  "id, display_name, first_name, last_name, job_title, company, bio, photo_url, logo_url, " +
+  "phone, whatsapp, email, website, address, maps_url, instagram, facebook, linkedin, tiktok, youtube";
+
+function mapProfileRow(p: Record<string, unknown>): SmartcardProfile {
+  return {
+    id: p.id as string,
+    displayName: p.display_name as string,
+    firstName: p.first_name as string | null,
+    lastName: p.last_name as string | null,
+    jobTitle: p.job_title as string | null,
+    company: p.company as string | null,
+    bio: p.bio as string | null,
+    photoUrl: p.photo_url as string | null,
+    logoUrl: p.logo_url as string | null,
+    phone: p.phone as string | null,
+    whatsapp: p.whatsapp as string | null,
+    email: p.email as string | null,
+    website: p.website as string | null,
+    address: p.address as string | null,
+    mapsUrl: p.maps_url as string | null,
+    instagram: p.instagram as string | null,
+    facebook: p.facebook as string | null,
+    linkedin: p.linkedin as string | null,
+    tiktok: p.tiktok as string | null,
+    youtube: p.youtube as string | null,
+  };
+}
+
+/**
+ * Loads a profile + its links, scoped to companyId (via the same
+ * clients!inner(company_id) join pattern as the card actions) — returns
+ * null on anything from "not found" to "belongs to another company", so
+ * callers can't distinguish the two (same reasoning as the card actions:
+ * don't leak which UUIDs exist to a company that shouldn't see them).
+ */
+export async function getSmartcardProfile(
+  profileId: string,
+  companyId: string
+): Promise<{ profile: SmartcardProfile; links: ProfileLink[] } | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from("profiles")
+    .select(`${PROFILE_SELECT}, clients!inner(company_id)`)
+    .eq("id", profileId)
+    .is("deleted_at", null)
+    .maybeSingle<Record<string, unknown> & { clients: { company_id: string } }>();
+
+  if (profileError) {
+    console.error("[smartcard-company] Error buscando profile:", profileError.message);
+    return null;
+  }
+  if (!profileRow || profileRow.clients.company_id !== companyId) return null;
+
+  const { data: linkRows, error: linksError } = await supabase
+    .from("profile_links")
+    .select("id, title, url, sort_order")
+    .eq("profile_id", profileId)
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+
+  if (linksError) {
+    console.error("[smartcard-company] Error listando profile_links:", linksError.message);
+  }
+
+  return {
+    profile: mapProfileRow(profileRow),
+    links: (linkRows ?? []).map((l) => ({
+      id: l.id as string,
+      title: l.title as string,
+      url: l.url as string,
+      sortOrder: l.sort_order as number,
+    })),
   };
 }
