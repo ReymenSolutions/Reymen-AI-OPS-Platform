@@ -834,6 +834,42 @@ export async function getFoodLeastSoldDishes(organizationId: string, days = 30, 
     .slice(0, limit);
 }
 
+// ─── FOOD OPS — Platillos más vendidos (resumen del dashboard) ───────
+// Contraparte de getFoodLeastSoldDishes: mismas ventas reales por variante
+// (POS o captura manual), ordenadas de más a menos unidades. El ingreso es
+// unidades × precio actual de la variante -- una aproximación, porque
+// FoodDishSale no guarda el precio cobrado en cada venta.
+
+export interface FoodTopSellingItem {
+  variantId: string;
+  name: string;
+  unitsSold: number;
+  revenue: number;
+}
+
+export async function getFoodTopSellingDishes(organizationId: string, days = 30, limit = 5): Promise<FoodTopSellingItem[]> {
+  const since = daysAgo(days);
+  const salesRows = await prisma.foodDishSale.groupBy({
+    by: ["variantId"],
+    where: { organizationId, occurredAt: { gte: since } },
+    _sum: { quantity: true },
+  });
+  if (salesRows.length === 0) return [];
+
+  const variants = flattenVariants(await getFoodDishesWithCost(organizationId));
+  const variantById = new Map(variants.map((v) => [v.id, v]));
+
+  return salesRows
+    .flatMap((r) => {
+      const v = variantById.get(r.variantId);
+      const unitsSold = r._sum.quantity ?? 0;
+      if (!v || unitsSold <= 0) return [];
+      return [{ variantId: v.id, name: v.displayName, unitsSold, revenue: Math.round(unitsSold * v.price * 100) / 100 }];
+    })
+    .sort((a, b) => b.unitsSold - a.unitsSold || b.revenue - a.revenue)
+    .slice(0, limit);
+}
+
 // ─── FOOD OPS — Recomendación de precio ──────────────────────────────
 // Método estándar de la industria restaurantera: precio = costo ÷ % de
 // costo objetivo (ej. costo $30, objetivo 30% ⇒ precio sugerido $100).
