@@ -2,8 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
+import { prisma } from "@/lib/prisma";
 import {
   getFoodSalesSummary, getFoodHourlySales, getFoodLowStockItems, getFoodDailySales,
+  getFoodTopSellingDishes,
 } from "@/lib/food";
 import { getSmartcardCompanyIdForOrg, getCompanyCardStats } from "@/lib/smartcard-company";
 import { getServerT } from "@/lib/i18n-server";
@@ -12,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   DollarSign, Package, ChefHat, ClipboardList, BarChart3, ArrowRight, Receipt, Clock,
-  ArrowUpRight, ArrowDownRight, QrCode, MessageCircle, Star, MapPin, ShoppingBag,
+  ArrowUpRight, ArrowDownRight, QrCode, MessageCircle, Eye, Phone, ShoppingBag,
   TrendingUp, Sparkles, Truck, Users, Wallet,
 } from "lucide-react";
 
@@ -32,32 +34,6 @@ const AREAS = [
   { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: false },
   { href: "/portal/food/analytics", key: "foodAnalytics", icon: BarChart3, ready: true },
 ] as const;
-
-// ─── Datos de ejemplo, marcados como tal en la UI ─────────────────────
-// Food no tiene todavía modelo de platillos/menú ni de registro de
-// compras (FoodSupplier es solo un directorio de contacto), así que estos
-// dos bloques se muestran con datos de prueba explícitos -- decisión
-// tomada con el cliente/socio el 2026-09-21, no se presentan en ningún
-// punto como si vinieran de una consulta real.
-const DEMO_TOP_DISHES = [
-  { name: "Tacos al pastor", emoji: "🌮", orders: 48, revenue: 7680 },
-  { name: "Hamburguesa clásica", emoji: "🍔", orders: 36, revenue: 5760 },
-  { name: "Ensalada mediterránea", emoji: "🥗", orders: 28, revenue: 4480 },
-  { name: "Pizza margarita", emoji: "🍕", orders: 24, revenue: 3840 },
-  { name: "Pasta alfredo", emoji: "🍝", orders: 22, revenue: 3520 },
-] as const;
-
-const DEMO_RECENT_PURCHASES = [
-  { item: "Ribeye de res", supplier: "Carnes del Norte", date: "20 sep", total: 3250 },
-  { item: "Queso mozzarella", supplier: "Lácteos del Bajío", date: "19 sep", total: 1980 },
-  { item: "Tomate saladet", supplier: "AgroMart", date: "19 sep", total: 720 },
-  { item: "Lechuga romana", supplier: "Campos Verdes", date: "18 sep", total: 480 },
-  { item: "Aceite de oliva", supplier: "De la Toscana", date: "17 sep", total: 950 },
-] as const;
-
-function DemoBadge() {
-  return <Badge variant="warning">Datos de ejemplo</Badge>;
-}
 
 function money(n: number, opts: Intl.NumberFormatOptions = {}) {
   return `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2, ...opts })}`;
@@ -134,18 +110,27 @@ export default async function FoodOverviewPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, summary, hourly, daily, lowStock, smartcardCompanyId] = await Promise.all([
+  const [t, summary, hourly, daily, lowStock, topDishes, suppliers, smartcardCompanyId] = await Promise.all([
     getServerT(),
     getFoodSalesSummary(orgId),
     getFoodHourlySales(orgId),
     getFoodDailySales(orgId, 7),
     getFoodLowStockItems(orgId, 5),
+    getFoodTopSellingDishes(orgId, 30, 5),
+    prisma.foodSupplier.findMany({
+      where: { organizationId: orgId },
+      select: { id: true, name: true, contactName: true, phone: true },
+      orderBy: { name: "asc" },
+      take: 5,
+    }),
     getSmartcardCompanyIdForOrg(orgId),
   ]);
 
   const cardStats = smartcardCompanyId ? await getCompanyCardStats(smartcardCompanyId) : null;
   const realScans = cardStats?.byType["qr_scan"] ?? 0;
   const realWhatsapp = cardStats?.byType["whatsapp_click"] ?? 0;
+  const realProfileViews = cardStats?.byType["profile_view"] ?? 0;
+  const realCalls = cardStats?.byType["call_click"] ?? 0;
 
   const avgTicketToday = summary.today.count > 0 ? summary.today.gross / summary.today.count : 0;
 
@@ -263,31 +248,35 @@ export default async function FoodOverviewPage() {
           </CardContent>
         </Card>
 
-        {/* Platillos más vendidos -- demo */}
+        {/* Platillos más vendidos -- ventas reales por platillo (POS o captura), últimos 30 días */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <ChefHat className="h-4 w-4 text-slate-400" />
               <CardTitle className="text-base">Platillos más vendidos</CardTitle>
             </div>
-            <DemoBadge />
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">30 días</span>
           </CardHeader>
           <CardContent className="p-0">
-            <ul className="divide-y divide-slate-100">
-              {DEMO_TOP_DISHES.map((dish, i) => (
-                <li key={dish.name} className="flex items-center gap-3 px-6 py-2.5">
-                  <span className="w-4 text-xs font-semibold text-slate-400">{i + 1}</span>
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-lg">
-                    {dish.emoji}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{dish.name}</p>
-                    <p className="text-xs text-slate-500">{dish.orders} pedidos</p>
-                  </div>
-                  <p className="text-sm font-semibold text-slate-900">{money(dish.revenue, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-                </li>
-              ))}
-            </ul>
+            {topDishes.length === 0 ? (
+              <p className="px-6 py-4 text-sm text-slate-500">Todavía no hay ventas por platillo registradas.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {topDishes.map((dish, i) => (
+                  <li key={dish.variantId} className="flex items-center gap-3 px-6 py-2.5">
+                    <span className="w-4 text-xs font-semibold text-slate-400">{i + 1}</span>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50">
+                      <ChefHat className="h-4 w-4 text-orange-500" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-900">{dish.name}</p>
+                      <p className="text-xs text-slate-500">{dish.unitsSold} vendidos</p>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-900">{money(dish.revenue, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="border-t border-slate-100 px-6 py-2.5">
               <Link href="/portal/food/sales" className="text-xs font-medium text-brand-600 hover:underline">
                 Ver todos →
@@ -334,25 +323,19 @@ export default async function FoodOverviewPage() {
                 </div>
                 <p className="mt-1 text-lg font-bold text-slate-900">{realWhatsapp.toLocaleString("es-MX")}</p>
               </div>
-              <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 p-3">
-                <div className="flex items-center justify-between text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <Star className="h-3.5 w-3.5" />
-                    <span className="text-[11px] font-medium">Reseñas</span>
-                  </div>
-                  <span className="text-[9px] font-semibold uppercase text-amber-600">Demo</span>
+              <div className="rounded-lg border border-slate-100 p-3">
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <Eye className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-medium">Vistas de perfil</span>
                 </div>
-                <p className="mt-1 text-lg font-bold text-slate-900">156</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{realProfileViews.toLocaleString("es-MX")}</p>
               </div>
-              <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 p-3">
-                <div className="flex items-center justify-between text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5" />
-                    <span className="text-[11px] font-medium">Clics a ubicación</span>
-                  </div>
-                  <span className="text-[9px] font-semibold uppercase text-amber-600">Demo</span>
+              <div className="rounded-lg border border-slate-100 p-3">
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <Phone className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-medium">Clics a llamar</span>
                 </div>
-                <p className="mt-1 text-lg font-bold text-slate-900">412</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{realCalls.toLocaleString("es-MX")}</p>
               </div>
             </div>
           </CardContent>
@@ -396,33 +379,37 @@ export default async function FoodOverviewPage() {
           </CardContent>
         </Card>
 
-        {/* Compras recientes -- demo */}
+        {/* Proveedores -- directorio real (todavía no hay registro de compras) */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <Truck className="h-4 w-4 text-slate-400" />
-              <CardTitle className="text-base">Compras recientes</CardTitle>
+              <CardTitle className="text-base">Proveedores</CardTitle>
             </div>
-            <DemoBadge />
           </CardHeader>
           <CardContent className="p-0">
-            <ul className="divide-y divide-slate-100">
-              {DEMO_RECENT_PURCHASES.map((p) => (
-                <li key={p.item} className="flex items-center gap-3 px-6 py-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50">
-                    <ShoppingBag className="h-4 w-4 text-slate-400" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{p.item}</p>
-                    <p className="truncate text-xs text-slate-500">{p.supplier} · {p.date}</p>
-                  </div>
-                  <p className="text-sm font-semibold text-slate-900">{money(p.total, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-                </li>
-              ))}
-            </ul>
+            {suppliers.length === 0 ? (
+              <p className="px-6 py-4 text-sm text-slate-500">Todavía no hay proveedores registrados.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {suppliers.map((sup) => (
+                  <li key={sup.id} className="flex items-center gap-3 px-6 py-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50">
+                      <Truck className="h-4 w-4 text-slate-400" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-900">{sup.name}</p>
+                      {(sup.contactName || sup.phone) && (
+                        <p className="truncate text-xs text-slate-500">{[sup.contactName, sup.phone].filter(Boolean).join(" · ")}</p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="border-t border-slate-100 px-6 py-2.5">
               <Link href="/portal/food/suppliers" className="text-xs font-medium text-brand-600 hover:underline">
-                Ver todas →
+                Ver todos →
               </Link>
             </div>
           </CardContent>
