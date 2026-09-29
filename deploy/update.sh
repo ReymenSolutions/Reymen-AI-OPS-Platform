@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Actualiza Reymen AI OPS (app.reymen.mx) en producción desde main y verifica
 # que quede sana. Mismo flujo que deploy/update.sh del repo ReymenPOS.
-# Uso (en el VPS):  cd /home/emilianorm/reymen-ai-ops-preview && ./deploy/update.sh
+# Uso (en el VPS; la carpeta es de emilianorm, así que se corre con sudo):
+#   sudo /home/emilianorm/reymen-ai-ops-preview/deploy/update.sh
 #
 # En el VPS, app.reymen.mx corre con docker/docker-compose.preview.yml
 # (archivo local del servidor, no versionado) en el contenedor
