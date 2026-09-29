@@ -1,6 +1,7 @@
 "use server";
 
 import crypto from "node:crypto";
+import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSmartcardAdminClient } from "@/lib/smartcard-supabase";
@@ -218,6 +219,119 @@ async function run(name: string, email: string, roleCode: string, password: stri
         await supabase.auth.admin.deleteUser(supabaseUserId).catch(() => {});
       }
       throw portalError instanceof Error ? portalError : new Error("No se pudo crear la cuenta del portal.");
+    }
+  }
+}
+
+export type UpdateCardDestinationResult = { success: true } | { success: false; error: string };
+
+/**
+ * Self-service card editing (2026-09-29): lets a company's own owner/admin
+ * change where a card's QR points (destination_type + destination_url)
+ * without asking Reymen to do it. Confirmed against real data (2026-09-29,
+ * Villa Gardenia's 3 test cards) that every card in use today is a plain
+ * URL redirect (WHATSAPP/GOOGLE_REVIEWS/CUSTOM_URL/etc, destination_types
+ * .requires_url) — none use PROFILE (requires_profile, the richer
+ * admin_profiles/profile_links page) — so that type is deliberately
+ * rejected here rather than half-supported; editing it is separate, bigger
+ * scope for if/when a card actually needs it.
+ *
+ * cardId is client input and this runs on the unscoped service-role client
+ * (see smartcard-supabase.ts's own warning: no RLS net here), so the
+ * clients!inner(company_id) join below is the ONLY thing stopping one
+ * company from editing another's card — never drop it.
+ */
+export async function updateSmartcardCardDestination(
+  cardId: string,
+  destinationType: string,
+  destinationUrl: string
+): Promise<UpdateCardDestinationResult> {
+  try {
+    await run(cardId, destinationType, destinationUrl);
+    revalidatePath("/portal/smartcard");
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo guardar el cambio. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] updateSmartcardCardDestination falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
+  }
+
+  async function run(cardId: string, destinationType: string, destinationUrl: string): Promise<void> {
+    const session = await auth();
+    if (!session?.user.organizationId || !session.user.email) {
+      throw new Error("Sesión inválida.");
+    }
+
+    const result = await resolveSmartcardMembership(session.user.organizationId, session.user.email);
+    if (!result.ok) {
+      throw new Error("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
+    }
+    // Same scope as inviteSmartcardTeamMember above: only owner/admin — a
+    // "cliente" here means Villa Gardenia's own management, not every
+    // staff/agent seat, matching the existing invite-permission precedent.
+    if (!["owner", "admin"].includes(result.membership.roleCode)) {
+      throw new Error("No tienes permiso para editar tarjetas.");
+    }
+
+    const supabase = getSmartcardAdminClient();
+    if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+
+    const { data: card, error: cardError } = await supabase
+      .from("cards")
+      .select("id, clients!inner(company_id)")
+      .eq("id", cardId)
+      .is("deleted_at", null)
+      .maybeSingle<{ id: string; clients: { company_id: string } }>();
+
+    if (cardError) {
+      console.error("[smartcard/actions] Error buscando card:", cardError.message);
+      throw new Error("No se pudo cargar la tarjeta. Intenta de nuevo.");
+    }
+    if (!card || card.clients.company_id !== result.membership.companyId) {
+      throw new Error("Esa tarjeta no pertenece a tu empresa.");
+    }
+
+    const { data: type, error: typeError } = await supabase
+      .from("destination_types")
+      .select("code, requires_profile, requires_url")
+      .eq("code", destinationType)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (typeError) {
+      console.error("[smartcard/actions] Error buscando destination_type:", typeError.message);
+      throw new Error("No se pudo validar el tipo de destino. Intenta de nuevo.");
+    }
+    if (!type) throw new Error("Ese tipo de destino no es válido.");
+    if (type.requires_profile) {
+      throw new Error(
+        "Ese tipo de destino (perfil digital) todavía no se puede editar desde aquí. Contacta a Reymen."
+      );
+    }
+
+    let normalizedUrl: string | null = null;
+    if (type.requires_url) {
+      normalizedUrl = destinationUrl.trim();
+      if (!normalizedUrl) throw new Error("Ese tipo de destino necesita una URL.");
+      if (!/^https?:\/\//i.test(normalizedUrl)) {
+        throw new Error("La URL debe empezar con http:// o https://");
+      }
+    }
+
+    const { error: updateError } = await supabase
+      .from("cards")
+      .update({
+        destination_type: destinationType,
+        destination_url: normalizedUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", cardId);
+
+    if (updateError) {
+      console.error("[smartcard/actions] Error actualizando card:", updateError.message);
+      throw new Error("No se pudo guardar el cambio. Intenta de nuevo.");
     }
   }
 }

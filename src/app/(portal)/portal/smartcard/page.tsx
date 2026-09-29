@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
-import { resolveSmartcardMembership, getCompanyRoster, getCompanyCardStats } from "@/lib/smartcard-company";
+import {
+  resolveSmartcardMembership,
+  getCompanyRoster,
+  getCompanyCardStats,
+  getActiveDestinationTypes,
+} from "@/lib/smartcard-company";
 import { SmartcardPanel } from "@/components/portal/SmartcardPanel";
 
 const FAILURE_MESSAGES: Record<string, string> = {
@@ -44,9 +49,10 @@ export default async function SmartcardPage() {
     );
   }
 
-  const [roster, cardStats] = await Promise.all([
+  const [roster, cardStats, destinationTypes] = await Promise.all([
     getCompanyRoster(result.membership.companyId, result.membership.userId),
     getCompanyCardStats(result.membership.companyId),
+    getActiveDestinationTypes(),
   ]);
 
   return (
@@ -54,6 +60,7 @@ export default async function SmartcardPage() {
       membership={result.membership}
       roster={roster}
       cardStats={cardStats}
+      destinationTypes={destinationTypes}
     />
   );
 }

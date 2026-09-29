@@ -2,18 +2,31 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Loader2, CreditCard, Users, Activity } from "lucide-react";
+import { Loader2, CreditCard, Users, Activity, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { usePreferences } from "@/context/preferences";
-import { inviteSmartcardTeamMember } from "@/actions/portal/smartcard";
+import { inviteSmartcardTeamMember, updateSmartcardCardDestination } from "@/actions/portal/smartcard";
 import {
   EVENT_TYPE_LABELS_ES,
   type SmartcardMembership,
   type CompanyRosterEntry,
   type CompanyCardStats,
+  type CardStatsEntry,
+  type DestinationTypeOption,
 } from "@/lib/smartcard-company";
 
 const MODULE_LABELS_ES: Record<string, string> = {
@@ -104,10 +117,12 @@ export function SmartcardPanel({
   membership,
   roster,
   cardStats,
+  destinationTypes,
 }: {
   membership: SmartcardMembership;
   roster: CompanyRosterEntry[];
   cardStats: CompanyCardStats;
+  destinationTypes: DestinationTypeOption[];
 }) {
   const { lang } = usePreferences();
   const MODULE_LABELS = lang === "es" ? MODULE_LABELS_ES : MODULE_LABELS_EN;
@@ -125,6 +140,35 @@ export function SmartcardPanel({
   const [isPending, startTransition] = useTransition();
 
   const canManageTeam = ["owner", "admin"].includes(membership.roleCode);
+  // Same permission scope as inviting team members — editing a card is a
+  // company-management action, not a per-person one (cards represent spots
+  // like "Recepción" or "Mesa 1", not individual staff logins).
+  const canEditCards = canManageTeam;
+  const [editingCard, setEditingCard] = useState<CardStatsEntry | null>(null);
+  const [editType, setEditType] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [isPendingCardEdit, startCardEditTransition] = useTransition();
+
+  function openEditCard(c: CardStatsEntry) {
+    setEditingCard(c);
+    setEditType(c.destinationType);
+    setEditUrl(c.destinationUrl ?? "");
+  }
+
+  const editSelectedTypeInfo = destinationTypes.find((d) => d.code === editType);
+
+  function handleSaveCard() {
+    if (!editingCard) return;
+    startCardEditTransition(async () => {
+      const result = await updateSmartcardCardDestination(editingCard.cardId, editType, editUrl);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(lang === "es" ? "Tarjeta actualizada." : "Card updated.");
+      setEditingCard(null);
+    });
+  }
   const seatCount = roster.filter((m) => m.status === "invited" || m.status === "active").length;
   const maxTeamMembers = membership.limits.smartcard?.max_team_members as number | undefined;
   const atLimit = typeof maxTeamMembers === "number" && seatCount >= maxTeamMembers;
@@ -251,7 +295,8 @@ export function SmartcardPanel({
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Integrante" : "Member"}</th>
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Estado" : "Status"}</th>
                         <th className="py-2 pr-3 text-right font-medium">{lang === "es" ? "Eventos" : "Events"}</th>
-                        <th className="py-2 font-medium">{lang === "es" ? "Última actividad" : "Last activity"}</th>
+                        <th className="py-2 pr-3 font-medium">{lang === "es" ? "Última actividad" : "Last activity"}</th>
+                        {canEditCards && <th className="py-2 font-medium" />}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -265,7 +310,7 @@ export function SmartcardPanel({
                             </Badge>
                           </td>
                           <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
-                          <td className="py-2 text-slate-500">
+                          <td className="py-2 pr-3 text-slate-500">
                             {c.lastActivityAt
                               ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
                                   year: "numeric",
@@ -276,6 +321,19 @@ export function SmartcardPanel({
                                 ? "Sin actividad"
                                 : "No activity"}
                           </td>
+                          {canEditCards && (
+                            <td className="py-2 text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                onClick={() => openEditCard(c)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                {lang === "es" ? "Editar" : "Edit"}
+                              </Button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -402,6 +460,65 @@ export function SmartcardPanel({
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editingCard !== null} onOpenChange={(open) => !open && setEditingCard(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {lang === "es" ? "Editar tarjeta" : "Edit card"} {editingCard ? `· ${editingCard.cardCode}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {editingCard?.clientName}
+              {" — "}
+              {lang === "es"
+                ? "Cambia a dónde manda esta tarjeta cuando alguien la escanea."
+                : "Change where this card sends people when scanned."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit-card-destination-type">{lang === "es" ? "Destino" : "Destination"}</Label>
+              <Select value={editType} onValueChange={setEditType}>
+                <SelectTrigger id="edit-card-destination-type">
+                  <SelectValue placeholder={lang === "es" ? "Selecciona un destino" : "Select a destination"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {destinationTypes.map((d) => (
+                    <SelectItem key={d.code} value={d.code} disabled={d.requiresProfile}>
+                      {d.label}
+                      {d.requiresProfile ? (lang === "es" ? " (próximamente)" : " (coming soon)") : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {editSelectedTypeInfo?.requiresUrl && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-card-destination-url">URL</Label>
+                <Input
+                  id="edit-card-destination-url"
+                  type="url"
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingCard(null)} disabled={isPendingCardEdit}>
+              {lang === "es" ? "Cancelar" : "Cancel"}
+            </Button>
+            <Button onClick={handleSaveCard} disabled={isPendingCardEdit || !editType}>
+              {isPendingCardEdit && <Loader2 className="h-4 w-4 animate-spin" />}
+              {lang === "es" ? "Guardar" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

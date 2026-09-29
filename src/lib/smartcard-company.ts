@@ -210,10 +210,48 @@ export interface CardStatsEntry {
   cardCode: string;
   status: string;
   destinationType: string;
+  destinationUrl: string | null;
   clientName: string;
   totalEvents: number;
   byType: Record<string, number>;
   lastActivityAt: string | null;
+}
+
+export interface DestinationTypeOption {
+  code: string;
+  label: string;
+  requiresProfile: boolean;
+  requiresUrl: boolean;
+}
+
+/**
+ * The catalog cards.destination_type points into (see destination_types
+ * table) — global, not scoped per company. Drives both the edit form's
+ * dropdown and its validation (updateSmartcardCardDestination re-checks
+ * requires_url/requires_profile server-side, never trusts the client for
+ * that). Added 2026-09-29 for self-service card editing.
+ */
+export async function getActiveDestinationTypes(): Promise<DestinationTypeOption[]> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("destination_types")
+    .select("code, label, requires_profile, requires_url")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    console.error("[smartcard-company] Error listando destination_types:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((d) => ({
+    code: d.code as string,
+    label: d.label as string,
+    requiresProfile: d.requires_profile as boolean,
+    requiresUrl: d.requires_url as boolean,
+  }));
 }
 
 export interface CompanyCardStats {
@@ -263,7 +301,7 @@ export async function getCompanyCardStats(companyId: string): Promise<CompanyCar
 
   const { data: cards, error: cardsError } = await supabase
     .from("cards")
-    .select("id, card_code, status, destination_type, client_id")
+    .select("id, card_code, status, destination_type, destination_url, client_id")
     .in("client_id", clientIds)
     .is("deleted_at", null);
   if (cardsError) {
@@ -309,6 +347,7 @@ export async function getCompanyCardStats(companyId: string): Promise<CompanyCar
       cardCode: c.card_code,
       status: c.status,
       destinationType: c.destination_type,
+      destinationUrl: c.destination_url,
       clientName: clientNameById.get(c.client_id) ?? "—",
       totalEvents: stats.total,
       byType: stats.byType,
