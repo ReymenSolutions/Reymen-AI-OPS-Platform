@@ -329,4 +329,43 @@ describe("editing dishes and modifier groups keeps their ids (POS and history de
     const listed = (await getFoodModifierGroups(org.id)).find((g) => g.id === group.id)!;
     expect(listed.options.map((o) => o.name)).toEqual(["Orilla de queso"]);
   });
+
+  it("CRITICAL: deleting a modifier group whose options sold archives it (keeps options and history, frees the name); unused groups are deleted", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    const flour = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Harina grupos", unit: "kg" } });
+    await food.createFoodModifierGroup({ name: "Salsas", minSelect: 0, maxSelect: 2, options: [{ name: "Verde", priceDelta: 0 }, { name: "Roja", priceDelta: 0 }] });
+    await food.createFoodModifierGroup({ name: "Sin uso", minSelect: 0, maxSelect: 1, options: [{ name: "Algo", priceDelta: 0 }] });
+    const salsas = await prisma.foodModifierGroup.findFirstOrThrow({ where: { organizationId: org.id, name: "Salsas" }, include: { options: true } });
+    const unused = await prisma.foodModifierGroup.findFirstOrThrow({ where: { organizationId: org.id, name: "Sin uso" } });
+    await food.createFoodDish({
+      name: "Enchiladas",
+      modifierGroupIds: [salsas.id],
+      variants: [{ label: "Único", price: 90, ingredients: [{ inventoryItemId: flour.id, quantity: 0.1 }] }],
+    });
+    const verde = salsas.options.find((o) => o.name === "Verde")!;
+    await prisma.foodModifierOptionSale.create({
+      data: { organizationId: org.id, optionId: verde.id, optionName: "Verde", occurredAt: new Date("2026-09-28T06:00:00Z"), quantity: 9 },
+    });
+
+    await food.deleteFoodModifierGroup(salsas.id);
+    const archived = await prisma.foodModifierGroup.findUniqueOrThrow({ where: { id: salsas.id }, include: { options: true, dishLinks: true } });
+    expect(archived.isActive).toBe(false);
+    expect(archived.options).toHaveLength(2);
+    expect(archived.dishLinks).toHaveLength(0);
+    expect(await prisma.foodModifierOptionSale.count({ where: { optionId: verde.id } })).toBe(1);
+
+    const { getFoodModifierGroups, getFoodMenuForPos } = await import("@/lib/food");
+    expect((await getFoodModifierGroups(org.id)).some((g) => g.id === salsas.id)).toBe(false);
+    const dish = (await getFoodMenuForPos(org.id)).find((d) => d.name === "Enchiladas")!;
+    expect(dish.modifierGroups).toHaveLength(0);
+
+    // El nombre queda libre y el grupo archivado ya no se puede editar ni asignar.
+    await food.createFoodModifierGroup({ name: "Salsas", minSelect: 0, maxSelect: 1, options: [{ name: "Verde", priceDelta: 0 }] });
+    await expect(food.updateFoodModifierGroup(salsas.id, { name: "Salsas viejas", minSelect: 0, maxSelect: 1, options: [{ name: "X", priceDelta: 0 }] })).rejects.toThrow(
+      "Grupo de modificadores no encontrado"
+    );
+
+    await food.deleteFoodModifierGroup(unused.id);
+    expect(await prisma.foodModifierGroup.count({ where: { id: unused.id } })).toBe(0);
+  });
 });

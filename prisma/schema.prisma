@@ -1361,6 +1361,9 @@ model FoodModifierGroup {
   minSelect      Int      @default(0) // 0 = opcional
   maxSelect      Int      @default(1) // 1 = elección única; >1 = varias
   sortOrder      Int      @default(0)
+  // Eliminar un grupo cuyas opciones ya se vendieron lo desactiva (se quita
+  // de los platillos y del POS) en vez de borrar sus opciones y su historial.
+  isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
