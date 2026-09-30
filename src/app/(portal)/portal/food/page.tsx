@@ -110,7 +110,7 @@ export default async function FoodOverviewPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, summary, hourly, daily, lowStock, topDishes, suppliers, smartcardCompanyId] = await Promise.all([
+  const [t, summary, hourly, daily, lowStock, topDishes, suppliers, smartcardCompanyId, org] = await Promise.all([
     getServerT(),
     getFoodSalesSummary(orgId),
     getFoodHourlySales(orgId),
@@ -124,6 +124,7 @@ export default async function FoodOverviewPage() {
       take: 5,
     }),
     getSmartcardCompanyIdForOrg(orgId),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
   ]);
 
   const cardStats = smartcardCompanyId ? await getCompanyCardStats(smartcardCompanyId) : null;
@@ -154,7 +155,7 @@ export default async function FoodOverviewPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-300">Bienvenido</p>
             <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">REYMEN Ops Food</h1>
-            <p className="mt-1 text-sm text-brand-200">Panel para restaurante</p>
+            <p className="mt-1 text-sm text-brand-200">{org?.name ?? "Panel para restaurante"}</p>
           </div>
           <div className="flex flex-col items-start gap-3 sm:items-end">
             <p className="text-sm italic text-brand-100">&ldquo;Grandes sabores. Mejores negocios.&rdquo;</p>

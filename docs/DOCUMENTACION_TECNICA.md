@@ -2664,6 +2664,7 @@ Supabase Auth instead of this app's NextAuth) — a shared-database integration,
 | Variable | Required | What breaks without it |
 |----------|----------|--------------------------|
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Only for the `NFC_QR` module's live stats (card scans, WhatsApp clicks) | Must be the **exact same Supabase project** `reymen-smartcard` itself uses — this app is reading that repo's tables, not its own. Without them, `getSmartcardCompanyIdForOrg()`/`getCompanyCardStats()` return `null`/empty and the SmartCard dashboard widget just shows zeros, nothing crashes. |
+| `SMARTCARD_PUBLIC_URL` | No — defaults to `https://link.reymen.mx` | Base URL encoded in each card's QR (`{url}/q/{card_code}`, see `buildSmartcardPublicUrl`). Only set it if the cards' public domain changes. |
 | `SMARTCARD_SSO_SECRET` | Only for the "Ir a SmartCard" single-sign-on hand-off | Must equal the same-named var in the `reymen-smartcard` repo — it verifies the signed, 60-second-TTL token minted by `createSmartcardSsoToken()` (`src/lib/smartcard-sso.ts`). Without it (or a mismatch), the redirect fails to sign the user in there. |
 | `SMARTCARD_OPS_URL` | Only for the SSO redirect | The public URL of the `reymen-smartcard` ops app (e.g. `https://ops.reymen.mx`) the token redirects to. |
 
