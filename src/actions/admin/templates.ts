@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
 import { applyTemplateInstall } from "@/lib/template-install";
 import type { Prisma } from "@prisma/client";
+import { requireAdmin } from "@/lib/guards";
 
 const templateSchema = z.object({
   name: z.string().min(2),
@@ -25,8 +25,7 @@ const versionSchema = z.object({
 });
 
 export async function createTemplate(data: z.infer<typeof templateSchema>) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = templateSchema.parse(data);
 
@@ -44,8 +43,7 @@ export async function createTemplate(data: z.infer<typeof templateSchema>) {
 }
 
 export async function publishTemplate(templateId: string, isPublished: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const template = await prisma.automationTemplate.findUnique({
     where: { id: templateId },
@@ -70,8 +68,7 @@ export async function addTemplateVersion(
   templateId: string,
   data: z.infer<typeof versionSchema>
 ) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const parsed = versionSchema.parse(data);
 
@@ -131,8 +128,7 @@ export async function installTemplateForClient(
   versionId: string,
   config?: Record<string, unknown>
 ) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const [org, version] = await Promise.all([
     prisma.organization.findUnique({ where: { id: orgId } }),

@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { PLAN_MODULES } from "@/lib/permissions";
 import type { ModuleSource, ModuleStatus, PlatformModule } from "@prisma/client";
+import { requireAdmin } from "@/lib/guards";
 
 const setModuleSchema = z.object({
   orgId: z.string(),
@@ -20,8 +20,7 @@ const setModuleSchema = z.object({
 export async function setOrganizationModule(
   data: z.infer<typeof setModuleSchema>
 ) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const { orgId, module, status, source, notes } = setModuleSchema.parse(data);
 
@@ -63,8 +62,7 @@ export async function setOrganizationModule(
  * Organization.plan, same as it always has.
  */
 export async function syncModulesToPlan(orgId: string) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const org = await prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { plan: true } });
   const planModules = PLAN_MODULES[org.plan] ?? PLAN_MODULES.starter;
@@ -109,8 +107,7 @@ const ALL_MODULES: PlatformModule[] = ["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC
 export async function getOrganizationModules(orgId: string): Promise<ModuleEntitlementView[]> {
   // Es una acción de servidor (endpoint público): sin esta revisión cualquiera
   // podía leer los módulos de cualquier organización, notas de admin incluidas.
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const rows = await prisma.organizationModule.findMany({ where: { organizationId: orgId } });
   const byModule = new Map(rows.map((r) => [r.module, r]));

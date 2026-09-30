@@ -1,6 +1,6 @@
 import type { PlatformModule, UserRole } from "@prisma/client";
 
-type Action =
+export type Action =
   | "leads:create"
   | "leads:delete"
   | "leads:update_status"

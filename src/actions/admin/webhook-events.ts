@@ -1,14 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth, isAdmin } from "@/lib/auth";
 import { retryWebhookEvent, retryAllFailedWebhookEvents } from "@/lib/webhook-retry";
+import { requireAdmin } from "@/lib/guards";
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-  return session;
-}
 
 export async function retryWebhookEventAction(id: string) {
   await requireAdmin();

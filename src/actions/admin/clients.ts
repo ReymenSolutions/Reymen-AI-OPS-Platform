@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
 import { generateSlug, generateWebhookSecret } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
 import { hasCustomPrice } from "@/lib/permissions";
+import { requireAdmin } from "@/lib/guards";
 
 const createClientSchema = z.object({
   orgName: z.string().min(2),
@@ -18,8 +18,7 @@ const createClientSchema = z.object({
 });
 
 export async function createClient(formData: FormData) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = createClientSchema.safeParse({
     orgName: formData.get("orgName"),
@@ -82,8 +81,7 @@ export async function createClient(formData: FormData) {
 }
 
 export async function changePlan(orgId: string, plan: string, customMonthlyPriceUsd: number | null = null) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const validPlans = ["starter", "professional", "enterprise"];
   if (!validPlans.includes(plan)) throw new Error("Plan inválido");
@@ -114,8 +112,7 @@ export async function changePlan(orgId: string, plan: string, customMonthlyPrice
 }
 
 export async function updateClientStatus(orgId: string, isActive: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   await prisma.organization.update({
     where: { id: orgId },
@@ -137,8 +134,7 @@ export async function updateClientStatus(orgId: string, isActive: boolean) {
 }
 
 export async function rotateOrgWebhookSecret(orgId: string) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const newSecret = generateWebhookSecret();
   await prisma.organization.update({ where: { id: orgId }, data: { n8nWebhookSecret: newSecret } });
@@ -159,8 +155,7 @@ export async function rotateOrgWebhookSecret(orgId: string) {
 // GET /api/v1/food/menu (Fase 17) -- ver el comentario en el schema sobre
 // por qué esto vive aparte de la llave que firma el webhook de órdenes.
 export async function rotateFoodPosReadKey(orgId: string) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const newKey = generateWebhookSecret();
   await prisma.organization.update({ where: { id: orgId }, data: { foodPosReadKey: newKey } });

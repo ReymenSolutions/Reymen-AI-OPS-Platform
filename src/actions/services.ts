@@ -3,17 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
-import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import type { UserRole } from "@prisma/client";
+import { requireOrgPermission } from "@/lib/guards";
 
-async function requireSettingsManage() {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "settings:manage")) throw new Error("No autorizado");
-  return session;
-}
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -24,7 +16,7 @@ const createSchema = z.object({
 });
 
 export async function createService(data: z.infer<typeof createSchema>) {
-  const session = await requireSettingsManage();
+  const session = await requireOrgPermission("settings:manage");
   const parsed = createSchema.parse(data);
   const orgId = session.user.organizationId!;
 
@@ -64,7 +56,7 @@ const updateSchema = z.object({
 });
 
 export async function updateService(data: z.infer<typeof updateSchema>) {
-  const session = await requireSettingsManage();
+  const session = await requireOrgPermission("settings:manage");
   const { serviceId, ...rest } = updateSchema.parse(data);
   const orgId = session.user.organizationId!;
 
@@ -79,7 +71,7 @@ export async function updateService(data: z.infer<typeof updateSchema>) {
 }
 
 export async function deleteService(serviceId: string) {
-  const session = await requireSettingsManage();
+  const session = await requireOrgPermission("settings:manage");
   const orgId = session.user.organizationId!;
 
   const service = await prisma.service.findFirst({

@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
 import { generateWebhookSecret } from "@/lib/utils";
+import { requireAdmin } from "@/lib/guards";
 
 const automationSchema = z.object({
   organizationId: z.string().min(1),
@@ -22,11 +22,6 @@ const updateSchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "ERROR", "ARCHIVED"]).optional(),
 });
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-  return session;
-}
 
 export async function createAutomation(data: {
   organizationId: string;

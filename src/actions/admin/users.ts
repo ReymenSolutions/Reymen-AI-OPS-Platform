@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { createOrgUserRecord } from "@/lib/org-users";
 import type { UserRole } from "@prisma/client";
+import { requireAdmin } from "@/lib/guards";
 
 const ORG_USER_ROLES = ["OWNER", "MANAGER", "AGENT", "VIEWER"] as const;
 const STANDALONE_USER_ROLES = ["SUPER_ADMIN", "ADMIN"] as const;
@@ -20,8 +21,7 @@ const createOrgUserSchema = z.object({
 });
 
 export async function createOrgUser(orgId: string, data: { name: string; email: string; role: string; password: string }) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = createOrgUserSchema.safeParse(data);
   if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
@@ -49,8 +49,7 @@ const updateOrgUserSchema = z.object({
 });
 
 export async function updateOrgUser(userId: string, data: { name: string; role: string }) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = updateOrgUserSchema.safeParse(data);
   if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
@@ -77,8 +76,7 @@ export async function updateOrgUser(userId: string, data: { name: string; role: 
 }
 
 export async function setUserActive(userId: string, isActive: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
   if (userId === session.user.id) throw new Error("No puedes desactivarte a ti mismo");
 
   const target = await prisma.user.findUnique({ where: { id: userId } });
@@ -150,8 +148,7 @@ export async function createStandaloneUser(data: { name: string; email: string; 
 }
 
 export async function getAllUsers() {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   return prisma.user.findMany({
     orderBy: { createdAt: "desc" },

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/guards";
 
 const createSchema = z.object({
   name: z.string().min(2),
@@ -14,8 +14,7 @@ const createSchema = z.object({
 });
 
 export async function createTemplatePackage(data: z.infer<typeof createSchema>) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = createSchema.parse(data);
 
@@ -52,8 +51,7 @@ export async function updateTemplatePackageItems(
   packageId: string,
   data: z.infer<typeof updateItemsSchema>
 ) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const parsed = updateItemsSchema.parse(data);
 
@@ -84,8 +82,7 @@ export async function updateTemplatePackageItems(
 }
 
 export async function publishTemplatePackage(packageId: string, isPublished: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const pkg = await prisma.templatePackage.findUnique({
     where: { id: packageId },
