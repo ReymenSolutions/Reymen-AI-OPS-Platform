@@ -98,7 +98,8 @@ export async function getFoodSalesSummary(organizationId: string): Promise<FoodS
 }
 
 export interface FoodSalesByChannel {
-  channel: string;
+  /** null = venta sin canal; la página pone el texto en el idioma del usuario. */
+  channel: string | null;
   gross: number;
   count: number;
 }
@@ -113,7 +114,7 @@ export async function getFoodSalesByChannel(organizationId: string): Promise<Foo
 
   return rows
     .map((r) => ({
-      channel: r.channel ?? "Sin canal",
+      channel: r.channel,
       gross: Number(r._sum.grossAmount ?? 0),
       count: r._count._all,
     }))
@@ -740,7 +741,11 @@ export interface FoodProfitRecommendation {
   variantId: string;
   dishId: string;
   name: string;
-  reason: string;
+  // Datos para que la página arme el texto en el idioma del usuario.
+  cost: number;
+  price: number;
+  marginPct: number | null;
+  unitsSold: number;
 }
 
 const LOW_MARGIN_PCT = 15;
@@ -768,7 +773,10 @@ export async function getFoodProfitRecommendations(organizationId: string): Prom
         variantId: variant.id,
         dishId: variant.dishId,
         name: variant.displayName,
-        reason: `Cuesta $${variant.cost.toFixed(2)} pero se vende en $${variant.price.toFixed(2)} — pierdes dinero en cada uno.`,
+        cost: variant.cost,
+        price: variant.price,
+        marginPct: variant.marginPct,
+        unitsSold: unitsByVariant.get(variant.id) ?? 0,
       });
     }
   }
@@ -785,7 +793,10 @@ export async function getFoodProfitRecommendations(organizationId: string): Prom
           variantId: variant.id,
           dishId: variant.dishId,
           name: variant.displayName,
-          reason: `Se vende bien (${units} en 30 días) pero deja solo ${variant.marginPct}% de margen — considera subir el precio o revisar la receta.`,
+          cost: variant.cost,
+          price: variant.price,
+          marginPct: variant.marginPct,
+          unitsSold: units,
         });
       } else if (variant.marginPct !== null && variant.marginPct >= HIGH_MARGIN_PCT && units < median) {
         recommendations.push({
@@ -793,7 +804,10 @@ export async function getFoodProfitRecommendations(organizationId: string): Prom
           variantId: variant.id,
           dishId: variant.dishId,
           name: variant.displayName,
-          reason: `Buen margen (${variant.marginPct}%) pero poca venta (${units} en 30 días) — es buen candidato para promocionar.`,
+          cost: variant.cost,
+          price: variant.price,
+          marginPct: variant.marginPct,
+          unitsSold: units,
         });
       }
     }

@@ -81,4 +81,7 @@ export default async function AiLabPage() {
   );
 }
 
-export const metadata = { title: "Laboratorio de IA" };
+export async function generateMetadata() {
+  const t = await getServerT();
+  return { title: t.aiLab };
+}

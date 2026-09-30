@@ -7,30 +7,8 @@ import { CreateTemplateDialog } from "@/components/admin/CreateTemplateDialog";
 import { getServerLang } from "@/lib/i18n-server";
 import { Layers } from "lucide-react";
 import Link from "next/link";
+import { INDUSTRY_LABELS as INDUSTRY_LABELS_BY_LANG } from "@/lib/industries";
 
-const INDUSTRY_LABELS_ES: Record<string, string> = {
-  clinic:      "Clínica / Salud",
-  real_estate: "Inmobiliaria",
-  gym:         "Gimnasio",
-  legal:       "Legal",
-  workshop:    "Taller",
-  ecommerce:   "E-commerce",
-  restaurant:  "Restaurante",
-  education:   "Educación",
-  general:     "General",
-};
-
-const INDUSTRY_LABELS_EN: Record<string, string> = {
-  clinic:      "Clinic / Health",
-  real_estate: "Real Estate",
-  gym:         "Gym",
-  legal:       "Legal",
-  workshop:    "Workshop",
-  ecommerce:   "E-commerce",
-  restaurant:  "Restaurant",
-  education:   "Education",
-  general:     "General",
-};
 
 async function getTemplates() {
   return prisma.automationTemplate.findMany({
@@ -54,7 +32,7 @@ async function getTemplates() {
 export default async function AdminTemplatesPage() {
   const [templates, lang] = await Promise.all([getTemplates(), getServerLang()]);
   const published = templates.filter((t) => t.isPublished).length;
-  const INDUSTRY_LABELS = lang === "es" ? INDUSTRY_LABELS_ES : INDUSTRY_LABELS_EN;
+  const INDUSTRY_LABELS = INDUSTRY_LABELS_BY_LANG[lang];
 
   return (
     <div>

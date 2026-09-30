@@ -3,7 +3,9 @@ import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
 import { getFoodDishesWithCost, flattenVariants, getFoodDishCategories, getFoodModifierGroups } from "@/lib/food";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerLang, getServerT } from "@/lib/i18n-server";
+import { foodStrings } from "@/lib/i18n-food";
+import { pickDict } from "@/lib/i18n-dict";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -38,8 +40,9 @@ export default async function FoodRecipesPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, dishes, inventoryItemsRaw, todaySales, categories, modifierGroups] = await Promise.all([
+  const [t, lang, dishes, inventoryItemsRaw, todaySales, categories, modifierGroups] = await Promise.all([
     getServerT(),
+    getServerLang(),
     getFoodDishesWithCost(orgId),
     prisma.foodInventoryItem.findMany({
       where: { organizationId: orgId },
@@ -54,6 +57,7 @@ export default async function FoodRecipesPage() {
     getFoodModifierGroups(orgId),
   ]);
 
+  const f = pickDict(foodStrings, lang);
   const inventoryItems = inventoryItemsRaw.map((i) => ({ ...i, unitCost: i.unitCost !== null ? Number(i.unitCost) : null }));
   const todayQtyByVariant = new Map(todaySales.map((s) => [s.variantId, s.quantity]));
   const activeVariants = flattenVariants(dishes.filter((d) => d.isActive));
@@ -65,7 +69,7 @@ export default async function FoodRecipesPage() {
     <div>
       <PageHeader
         title={t.foodRecipes}
-        description="Ingredientes, cantidades y costo por receta."
+        description={f.recipesDesc}
         actions={<FoodDishFormDialog inventoryItems={inventoryItems} categories={categoryOptions} modifierGroups={modifierGroupOptions} />}
       />
 
@@ -73,12 +77,12 @@ export default async function FoodRecipesPage() {
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Platillos</CardTitle>
+              <CardTitle className="text-base">{f.dishes}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               {dishes.length === 0 ? (
                 <div className="p-6">
-                  <EmptyState icon={ChefHat} title="Sin platillos todavía" description="Crea el primero con el botón de arriba." />
+                  <EmptyState icon={ChefHat} title={f.noDishesYet} description={f.createFirstWithButton} />
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100">
@@ -90,7 +94,7 @@ export default async function FoodRecipesPage() {
                           {dish.categoryName && (
                             <Badge variant="outline" className="text-[10px]">{dish.categoryName}</Badge>
                           )}
-                          {!dish.isActive && <Badge variant="secondary" className="text-[10px]">Inactivo</Badge>}
+                          {!dish.isActive && <Badge variant="secondary" className="text-[10px]">{f.inactive}</Badge>}
                         </div>
                         <div className="flex flex-shrink-0 items-center gap-1">
                           <FoodDishFormDialog
@@ -117,9 +121,9 @@ export default async function FoodRecipesPage() {
                         {dish.variants.map((v) => (
                           <li key={v.id} className="text-xs text-slate-500">
                             {dish.variants.length > 1 && <span className="font-medium text-slate-600">{v.label}: </span>}
-                            Costo: ${v.cost.toFixed(2)} · Precio: ${v.price.toFixed(2)}
+                            {f.costPriceLine(`$${v.cost.toFixed(2)}`, `$${v.price.toFixed(2)}`)}
                             {v.marginPct !== null && (
-                              <span className={cn("ml-1 font-medium", marginColor(v.marginPct))}> · Margen: {v.marginPct}%</span>
+                              <span className={cn("ml-1 font-medium", marginColor(v.marginPct))}>{f.marginLine(v.marginPct)}</span>
                             )}
                           </li>
                         ))}
@@ -146,13 +150,13 @@ export default async function FoodRecipesPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle className="text-base">Categorías</CardTitle>
+              <CardTitle className="text-base">{f.categories}</CardTitle>
               <FoodDishCategoryFormDialog />
             </CardHeader>
             <CardContent className="p-0">
               {categories.length === 0 ? (
                 <div className="p-6">
-                  <EmptyState icon={Tag} title="Sin categorías todavía" description="Agrupa tus platillos creando la primera categoría." />
+                  <EmptyState icon={Tag} title={f.noCategoriesYet} description={f.noCategoriesDesc} />
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100">
@@ -161,7 +165,7 @@ export default async function FoodRecipesPage() {
                       <div className="flex min-w-0 items-center gap-2">
                         <p className="truncate text-sm font-medium text-slate-900">{c.name}</p>
                         <span className="text-xs text-slate-400">
-                          {c.dishCount} {c.dishCount === 1 ? "platillo" : "platillos"}
+                          {f.dishCount(c.dishCount)}
                         </span>
                       </div>
                       <div className="flex flex-shrink-0 items-center gap-1">
@@ -177,7 +181,7 @@ export default async function FoodRecipesPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle className="text-base">Grupos de modificadores</CardTitle>
+              <CardTitle className="text-base">{f.modifierGroups}</CardTitle>
               <FoodModifierGroupFormDialog />
             </CardHeader>
             <CardContent className="p-0">
@@ -185,8 +189,8 @@ export default async function FoodRecipesPage() {
                 <div className="p-6">
                   <EmptyState
                     icon={SlidersHorizontal}
-                    title="Sin grupos de modificadores todavía"
-                    description="Crea opciones como término de cocción o extras que apliquen a tus platillos."
+                    title={f.noModifierGroupsYet}
+                    description={f.noModifierGroupsDesc}
                   />
                 </div>
               ) : (
@@ -197,7 +201,7 @@ export default async function FoodRecipesPage() {
                         <div className="flex min-w-0 items-center gap-2">
                           <p className="truncate text-sm font-medium text-slate-900">{g.name}</p>
                           <span className="text-xs text-slate-400">
-                            {g.dishCount} {g.dishCount === 1 ? "platillo" : "platillos"}
+                            {f.dishCount(g.dishCount)}
                           </span>
                         </div>
                         <div className="flex flex-shrink-0 items-center gap-1">

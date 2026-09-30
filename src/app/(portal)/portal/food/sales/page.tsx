@@ -4,7 +4,9 @@ import { requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
 import { getFoodSalesSummary } from "@/lib/food";
 import { createFoodSale } from "@/actions/food";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerLang, getServerT } from "@/lib/i18n-server";
+import { foodStrings } from "@/lib/i18n-food";
+import { pickDict } from "@/lib/i18n-dict";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,8 +23,9 @@ export default async function FoodSalesPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, summary, recentSales] = await Promise.all([
+  const [t, lang, summary, recentSales] = await Promise.all([
     getServerT(),
+    getServerLang(),
     getFoodSalesSummary(orgId),
     prisma.foodSale.findMany({
       where: { organizationId: orgId },
@@ -31,19 +34,21 @@ export default async function FoodSalesPage() {
     }),
   ]);
 
+  const f = pickDict(foodStrings, lang);
+
   return (
     <div>
-      <PageHeader title={t.foodSales} description="Registro de ventas, comparación diaria/semanal/mensual." />
+      <PageHeader title={t.foodSales} description={f.salesPageDesc} />
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <MetricCard title="Hoy" value={money(summary.today.gross)} description={`${summary.today.count} venta(s) · bruto`} icon={DollarSign} />
-        <MetricCard title="Últimos 7 días" value={money(summary.last7Days.gross)} description={`${summary.last7Days.count} venta(s) · bruto`} icon={DollarSign} />
+        <MetricCard title={f.today} value={money(summary.today.gross)} description={f.salesCountGross(summary.today.count)} icon={DollarSign} />
+        <MetricCard title={f.last7Days} value={money(summary.last7Days.gross)} description={f.salesCountGross(summary.last7Days.count)} icon={DollarSign} />
         <MetricCard
-          title="Últimos 30 días"
+          title={f.last30Days}
           value={money(summary.last30Days.gross)}
-          description={`Neto: ${money(summary.last30Days.net)}`}
+          description={f.netLabel(money(summary.last30Days.net))}
           icon={DollarSign}
-          trend={summary.monthOverMonthGrossPct !== null ? { value: summary.monthOverMonthGrossPct, label: "vs. 30 días previos" } : undefined}
+          trend={summary.monthOverMonthGrossPct !== null ? { value: summary.monthOverMonthGrossPct, label: f.vsPrev30Days } : undefined}
         />
       </div>
 
@@ -51,12 +56,12 @@ export default async function FoodSalesPage() {
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Ventas recientes</CardTitle>
+              <CardTitle className="text-base">{f.recentSales}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               {recentSales.length === 0 ? (
                 <div className="p-6">
-                  <EmptyState icon={DollarSign} title="Sin ventas todavía" description="Registra tu primera venta con el formulario de la derecha." />
+                  <EmptyState icon={DollarSign} title={f.noSalesYet} description={f.noSalesYetDesc} />
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100">
@@ -64,11 +69,11 @@ export default async function FoodSalesPage() {
                     <li key={sale.id} className="flex items-center justify-between px-6 py-3">
                       <div>
                         <p className="text-sm font-medium text-slate-900">{formatDateTime(sale.occurredAt)}</p>
-                        <p className="text-xs text-slate-500">{sale.channel ?? "Sin canal"}</p>
+                        <p className="text-xs text-slate-500">{sale.channel ?? f.noChannel}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-slate-900">{money(Number(sale.grossAmount))}</p>
-                        <p className="text-xs text-slate-500">Neto: {money(Number(sale.netAmount))}</p>
+                        <p className="text-xs text-slate-500">{f.netLabel(money(Number(sale.netAmount)))}</p>
                       </div>
                     </li>
                   ))}
@@ -80,12 +85,12 @@ export default async function FoodSalesPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Registrar venta</CardTitle>
+            <CardTitle className="text-base">{f.recordSale}</CardTitle>
           </CardHeader>
           <CardContent>
             <form action={createFoodSale} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
-                <label htmlFor="occurredAt" className="text-xs font-medium text-slate-600">Fecha</label>
+                <label htmlFor="occurredAt" className="text-xs font-medium text-slate-600">{f.date}</label>
                 <input
                   id="occurredAt" name="occurredAt" type="datetime-local" required
                   defaultValue={new Date().toISOString().slice(0, 16)}
@@ -93,25 +98,25 @@ export default async function FoodSalesPage() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="channel" className="text-xs font-medium text-slate-600">Canal</label>
-                <input id="channel" name="channel" type="text" placeholder="Mostrador, domicilio, app..." className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                <label htmlFor="channel" className="text-xs font-medium text-slate-600">{f.channel}</label>
+                <input id="channel" name="channel" type="text" placeholder={f.channelPlaceholder} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
               </div>
               <div className="flex gap-3">
                 <div className="flex flex-1 flex-col gap-1">
-                  <label htmlFor="grossAmount" className="text-xs font-medium text-slate-600">Bruto</label>
+                  <label htmlFor="grossAmount" className="text-xs font-medium text-slate-600">{f.gross}</label>
                   <input id="grossAmount" name="grossAmount" type="number" step="0.01" min="0" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
                 <div className="flex flex-1 flex-col gap-1">
-                  <label htmlFor="netAmount" className="text-xs font-medium text-slate-600">Neto (sin IVA)</label>
+                  <label htmlFor="netAmount" className="text-xs font-medium text-slate-600">{f.netNoTax}</label>
                   <input id="netAmount" name="netAmount" type="number" step="0.01" min="0" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="notes" className="text-xs font-medium text-slate-600">Notas</label>
+                <label htmlFor="notes" className="text-xs font-medium text-slate-600">{f.notes}</label>
                 <textarea id="notes" name="notes" rows={2} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
               </div>
               <button type="submit" className="mt-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-                Guardar venta
+                {f.saveSale}
               </button>
             </form>
           </CardContent>

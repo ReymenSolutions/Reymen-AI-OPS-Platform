@@ -6,7 +6,7 @@ import { getOnboardingStatus } from "@/lib/onboarding";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { SkipOnboardingButton } from "@/components/portal/SkipOnboardingButton";
-import { getServerLang } from "@/lib/i18n-server";
+import { getServerLang, getServerT } from "@/lib/i18n-server";
 
 export default async function OnboardingPage() {
   const session = await auth();
@@ -78,4 +78,7 @@ export default async function OnboardingPage() {
   );
 }
 
-export const metadata = { title: "Configuración inicial" };
+export async function generateMetadata() {
+  const t = await getServerT();
+  return { title: t.onboarding };
+}

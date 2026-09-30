@@ -8,13 +8,23 @@ import {
   getActiveDestinationTypes,
 } from "@/lib/smartcard-company";
 import { SmartcardPanel } from "@/components/portal/SmartcardPanel";
+import { getServerLang } from "@/lib/i18n-server";
 
-const FAILURE_MESSAGES: Record<string, string> = {
-  not_configured: "SmartCard aún no está configurado en este entorno. Contacta a soporte.",
-  no_company: "Tu empresa todavía no está vinculada con SmartCard. Contacta a soporte de Reymen.",
-  no_membership:
-    "Tu cuenta todavía no es miembro activo de la empresa vinculada en SmartCard. Contacta a soporte de Reymen.",
-  query_failed: "No se pudo cargar SmartCard en este momento. Intenta de nuevo en unos minutos.",
+const FAILURE_MESSAGES: Record<"es" | "en", Record<string, string>> = {
+  es: {
+    not_configured: "SmartCard aún no está configurado en este entorno. Contacta a soporte.",
+    no_company: "Tu empresa todavía no está vinculada con SmartCard. Contacta a soporte de Reymen.",
+    no_membership:
+      "Tu cuenta todavía no es miembro activo de la empresa vinculada en SmartCard. Contacta a soporte de Reymen.",
+    query_failed: "No se pudo cargar SmartCard en este momento. Intenta de nuevo en unos minutos.",
+  },
+  en: {
+    not_configured: "SmartCard isn't configured in this environment yet. Please contact support.",
+    no_company: "Your company isn't linked to SmartCard yet. Please contact Reymen support.",
+    no_membership:
+      "Your account isn't an active member of the company linked in SmartCard yet. Please contact Reymen support.",
+    query_failed: "SmartCard couldn't be loaded right now. Please try again in a few minutes.",
+  },
 };
 
 /**
@@ -43,7 +53,7 @@ export default async function SmartcardPage() {
       <main className="mx-auto max-w-3xl p-8">
         <h1 className="text-2xl font-semibold">SmartCard</h1>
         <p className="mt-4 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {FAILURE_MESSAGES[result.reason]}
+          {FAILURE_MESSAGES[await getServerLang()][result.reason]}
         </p>
       </main>
     );
