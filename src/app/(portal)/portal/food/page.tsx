@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   DollarSign, Package, ChefHat, ClipboardList, ArrowRight, Receipt, Clock,
   ArrowUpRight, ArrowDownRight, QrCode, MessageCircle, Eye, Phone, ShoppingBag,
-  TrendingUp, Sparkles, Truck, Users, Wallet,
+  TrendingUp, Sparkles, Truck, Users, Wallet, ShoppingCart,
 } from "lucide-react";
 
 // Rango de horas que se dibuja por defecto (horario típico de restaurante).
@@ -31,6 +31,7 @@ const AREAS = [
   { href: "/portal/food/sales", key: "foodSales", icon: DollarSign, ready: true },
   { href: "/portal/food/inventory", key: "foodInventory", icon: Package, ready: true },
   { href: "/portal/food/suppliers", key: "foodSuppliers", icon: Users, ready: true },
+  { href: "/portal/food/purchases", key: "foodPurchases", icon: ShoppingCart, ready: true },
   { href: "/portal/food/recipes", key: "foodRecipes", icon: ChefHat, ready: true },
   { href: "/portal/food/profitability", key: "foodProfitability", icon: Wallet, ready: true },
   { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: false },
@@ -117,7 +118,13 @@ export default async function FoodOverviewPage() {
     getFoodTopSellingDishes(orgId, 30, 5),
     prisma.foodSupplier.findMany({
       where: { organizationId: orgId },
-      select: { id: true, name: true, contactName: true, phone: true },
+      select: {
+        id: true,
+        name: true,
+        contactName: true,
+        phone: true,
+        purchases: { where: { voidedAt: null }, orderBy: { purchasedAt: "desc" }, take: 1, select: { purchasedAt: true, total: true } },
+      },
       orderBy: { name: "asc" },
       take: 5,
     }),
@@ -383,7 +390,7 @@ export default async function FoodOverviewPage() {
           </CardContent>
         </Card>
 
-        {/* Proveedores -- directorio real (todavía no hay registro de compras) */}
+        {/* Proveedores -- directorio real con su última compra */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <div className="flex items-center gap-2">
@@ -405,6 +412,14 @@ export default async function FoodOverviewPage() {
                       <p className="truncate text-sm font-medium text-slate-900">{sup.name}</p>
                       {(sup.contactName || sup.phone) && (
                         <p className="truncate text-xs text-slate-500">{[sup.contactName, sup.phone].filter(Boolean).join(" · ")}</p>
+                      )}
+                      {sup.purchases[0] && (
+                        <p className="truncate text-xs text-slate-400">
+                          {f.lastPurchase(
+                            sup.purchases[0].purchasedAt.toLocaleDateString(f.dateLocale),
+                            formatMoney(Number(sup.purchases[0].total))
+                          )}
+                        </p>
                       )}
                     </div>
                   </li>

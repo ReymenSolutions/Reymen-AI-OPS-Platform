@@ -5,6 +5,7 @@ import type { UserRole } from "@prisma/client";
 import { auth, isAdmin } from "./auth";
 import { can, type Action } from "./permissions";
 import { UserError } from "./user-error";
+import { assertModuleEnabled } from "./modules";
 
 /** Sesión de un admin de la plataforma (ADMIN o SUPER_ADMIN), o lanza "No autorizado". */
 export async function requireAdmin() {
@@ -19,4 +20,15 @@ export async function requireOrgPermission(action: Action) {
   if (!session?.user.organizationId) throw new UserError("No autorizado");
   if (!can(session.user.role as UserRole, action)) throw new UserError("No autorizado");
   return session as typeof session & { user: { organizationId: string } };
+}
+
+/**
+ * Toda acción que cambia algo de Food: sesión de la organización con permiso
+ * food:manage (Dueño, Admin o Gerente) y el módulo Food activo. Antes solo se
+ * revisaba la sesión, así que un Visor podía cambiar precios o recetas.
+ */
+export async function requireFoodManager() {
+  const session = await requireOrgPermission("food:manage");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  return session;
 }

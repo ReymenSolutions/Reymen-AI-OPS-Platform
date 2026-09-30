@@ -4,21 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
-import { assertModuleEnabled, assertManualSalesAllowed } from "@/lib/modules";
+import { assertManualSalesAllowed } from "@/lib/modules";
 import { UserError } from "@/lib/user-error";
 import { applyStockMovements, consumptionToDeltas, recipeConsumption } from "@/lib/food-inventory";
-import { requireOrgPermission } from "@/lib/guards";
+import { requireFoodManager } from "@/lib/guards";
 
-/**
- * Toda acción que cambia algo de Food: sesión de la organización con permiso
- * food:manage (Dueño, Admin o Gerente) y el módulo Food activo. Antes solo se
- * revisaba la sesión, así que un Visor podía cambiar precios o recetas.
- */
-async function requireFoodManager() {
-  const session = await requireOrgPermission("food:manage");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
-  return session;
-}
 
 // ─── FOOD OPS — Server Actions ──────────────────────────────────────
 // Mismo patrón que src/actions/leads.ts (ver DOCUMENTACION_TECNICA.md §18):
@@ -97,16 +87,30 @@ export async function createFoodInventoryItem(formData: FormData) {
   });
   if (!parsed.success) throw new UserError("Datos de insumo inválidos");
 
-  const item = await prisma.foodInventoryItem.create({
-    data: {
-      organizationId: session.user.organizationId,
-      name: parsed.data.name,
-      unit: parsed.data.unit,
-      category: parsed.data.category,
-      currentStock: parsed.data.currentStock,
-      minStock: parsed.data.minStock,
-      unitCost: parsed.data.unitCost ?? null,
-    },
+  const organizationId = session.user.organizationId;
+  const duplicate = await prisma.foodInventoryItem.findFirst({ where: { organizationId, name: parsed.data.name }, select: { id: true } });
+  if (duplicate) throw new UserError("Ya existe un insumo con ese nombre");
+
+  // Se crea en 0 y la existencia inicial entra como ajuste, para que el
+  // historial de movimientos explique la existencia desde el primer día.
+  const item = await prisma.$transaction(async (tx) => {
+    const created = await tx.foodInventoryItem.create({
+      data: {
+        organizationId,
+        name: parsed.data.name,
+        unit: parsed.data.unit,
+        category: parsed.data.category,
+        currentStock: 0,
+        minStock: parsed.data.minStock,
+        unitCost: parsed.data.unitCost ?? null,
+      },
+    });
+    await applyStockMovements(tx, organizationId, [{ inventoryItemId: created.id, delta: parsed.data.currentStock }], {
+      type: "ADJUSTMENT",
+      note: "Existencia inicial",
+      userId: session.user.id,
+    });
+    return created;
   });
 
   await logAudit({

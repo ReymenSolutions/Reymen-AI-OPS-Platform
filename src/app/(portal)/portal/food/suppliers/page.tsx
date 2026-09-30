@@ -6,10 +6,12 @@ import { createFoodSupplier } from "@/actions/food";
 import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
 import { pickDict } from "@/lib/i18n-dict";
+import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Users } from "lucide-react";
+import { FoodSupplierEditDialog } from "@/components/portal/FoodSupplierEditDialog";
 
 export default async function FoodSuppliersPage() {
   const session = await auth();
@@ -24,6 +26,14 @@ export default async function FoodSuppliersPage() {
     prisma.foodSupplier.findMany({
       where: { organizationId: orgId },
       orderBy: { name: "asc" },
+      include: {
+        purchases: {
+          where: { voidedAt: null },
+          orderBy: { purchasedAt: "desc" },
+          take: 1,
+          select: { purchasedAt: true, total: true },
+        },
+      },
     }),
   ]);
 
@@ -47,11 +57,32 @@ export default async function FoodSuppliersPage() {
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {suppliers.map((supplier) => (
-                    <li key={supplier.id} className="px-6 py-3">
-                      <p className="text-sm font-medium text-slate-900">{supplier.name}</p>
-                      <p className="text-xs text-slate-500">
-                        {[supplier.contactName, supplier.phone, supplier.email].filter(Boolean).join(" · ") || f.noContactInfo}
-                      </p>
+                    <li key={supplier.id} className="flex items-start justify-between gap-3 px-6 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900">{supplier.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {[supplier.contactName, supplier.phone, supplier.email].filter(Boolean).join(" · ") || f.noContactInfo}
+                        </p>
+                        {supplier.purchases[0] && (
+                          <p className="text-xs text-slate-400">
+                            {f.lastPurchase(
+                              supplier.purchases[0].purchasedAt.toLocaleDateString(f.dateLocale),
+                              formatMoney(Number(supplier.purchases[0].total))
+                            )}
+                          </p>
+                        )}
+                        {supplier.notes && <p className="mt-0.5 whitespace-pre-line text-xs text-slate-400">{supplier.notes}</p>}
+                      </div>
+                      <FoodSupplierEditDialog
+                        supplier={{
+                          id: supplier.id,
+                          name: supplier.name,
+                          contactName: supplier.contactName,
+                          phone: supplier.phone,
+                          email: supplier.email,
+                          notes: supplier.notes,
+                        }}
+                      />
                     </li>
                   ))}
                 </ul>
