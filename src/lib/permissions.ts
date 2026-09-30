@@ -20,7 +20,10 @@ export type Action =
   | "requests:create"
   | "reports:view"
   | "settings:view"
-  | "settings:manage";
+  | "settings:manage"
+  // Food: menú, recetas, precios, costos, inventario, compras y proveedores.
+  // Agente y Visor pueden ver Food pero no cambiarlo.
+  | "food:manage";
 
 const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
   SUPER_ADMIN: [
@@ -30,6 +33,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage", "team:manage",
     "requests:create", "reports:view", "settings:view", "settings:manage",
+    "food:manage",
   ],
   ADMIN: [
     "leads:create", "leads:delete", "leads:update_status",
@@ -38,6 +42,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage", "team:manage",
     "requests:create", "reports:view", "settings:view", "settings:manage",
+    "food:manage",
   ],
   OWNER: [
     "leads:create", "leads:delete", "leads:update_status",
@@ -46,6 +51,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage", "team:manage",
     "requests:create", "reports:view", "settings:view", "settings:manage",
+    "food:manage",
   ],
   MANAGER: [
     "leads:create", "leads:update_status",
@@ -54,6 +60,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Action[]> = {
     "conversations:view", "conversations:escalate", "conversations:resolve", "conversations:reply", "conversations:assign",
     "knowledge_base:manage", "prompts:manage",
     "requests:create", "reports:view", "settings:view",
+    "food:manage",
   ],
   AGENT: [
     "leads:create", "leads:update_status",

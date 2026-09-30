@@ -85,3 +85,27 @@ describe("manual per-dish sales move inventory by the difference only", () => {
     expect(deltas).toEqual([-0.3, -0.2, 0.1]);
   });
 });
+
+describe("food:manage permission", () => {
+  let org: { id: string };
+
+  beforeAll(async () => {
+    org = await createTestOrg("Food Permission Org");
+    await enable(org.id, "FOOD_OPS");
+  });
+  afterAll(async () => {
+    await cleanupOrg(org.id);
+  });
+
+  it("CRITICAL: a VIEWER or AGENT can't change Food; a MANAGER can", async () => {
+    for (const role of ["VIEWER", "AGENT"] as const) {
+      const user = await createTestUser(org.id, role, `food-${role.toLowerCase()}`);
+      authMock.mockResolvedValue(fakeSession({ id: user.id, role, organizationId: org.id }));
+      await expect(food.createFoodOperatingCost({ name: "Renta", amountMonthly: 1000 })).rejects.toThrow(/no autorizado/i);
+    }
+    const manager = await createTestUser(org.id, "MANAGER", "food-manager");
+    authMock.mockResolvedValue(fakeSession({ id: manager.id, role: "MANAGER", organizationId: org.id }));
+    await food.createFoodOperatingCost({ name: "Renta", amountMonthly: 1000 });
+    expect(await prisma.foodOperatingCost.count({ where: { organizationId: org.id } })).toBe(1);
+  });
+});

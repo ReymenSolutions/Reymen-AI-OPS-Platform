@@ -3,11 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { assertModuleEnabled, assertManualSalesAllowed } from "@/lib/modules";
 import { UserError } from "@/lib/user-error";
 import { applyStockMovements, consumptionToDeltas, recipeConsumption } from "@/lib/food-inventory";
+import { requireOrgPermission } from "@/lib/guards";
+
+/**
+ * Toda acción que cambia algo de Food: sesión de la organización con permiso
+ * food:manage (Dueño, Admin o Gerente) y el módulo Food activo. Antes solo se
+ * revisaba la sesión, así que un Visor podía cambiar precios o recetas.
+ */
+async function requireFoodManager() {
+  const session = await requireOrgPermission("food:manage");
+  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  return session;
+}
 
 // ─── FOOD OPS — Server Actions ──────────────────────────────────────
 // Mismo patrón que src/actions/leads.ts (ver DOCUMENTACION_TECNICA.md §18):
@@ -25,9 +36,7 @@ const createSaleSchema = z.object({
 });
 
 export async function createFoodSale(formData: FormData) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
   await assertManualSalesAllowed(session.user.organizationId);
 
   const parsed = createSaleSchema.safeParse({
@@ -76,9 +85,7 @@ const createInventoryItemSchema = z.object({
 });
 
 export async function createFoodInventoryItem(formData: FormData) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = createInventoryItemSchema.safeParse({
     name: formData.get("name"),
@@ -123,9 +130,7 @@ const createSupplierSchema = z.object({
 });
 
 export async function createFoodSupplier(formData: FormData) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = createSupplierSchema.safeParse({
     name: formData.get("name"),
@@ -203,9 +208,7 @@ async function assertDishRefsOwnedByOrg(organizationId: string, categoryId?: str
 }
 
 export async function createFoodDish(data: DishInput) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = dishSchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de platillo inválidos");
@@ -251,9 +254,7 @@ export async function createFoodDish(data: DishInput) {
 }
 
 export async function updateFoodDish(dishId: string, data: DishInput) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = dishSchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de platillo inválidos");
@@ -305,9 +306,7 @@ export async function updateFoodDish(dishId: string, data: DishInput) {
 }
 
 export async function toggleFoodDishActive(dishId: string, isActive: boolean) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const dish = await prisma.foodDish.findFirst({ where: { id: dishId, organizationId: session.user.organizationId } });
   if (!dish) throw new UserError("Platillo no encontrado");
@@ -336,9 +335,7 @@ const dishCategorySchema = z.object({
 });
 
 export async function createFoodDishCategory(data: { name: string; sortOrder?: number }) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = dishCategorySchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de categoría inválidos");
@@ -366,9 +363,7 @@ export async function createFoodDishCategory(data: { name: string; sortOrder?: n
 }
 
 export async function updateFoodDishCategory(categoryId: string, data: { name: string; sortOrder?: number }) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = dishCategorySchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de categoría inválidos");
@@ -396,9 +391,7 @@ export async function updateFoodDishCategory(categoryId: string, data: { name: s
 
 /** Borra la categoría -- los platillos que la tenían quedan sin categoría (onDelete: SetNull), nunca se borran. */
 export async function deleteFoodDishCategory(categoryId: string) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const category = await prisma.foodDishCategory.findFirst({ where: { id: categoryId, organizationId: session.user.organizationId } });
   if (!category) throw new UserError("Categoría no encontrada");
@@ -435,9 +428,7 @@ const modifierGroupSchema = z.object({
 type ModifierGroupInput = { name: string; minSelect: number; maxSelect: number; options: { name: string; priceDelta: number }[] };
 
 export async function createFoodModifierGroup(data: ModifierGroupInput) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = modifierGroupSchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de modificador inválidos");
@@ -472,9 +463,7 @@ export async function createFoodModifierGroup(data: ModifierGroupInput) {
 }
 
 export async function updateFoodModifierGroup(groupId: string, data: ModifierGroupInput) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = modifierGroupSchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de modificador inválidos");
@@ -513,9 +502,7 @@ export async function updateFoodModifierGroup(groupId: string, data: ModifierGro
 
 /** Borra el grupo -- se desvincula de cualquier platillo que lo tuviera asignado (onDelete: Cascade en el join, no en el platillo). */
 export async function deleteFoodModifierGroup(groupId: string) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const group = await prisma.foodModifierGroup.findFirst({ where: { id: groupId, organizationId: session.user.organizationId } });
   if (!group) throw new UserError("Grupo de modificadores no encontrado");
@@ -541,9 +528,7 @@ const operatingCostSchema = z.object({
 });
 
 export async function createFoodOperatingCost(data: { name: string; amountMonthly: number }) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = operatingCostSchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de gasto inválidos");
@@ -566,9 +551,7 @@ export async function createFoodOperatingCost(data: { name: string; amountMonthl
 }
 
 export async function updateFoodOperatingCost(costId: string, data: { name: string; amountMonthly: number }) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = operatingCostSchema.safeParse(data);
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de gasto inválidos");
@@ -595,9 +578,7 @@ export async function updateFoodOperatingCost(costId: string, data: { name: stri
 }
 
 export async function toggleFoodOperatingCostActive(costId: string, isActive: boolean) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const cost = await prisma.foodOperatingCost.findFirst({ where: { id: costId, organizationId: session.user.organizationId } });
   if (!cost) throw new UserError("Gasto no encontrado");
@@ -635,9 +616,7 @@ const logDishSalesSchema = z.object({
  * "hoy no vendí nada de esta variante" como dato real, no como omisión).
  */
 export async function logFoodDishSales(data: { date: string; entries: { variantId: string; quantity: number }[] }) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
   await assertManualSalesAllowed(session.user.organizationId);
 
   const parsed = logDishSalesSchema.safeParse(data);
@@ -691,9 +670,7 @@ export async function logFoodDishSales(data: { date: string; entries: { variantI
 }
 
 export async function updateFoodTargetCostPct(pct: number) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new UserError("No autorizado");
-  await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  const session = await requireFoodManager();
 
   const parsed = z.coerce.number().int().min(1).max(90).safeParse(pct);
   if (!parsed.success) throw new UserError("El % objetivo debe estar entre 1 y 90");
