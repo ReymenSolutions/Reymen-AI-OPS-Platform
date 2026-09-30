@@ -557,7 +557,7 @@ export interface FoodModifierGroupEntry {
 
 export async function getFoodModifierGroups(organizationId: string): Promise<FoodModifierGroupEntry[]> {
   const rows = await prisma.foodModifierGroup.findMany({
-    where: { organizationId },
+    where: { organizationId, isActive: true },
     orderBy: { sortOrder: "asc" },
     include: {
       options: {

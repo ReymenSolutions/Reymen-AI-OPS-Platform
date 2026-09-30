@@ -302,7 +302,7 @@ async function assertDishRefsOwnedByOrg(organizationId: string, categoryId?: str
     if (!category) throw new UserError("Categoría no encontrada");
   }
   if (modifierGroupIds && modifierGroupIds.length > 0) {
-    const owned = await prisma.foodModifierGroup.count({ where: { id: { in: modifierGroupIds }, organizationId } });
+    const owned = await prisma.foodModifierGroup.count({ where: { id: { in: modifierGroupIds }, organizationId, isActive: true } });
     if (owned !== new Set(modifierGroupIds).size) throw new UserError("Uno o más grupos de modificadores no son válidos");
   }
 }
@@ -632,7 +632,7 @@ export async function updateFoodModifierGroup(groupId: string, data: ModifierGro
   if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos de modificador inválidos");
   if (parsed.data.minSelect > parsed.data.maxSelect) throw new UserError("El mínimo no puede ser mayor al máximo");
 
-  const group = await prisma.foodModifierGroup.findFirst({ where: { id: groupId, organizationId: session.user.organizationId } });
+  const group = await prisma.foodModifierGroup.findFirst({ where: { id: groupId, organizationId: session.user.organizationId, isActive: true } });
   if (!group) throw new UserError("Grupo de modificadores no encontrado");
 
   await assertInventoryItemsOwnedByOrg(session.user.organizationId, parsed.data.options.flatMap((o) => o.ingredients.map((i) => i.inventoryItemId)));
@@ -687,19 +687,44 @@ export async function updateFoodModifierGroup(groupId: string, data: ModifierGro
   revalidatePath("/portal/food");
 }
 
-/** Borra el grupo -- se desvincula de cualquier platillo que lo tuviera asignado (onDelete: Cascade en el join, no en el platillo). */
+/**
+ * Elimina el grupo: se desvincula de los platillos que lo tenían. Si alguna
+ * de sus opciones ya se vendió (o descontó insumos), el grupo se desactiva
+ * en vez de borrarse, para conservar sus opciones y su historial; su nombre
+ * se libera para poder crear otro igual.
+ */
 export async function deleteFoodModifierGroup(groupId: string) {
   const session = await requireFoodManager();
 
-  const group = await prisma.foodModifierGroup.findFirst({ where: { id: groupId, organizationId: session.user.organizationId } });
+  const group = await prisma.foodModifierGroup.findFirst({
+    where: { id: groupId, organizationId: session.user.organizationId, isActive: true },
+    include: { options: { select: { id: true } } },
+  });
   if (!group) throw new UserError("Grupo de modificadores no encontrado");
 
-  await prisma.foodModifierGroup.delete({ where: { id: groupId } });
+  const optionIds = group.options.map((o) => o.id);
+  const [sales, usages] = await Promise.all([
+    prisma.foodModifierOptionSale.count({ where: { optionId: { in: optionIds } } }),
+    prisma.foodRecipeUsage.count({ where: { modifierOptionId: { in: optionIds } } }),
+  ]);
+  const archived = sales > 0 || usages > 0;
+
+  if (archived) {
+    await prisma.$transaction([
+      prisma.foodDishModifierGroup.deleteMany({ where: { groupId } }),
+      prisma.foodModifierGroup.update({
+        where: { id: groupId },
+        data: { isActive: false, name: `${group.name} (anterior ${groupId.slice(-4)})` },
+      }),
+    ]);
+  } else {
+    await prisma.foodModifierGroup.delete({ where: { id: groupId } });
+  }
 
   await logAudit({
     organizationId: session.user.organizationId,
     userId: session.user.id,
-    action: "food.modifier_group_delete",
+    action: archived ? "food.modifier_group_archive" : "food.modifier_group_delete",
     resource: "FoodModifierGroup",
     resourceId: groupId,
     metadata: { name: group.name },
