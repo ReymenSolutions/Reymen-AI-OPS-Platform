@@ -46,6 +46,8 @@ const ingredientSchema = z.object({
 });
 
 const variantSchema = z.object({
+  // Id de la variante existente: el servidor la actualiza en su lugar.
+  variantId: z.string().optional(),
   label: z.string().min(1, "Nombre de variante requerido"),
   price: z.coerce.number().positive("El precio debe ser mayor a 0"),
   ingredients: z.array(ingredientSchema).min(1, "Agrega al menos un insumo"),
@@ -95,7 +97,7 @@ function dishDefaults(dish: ExistingDish): FormData {
     name: dish.name,
     categoryId: dish.categoryId ?? "",
     modifierGroupIds: dish.modifierGroupIds ?? [],
-    variants: dish.variants.map((v) => ({ label: v.label, price: v.price, ingredients: v.ingredients })),
+    variants: dish.variants.map((v) => ({ variantId: v.id, label: v.label, price: v.price, ingredients: v.ingredients })),
   };
 }
 

@@ -97,10 +97,10 @@ export async function deleteFoodInventoryItem(itemId: string) {
   const organizationId = session.user.organizationId;
   const item = await prisma.foodInventoryItem.findFirst({
     where: { id: itemId, organizationId },
-    select: { name: true, _count: { select: { dishLinks: true, purchaseItems: true } } },
+    select: { name: true, _count: { select: { dishLinks: true, modifierLinks: true, purchaseItems: true } } },
   });
   if (!item) throw new UserError("Insumo no encontrado");
-  if (item._count.dishLinks > 0 || item._count.purchaseItems > 0) {
+  if (item._count.dishLinks > 0 || item._count.modifierLinks > 0 || item._count.purchaseItems > 0) {
     throw new UserError("Este insumo se usa en recetas o compras; desactívalo en lugar de eliminarlo");
   }
 

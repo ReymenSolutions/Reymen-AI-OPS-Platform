@@ -209,6 +209,8 @@ export const foodStrings = defineDict({
     inactiveSuppliers: "Proveedores desactivados",
     posSaleBadge: "POS",
     viewOnlyNotice: "Solo lectura: tu rol puede consultar pero no modificar.",
+    // Costo de modificadores
+    optionCost: (cost: string) => `costo ${cost}`,
   },
   en: {
     dateLocale: "en-US",
@@ -414,5 +416,7 @@ export const foodStrings = defineDict({
     inactiveSuppliers: "Deactivated suppliers",
     posSaleBadge: "POS",
     viewOnlyNotice: "Read-only: your role can view but not change anything.",
+    // Costo de modificadores
+    optionCost: (cost: string) => `cost ${cost}`,
   },
 });

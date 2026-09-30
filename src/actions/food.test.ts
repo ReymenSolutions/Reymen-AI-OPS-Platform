@@ -155,3 +155,112 @@ describe("manual sales can be edited and deleted; POS sales can't", () => {
     expect(await prisma.foodSale.count({ where: { id: pos.id } })).toBe(1);
   });
 });
+
+describe("editing dishes and modifier groups keeps their ids (POS and history depend on them)", () => {
+  let org: { id: string };
+  let other: { id: string };
+  let owner: { id: string };
+
+  beforeAll(async () => {
+    org = await createTestOrg("Food Edit In Place Org");
+    other = await createTestOrg("Food Edit In Place Other Org");
+    owner = await createTestUser(org.id, "OWNER", "food-edit-owner");
+    await enable(org.id, "FOOD_OPS");
+  });
+  afterAll(async () => {
+    await cleanupOrg(org.id);
+    await cleanupOrg(other.id);
+  });
+
+  it("CRITICAL: a dish edit updates variants in place, keeping their sales; removed ones go, new ones are added", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    const cheese = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Queso", unit: "kg" } });
+    const ham = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Jamón", unit: "kg" } });
+    await food.createFoodDish({
+      name: "Sándwich",
+      variants: [
+        { label: "Chico", price: 50, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.03 }] },
+        { label: "Grande", price: 80, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.05 }] },
+      ],
+    });
+    const dish = await prisma.foodDish.findFirstOrThrow({ where: { organizationId: org.id, name: "Sándwich" }, include: { variants: true } });
+    const chico = dish.variants.find((v) => v.label === "Chico")!;
+    const grande = dish.variants.find((v) => v.label === "Grande")!;
+    await prisma.foodDishSale.create({ data: { organizationId: org.id, variantId: chico.id, occurredAt: new Date("2026-09-29T06:00:00Z"), quantity: 7 } });
+
+    await food.updateFoodDish(dish.id, {
+      name: "Sándwich",
+      variants: [
+        // Se renombra y cambia su receta, identificada por id.
+        { variantId: chico.id, label: "Mediano", price: 60, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.04 }, { inventoryItemId: ham.id, quantity: 0.05 }] },
+        { label: "Jumbo", price: 110, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.08 }] },
+      ],
+    });
+
+    const after = await prisma.foodDishVariant.findMany({ where: { dishId: dish.id }, include: { ingredients: true } });
+    const mediano = after.find((v) => v.label === "Mediano")!;
+    expect(mediano.id).toBe(chico.id);
+    expect(Number(mediano.price)).toBe(60);
+    expect(mediano.ingredients).toHaveLength(2);
+    expect(after.map((v) => v.label).sort()).toEqual(["Jumbo", "Mediano"]);
+    expect(after.some((v) => v.id === grande.id)).toBe(false);
+    expect((await prisma.foodDishSale.findFirstOrThrow({ where: { variantId: chico.id } })).quantity).toBe(7);
+
+    // Intercambiar nombres no choca con la unicidad (dishId, label).
+    await food.updateFoodDish(dish.id, {
+      name: "Sándwich",
+      variants: [
+        { variantId: mediano.id, label: "Jumbo", price: 60, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.04 }] },
+        { variantId: after.find((v) => v.label === "Jumbo")!.id, label: "Mediano", price: 110, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.08 }] },
+      ],
+    });
+    expect((await prisma.foodDishVariant.findUniqueOrThrow({ where: { id: mediano.id } })).label).toBe("Jumbo");
+  });
+
+  it("modifier options keep their ids, save their mini-recipe (negatives allowed) and reject foreign supplies", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    const cheese = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Queso extra", unit: "kg" } });
+    const onion = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Cebolla", unit: "kg" } });
+    const foreign = await prisma.foodInventoryItem.create({ data: { organizationId: other.id, name: "Ajeno", unit: "kg" } });
+
+    await food.createFoodModifierGroup({
+      name: "Extras",
+      minSelect: 0,
+      maxSelect: 3,
+      options: [
+        { name: "Extra queso", priceDelta: 10, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.03 }] },
+        { name: "Sin cebolla", priceDelta: 0, ingredients: [{ inventoryItemId: onion.id, quantity: -0.02 }] },
+      ],
+    });
+    const group = await prisma.foodModifierGroup.findFirstOrThrow({ where: { organizationId: org.id, name: "Extras" }, include: { options: true } });
+    const extra = group.options.find((o) => o.name === "Extra queso")!;
+
+    await food.updateFoodModifierGroup(group.id, {
+      name: "Extras",
+      minSelect: 0,
+      maxSelect: 3,
+      options: [
+        { optionId: extra.id, name: "Extra queso", priceDelta: 12, ingredients: [{ inventoryItemId: cheese.id, quantity: 0.04 }] },
+        { name: "Sin cebolla", priceDelta: 0, ingredients: [{ inventoryItemId: onion.id, quantity: -0.02 }] },
+      ],
+    });
+    const after = await prisma.foodModifierOption.findMany({ where: { groupId: group.id }, include: { ingredients: true } });
+    expect(after.map((o) => o.id).sort()).toEqual(group.options.map((o) => o.id).sort()); // "Sin cebolla" se emparejó por nombre
+    const extraAfter = after.find((o) => o.id === extra.id)!;
+    expect(Number(extraAfter.priceDelta)).toBe(12);
+    expect(Number(extraAfter.ingredients[0].quantity)).toBe(0.04);
+    expect(Number(after.find((o) => o.name === "Sin cebolla")!.ingredients[0].quantity)).toBe(-0.02);
+
+    await expect(
+      food.updateFoodModifierGroup(group.id, {
+        name: "Extras",
+        minSelect: 0,
+        maxSelect: 3,
+        options: [{ optionId: extra.id, name: "Extra queso", priceDelta: 12, ingredients: [{ inventoryItemId: foreign.id, quantity: 0.04 }] }],
+      })
+    ).rejects.toThrow("Uno o más insumos no son válidos");
+    await expect(
+      food.createFoodDish({ name: "Robado", variants: [{ label: "Único", price: 10, ingredients: [{ inventoryItemId: foreign.id, quantity: 1 }] }] })
+    ).rejects.toThrow("Uno o más insumos no son válidos");
+  });
+});

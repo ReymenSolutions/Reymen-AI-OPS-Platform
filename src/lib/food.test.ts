@@ -669,6 +669,58 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       expect(Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: beef.id } })).currentStock)).toBeCloseTo(4.5, 3);
     });
 
+    it("CRITICAL: extras deduct their own mini-recipe, \"Sin ...\" gives back, and a cancellation reverses both", async () => {
+      const o = await createTestOrg("Food Pos Modifier Stock Org");
+      org = o;
+      await prisma.organizationModule.create({ data: { organizationId: o.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const cheese = await prisma.foodInventoryItem.create({ data: { organizationId: o.id, name: "Queso", unit: "kg", currentStock: 10, unitCost: 200 } });
+      const onion = await prisma.foodInventoryItem.create({ data: { organizationId: o.id, name: "Cebolla", unit: "kg", currentStock: 10, unitCost: 30 } });
+      const { variant } = await makeDish(o.id, "Taco", 30, [
+        { inventoryItemId: cheese.id, quantity: 0.05 },
+        { inventoryItemId: onion.id, quantity: 0.02 },
+      ]);
+      const group = await prisma.foodModifierGroup.create({
+        data: {
+          organizationId: o.id,
+          name: "Extras",
+          options: {
+            create: [
+              { name: "Extra queso", priceDelta: 10, ingredients: { create: [{ inventoryItemId: cheese.id, quantity: 0.03 }] } },
+              { name: "Sin cebolla", priceDelta: 0, ingredients: { create: [{ inventoryItemId: onion.id, quantity: -0.02 }] } },
+            ],
+          },
+        },
+        include: { options: true },
+      });
+      const extra = group.options.find((x) => x.name === "Extra queso")!;
+      const noOnion = group.options.find((x) => x.name === "Sin cebolla")!;
+      const stock = async (id: string) => Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id } })).currentStock);
+
+      // 4 tacos: 2 con extra queso, 1 sin cebolla.
+      const item = { variantId: variant.id, quantity: 4, modifiers: [{ optionId: extra.id, quantity: 2 }, { optionId: noOnion.id, quantity: 1 }] };
+      await processFoodPosOrder({ grossAmount: 140, netAmount: 120, items: [item] }, o.id);
+      expect(await stock(cheese.id)).toBeCloseTo(10 - 0.05 * 4 - 0.03 * 2, 3); // 9.74
+      expect(await stock(onion.id)).toBeCloseTo(10 - 0.02 * 4 + 0.02, 3); // 9.94
+
+      await processFoodPosOrder(
+        { grossAmount: -140, netAmount: -120, items: [{ ...item, quantity: -4, modifiers: item.modifiers.map((m) => ({ ...m, quantity: -m.quantity })) }] },
+        o.id
+      );
+      expect(await stock(cheese.id)).toBeCloseTo(10, 3);
+      expect(await stock(onion.id)).toBeCloseTo(10, 3);
+
+      // La receta del extra estaba mal: eran 0.04. El recálculo lo alcanza.
+      await processFoodPosOrder({ grossAmount: 140, netAmount: 120, items: [item] }, o.id);
+      await prisma.foodModifierOptionIngredient.updateMany({ where: { optionId: extra.id }, data: { quantity: 0.04 } });
+      await prisma.$transaction((tx) => recalculateRecipeUsage(tx, o.id, daysAgoDate(1), {}));
+      expect(await stock(cheese.id)).toBeCloseTo(10 - 0.05 * 4 - 0.04 * 2, 3); // 9.72
+
+      // El costo real de lo vendido incluye los extras (y lo que ahorra "Sin cebolla").
+      const profit = await getFoodNetProfit(o.id, "today");
+      const expectedCogs = 4 * (0.05 * 200 + 0.02 * 30) + 2 * (0.04 * 200) + 1 * (-0.02 * 30);
+      expect(profit.cogs).toBeCloseTo(expectedCogs, 2);
+    });
+
     it("rejects an order for a variant that belongs to another organization", async () => {
       org = await createTestOrg("Food Pos Order Cross Org");
       const otherOrg = await createTestOrg("Food Pos Order Other Org");

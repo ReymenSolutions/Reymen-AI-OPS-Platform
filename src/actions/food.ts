@@ -235,6 +235,8 @@ const dishVariantIngredientSchema = z.object({
 });
 
 const dishVariantSchema = z.object({
+  /** Id de la variante existente al editar: se actualiza en su lugar y conserva su historial. */
+  variantId: z.string().optional(),
   label: z.string().min(1, "Nombre de variante requerido"),
   price: z.coerce.number().positive("El precio debe ser mayor a 0"),
   ingredients: z.array(dishVariantIngredientSchema).min(1, "Agrega al menos un insumo"),
@@ -256,8 +258,42 @@ type DishInput = {
   name: string;
   categoryId?: string | null;
   modifierGroupIds?: string[];
-  variants: { label: string; price: number; ingredients: { inventoryItemId: string; quantity: number }[] }[];
+  variants: { variantId?: string; label: string; price: number; ingredients: { inventoryItemId: string; quantity: number }[] }[];
 };
+
+/** Todos los insumos usados en recetas deben ser de esta organización. */
+async function assertInventoryItemsOwnedByOrg(organizationId: string, itemIds: string[]) {
+  const unique = [...new Set(itemIds)];
+  if (unique.length === 0) return;
+  const owned = await prisma.foodInventoryItem.count({ where: { id: { in: unique }, organizationId } });
+  if (owned !== unique.length) throw new UserError("Uno o más insumos no son válidos");
+}
+
+/**
+ * Empareja lo que llega del formulario con lo que ya existe: primero por id,
+ * luego por nombre. Lo emparejado se actualiza en su lugar -- conserva su id,
+ * que es el que usa el POS y el que ata ventas y consumos --; lo demás se crea.
+ */
+function matchExisting<T extends { name: string; id?: string }>(incoming: T[], existing: { id: string; name: string }[]) {
+  const byId = new Set(existing.map((e) => e.id));
+  const used = new Set<string>();
+  const targets: (string | undefined)[] = incoming.map((i) => {
+    if (i.id && byId.has(i.id) && !used.has(i.id)) {
+      used.add(i.id);
+      return i.id;
+    }
+    return undefined;
+  });
+  incoming.forEach((i, idx) => {
+    if (targets[idx]) return;
+    const match = existing.find((e) => !used.has(e.id) && e.name.trim().toLowerCase() === i.name.trim().toLowerCase());
+    if (match) {
+      used.add(match.id);
+      targets[idx] = match.id;
+    }
+  });
+  return { targets, keep: [...used] };
+}
 
 /** Confirma que categoryId (si viene) y todos los modifierGroupIds pertenecen a esta organización. */
 async function assertDishRefsOwnedByOrg(organizationId: string, categoryId?: string | null, modifierGroupIds?: string[]) {
@@ -283,6 +319,7 @@ export async function createFoodDish(data: DishInput) {
   if (existing) throw new UserError("Ya existe un platillo con ese nombre");
 
   await assertDishRefsOwnedByOrg(session.user.organizationId, parsed.data.categoryId, parsed.data.modifierGroupIds);
+  await assertInventoryItemsOwnedByOrg(session.user.organizationId, parsed.data.variants.flatMap((v) => v.ingredients.map((i) => i.inventoryItemId)));
 
   const dish = await prisma.foodDish.create({
     data: {
@@ -328,32 +365,48 @@ export async function updateFoodDish(dishId: string, data: DishInput) {
 
   await assertDishRefsOwnedByOrg(session.user.organizationId, parsed.data.categoryId, parsed.data.modifierGroupIds);
 
-  // Reemplaza la lista completa de variantes (y con ellas, sus ingredientes
-  // vía onDelete: Cascade) y de grupos de modificadores asignados en una
-  // sola transacción -- más simple y menos propenso a errores que intentar
-  // diffear cuáles se agregaron/quitaron/cambiaron desde el formulario.
-  await prisma.$transaction([
-    prisma.foodDishVariant.deleteMany({ where: { dishId } }),
-    prisma.foodDishModifierGroup.deleteMany({ where: { dishId } }),
-    prisma.foodDish.update({
+  const organizationId = session.user.organizationId;
+  await assertInventoryItemsOwnedByOrg(organizationId, parsed.data.variants.flatMap((v) => v.ingredients.map((i) => i.inventoryItemId)));
+
+  // Las variantes se actualizan en su lugar (no se borran y recrean): su id
+  // es el que el POS manda en cada venta y el que ata el historial de ventas
+  // y de consumo de insumos, que se perdían en cada edición.
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.foodDishVariant.findMany({ where: { dishId }, select: { id: true, label: true } });
+    const { targets, keep } = matchExisting(
+      parsed.data.variants.map((v) => ({ id: v.variantId, name: v.label })),
+      existing.map((v) => ({ id: v.id, name: v.label }))
+    );
+    await tx.foodDishVariant.deleteMany({ where: { dishId, id: { notIn: keep } } });
+    // Nombre temporal para poder intercambiar nombres sin chocar con @@unique([dishId, label]).
+    for (const id of keep) await tx.foodDishVariant.update({ where: { id }, data: { label: `__${id}` } });
+
+    for (const [idx, v] of parsed.data.variants.entries()) {
+      const ingredients = v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity }));
+      const target = targets[idx];
+      if (target) {
+        await tx.foodDishVariantIngredient.deleteMany({ where: { variantId: target } });
+        await tx.foodDishVariant.update({
+          where: { id: target },
+          data: { label: v.label, price: v.price, ingredients: { create: ingredients } },
+        });
+      } else {
+        await tx.foodDishVariant.create({
+          data: { dishId, organizationId, label: v.label, price: v.price, ingredients: { create: ingredients } },
+        });
+      }
+    }
+
+    await tx.foodDishModifierGroup.deleteMany({ where: { dishId } });
+    await tx.foodDish.update({
       where: { id: dishId },
       data: {
         name: parsed.data.name,
         categoryId: parsed.data.categoryId || null,
-        variants: {
-          create: parsed.data.variants.map((v) => ({
-            organizationId: session.user.organizationId!,
-            label: v.label,
-            price: v.price,
-            ingredients: { create: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })) },
-          })),
-        },
-        modifierGroups: {
-          create: (parsed.data.modifierGroupIds ?? []).map((groupId) => ({ groupId })),
-        },
+        modifierGroups: { create: (parsed.data.modifierGroupIds ?? []).map((groupId) => ({ groupId })) },
       },
-    }),
-  ]);
+    });
+  });
 
   await logAudit({
     organizationId: session.user.organizationId,
@@ -478,8 +531,20 @@ export async function deleteFoodDishCategory(categoryId: string) {
 // ─── FOOD OPS — Grupos de modificadores (Fase 17) ────────────────────
 
 const modifierOptionSchema = z.object({
+  /** Id de la opción existente al editar: se actualiza en su lugar. */
+  optionId: z.string().optional(),
   name: z.string().min(1, "Nombre de opción requerido"),
   priceDelta: z.coerce.number().min(0, "El precio adicional no puede ser negativo"),
+  // Mini-receta por unidad del platillo; negativa para "Sin ..." (devuelve insumo).
+  ingredients: z
+    .array(
+      z.object({
+        inventoryItemId: z.string().min(1, "Selecciona un insumo"),
+        quantity: z.coerce.number().refine((n) => Number.isFinite(n) && n !== 0, "La cantidad no puede ser 0"),
+      })
+    )
+    .default([])
+    .refine((list) => new Set(list.map((i) => i.inventoryItemId)).size === list.length, "Un insumo aparece dos veces en la opción"),
 });
 
 const modifierGroupSchema = z.object({
@@ -489,7 +554,16 @@ const modifierGroupSchema = z.object({
   options: z.array(modifierOptionSchema).min(1, "Agrega al menos una opción"),
 });
 
-type ModifierGroupInput = { name: string; minSelect: number; maxSelect: number; options: { name: string; priceDelta: number }[] };
+type ModifierGroupInput = {
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  options: { optionId?: string; name: string; priceDelta: number; ingredients?: { inventoryItemId: string; quantity: number }[] }[];
+};
+
+function optionIngredients(o: { ingredients: { inventoryItemId: string; quantity: number }[] }) {
+  return o.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity }));
+}
 
 export async function createFoodModifierGroup(data: ModifierGroupInput) {
   const session = await requireFoodManager();
@@ -502,6 +576,7 @@ export async function createFoodModifierGroup(data: ModifierGroupInput) {
     where: { organizationId_name: { organizationId: session.user.organizationId, name: parsed.data.name } },
   });
   if (existing) throw new UserError("Ya existe un grupo de modificadores con ese nombre");
+  await assertInventoryItemsOwnedByOrg(session.user.organizationId, parsed.data.options.flatMap((o) => o.ingredients.map((i) => i.inventoryItemId)));
 
   const group = await prisma.foodModifierGroup.create({
     data: {
@@ -509,7 +584,14 @@ export async function createFoodModifierGroup(data: ModifierGroupInput) {
       name: parsed.data.name,
       minSelect: parsed.data.minSelect,
       maxSelect: parsed.data.maxSelect,
-      options: { create: parsed.data.options.map((o) => ({ name: o.name, priceDelta: o.priceDelta })) },
+      options: {
+        create: parsed.data.options.map((o, idx) => ({
+          name: o.name,
+          priceDelta: o.priceDelta,
+          sortOrder: idx,
+          ingredients: { create: optionIngredients(o) },
+        })),
+      },
     },
   });
 
@@ -536,20 +618,36 @@ export async function updateFoodModifierGroup(groupId: string, data: ModifierGro
   const group = await prisma.foodModifierGroup.findFirst({ where: { id: groupId, organizationId: session.user.organizationId } });
   if (!group) throw new UserError("Grupo de modificadores no encontrado");
 
-  // Reemplaza la lista completa de opciones en una sola transacción --
-  // mismo criterio que updateFoodDish() con sus variantes.
-  await prisma.$transaction([
-    prisma.foodModifierOption.deleteMany({ where: { groupId } }),
-    prisma.foodModifierGroup.update({
+  await assertInventoryItemsOwnedByOrg(session.user.organizationId, parsed.data.options.flatMap((o) => o.ingredients.map((i) => i.inventoryItemId)));
+
+  // Opciones en su lugar, igual que las variantes de un platillo: su id es el
+  // que el POS manda con cada venta y el que ata el consumo de insumos.
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.foodModifierOption.findMany({ where: { groupId }, select: { id: true, name: true } });
+    const { targets, keep } = matchExisting(
+      parsed.data.options.map((o) => ({ id: o.optionId, name: o.name })),
+      existing
+    );
+    await tx.foodModifierOption.deleteMany({ where: { groupId, id: { notIn: keep } } });
+    for (const [idx, o] of parsed.data.options.entries()) {
+      const target = targets[idx];
+      if (target) {
+        await tx.foodModifierOptionIngredient.deleteMany({ where: { optionId: target } });
+        await tx.foodModifierOption.update({
+          where: { id: target },
+          data: { name: o.name, priceDelta: o.priceDelta, sortOrder: idx, ingredients: { create: optionIngredients(o) } },
+        });
+      } else {
+        await tx.foodModifierOption.create({
+          data: { groupId, name: o.name, priceDelta: o.priceDelta, sortOrder: idx, ingredients: { create: optionIngredients(o) } },
+        });
+      }
+    }
+    await tx.foodModifierGroup.update({
       where: { id: groupId },
-      data: {
-        name: parsed.data.name,
-        minSelect: parsed.data.minSelect,
-        maxSelect: parsed.data.maxSelect,
-        options: { create: parsed.data.options.map((o) => ({ name: o.name, priceDelta: o.priceDelta })) },
-      },
-    }),
-  ]);
+      data: { name: parsed.data.name, minSelect: parsed.data.minSelect, maxSelect: parsed.data.maxSelect },
+    });
+  });
 
   await logAudit({
     organizationId: session.user.organizationId,
@@ -713,7 +811,7 @@ export async function logFoodDishSales(data: { date: string; entries: { variantI
     const changes = parsed.data.entries
       .map((e) => ({ variantId: e.variantId, quantity: e.quantity - (previousByVariant.get(e.variantId) ?? 0) }))
       .filter((c) => c.quantity !== 0);
-    await consumeRecipes(tx, organizationId, changes, {
+    await consumeRecipes(tx, organizationId, { variants: changes }, {
       type: "MANUAL_DISH_SALES",
       occurredAt,
       note: parsed.data.date,

@@ -21,24 +21,39 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
-async function loadRecipes(tx: Tx, variantIds: string[]): Promise<Map<string, { inventoryItemId: string; quantity: number }[]>> {
-  const lines = variantIds.length
-    ? await tx.foodDishVariantIngredient.findMany({
-        where: { variantId: { in: variantIds } },
-        select: { variantId: true, inventoryItemId: true, quantity: true },
-      })
-    : [];
-  const byVariant = new Map<string, { inventoryItemId: string; quantity: number }[]>();
+type Recipe = { inventoryItemId: string; quantity: number }[];
+
+function groupRecipe<K extends string>(lines: ({ inventoryItemId: string; quantity: Prisma.Decimal } & Record<K, string>)[], key: K) {
+  const out = new Map<string, Recipe>();
   for (const line of lines) {
-    const list = byVariant.get(line.variantId) ?? [];
+    const list = out.get(line[key]) ?? [];
     list.push({ inventoryItemId: line.inventoryItemId, quantity: Number(line.quantity) });
-    byVariant.set(line.variantId, list);
+    out.set(line[key], list);
   }
-  return byVariant;
+  return out;
+}
+
+/** Recetas actuales de variantes y de opciones de modificador. */
+async function loadRecipes(tx: Tx, variantIds: string[], optionIds: string[]) {
+  const [variantLines, optionLines] = await Promise.all([
+    variantIds.length
+      ? tx.foodDishVariantIngredient.findMany({
+          where: { variantId: { in: variantIds } },
+          select: { variantId: true, inventoryItemId: true, quantity: true },
+        })
+      : [],
+    optionIds.length
+      ? tx.foodModifierOptionIngredient.findMany({
+          where: { optionId: { in: optionIds } },
+          select: { optionId: true, inventoryItemId: true, quantity: true },
+        })
+      : [],
+  ]);
+  return { variants: groupRecipe(variantLines, "variantId"), options: groupRecipe(optionLines, "optionId") };
 }
 
 /** Lo que consumen `units` unidades con esta receta (unidades negativas devuelven). */
-function consumptionFor(recipe: { inventoryItemId: string; quantity: number }[] | undefined, units: number): Consumption {
+function consumptionFor(recipe: Recipe | undefined, units: number): Consumption {
   const out: Consumption = {};
   for (const line of recipe ?? []) {
     const used = round3(line.quantity * units);
@@ -47,16 +62,23 @@ function consumptionFor(recipe: { inventoryItemId: string; quantity: number }[] 
   return out;
 }
 
+function sumBy<T>(items: T[], key: (i: T) => string, qty: (i: T) => number): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const i of items) out.set(key(i), (out.get(key(i)) ?? 0) + qty(i));
+  return out;
+}
+
 /**
- * Descuenta los insumos de unidades vendidas según la receta ACTUAL de cada
- * variante y deja un FoodRecipeUsage por variante con lo descontado, para
- * poder recalcular después si la receta cambia. Unidades negativas (una
+ * Descuenta los insumos de lo vendido según la receta ACTUAL de cada
+ * variante y de cada opción de modificador ("Extra queso"), y deja un
+ * FoodRecipeUsage por variante/opción con lo descontado, para poder
+ * recalcular después si la receta cambia. Unidades negativas (una
  * cancelación o una corrección a la baja) devuelven insumos.
  */
 export async function consumeRecipes(
   tx: Tx,
   organizationId: string,
-  items: { variantId: string; quantity: number }[],
+  sold: { variants: { variantId: string; quantity: number }[]; modifiers?: { optionId: string; quantity: number }[] },
   meta: {
     type: Extract<FoodInventoryMovementType, "SALE" | "SALE_CANCELLATION" | "MANUAL_DISH_SALES">;
     occurredAt: Date;
@@ -65,29 +87,31 @@ export async function consumeRecipes(
     userId?: string | null;
   }
 ): Promise<void> {
-  const unitsByVariant = new Map<string, number>();
-  for (const item of items) unitsByVariant.set(item.variantId, (unitsByVariant.get(item.variantId) ?? 0) + item.quantity);
-  const recipes = await loadRecipes(tx, [...unitsByVariant.keys()]);
+  const unitsByVariant = sumBy(sold.variants, (i) => i.variantId, (i) => i.quantity);
+  const unitsByOption = sumBy(sold.modifiers ?? [], (m) => m.optionId, (m) => m.quantity);
+  const recipes = await loadRecipes(tx, [...unitsByVariant.keys()], [...unitsByOption.keys()]);
 
   const total = new Map<string, number>();
-  for (const [variantId, units] of unitsByVariant) {
-    if (units === 0) continue;
-    const applied = consumptionFor(recipes.get(variantId), units);
+  const record = async (source: { variantId: string } | { modifierOptionId: string }, recipe: Recipe | undefined, units: number) => {
+    if (units === 0) return;
+    const applied = consumptionFor(recipe, units);
     // También sin receta: si después se le agrega una, el recálculo la alcanza.
     await tx.foodRecipeUsage.create({
-      data: { organizationId, variantId, units, occurredAt: meta.occurredAt, type: meta.type, foodSaleId: meta.foodSaleId ?? null, applied },
+      data: { organizationId, ...source, units, occurredAt: meta.occurredAt, type: meta.type, foodSaleId: meta.foodSaleId ?? null, applied },
     });
     for (const [itemId, used] of Object.entries(applied)) total.set(itemId, (total.get(itemId) ?? 0) + used);
-  }
+  };
+  for (const [variantId, units] of unitsByVariant) await record({ variantId }, recipes.variants.get(variantId), units);
+  for (const [optionId, units] of unitsByOption) await record({ modifierOptionId: optionId }, recipes.options.get(optionId), units);
 
   await applyStockMovements(tx, organizationId, consumptionToDeltas(total), meta);
 }
 
 /**
- * Recalcula con las recetas ACTUALES las ventas desde `since`: por cada
- * FoodRecipeUsage compara lo que se descontó con lo que indica la receta hoy
- * y mueve solo la diferencia (un movimiento RECIPE_RECALC por insumo).
- * Correrlo dos veces no cambia nada la segunda vez.
+ * Recalcula con las recetas ACTUALES (de platillos y de modificadores) las
+ * ventas desde `since`: por cada FoodRecipeUsage compara lo que se descontó
+ * con lo que indica la receta hoy y mueve solo la diferencia (un movimiento
+ * RECIPE_RECALC por insumo). Correrlo dos veces no cambia nada la segunda vez.
  */
 export async function recalculateRecipeUsage(
   tx: Tx,
@@ -97,14 +121,19 @@ export async function recalculateRecipeUsage(
 ): Promise<{ usages: number; items: number }> {
   const usages = await tx.foodRecipeUsage.findMany({
     where: { organizationId, occurredAt: { gte: since } },
-    select: { id: true, variantId: true, units: true, applied: true },
+    select: { id: true, variantId: true, modifierOptionId: true, units: true, applied: true },
   });
-  const recipes = await loadRecipes(tx, [...new Set(usages.map((u) => u.variantId))]);
+  const recipes = await loadRecipes(
+    tx,
+    [...new Set(usages.flatMap((u) => (u.variantId ? [u.variantId] : [])))],
+    [...new Set(usages.flatMap((u) => (u.modifierOptionId ? [u.modifierOptionId] : [])))]
+  );
 
   const diff = new Map<string, number>();
   let changed = 0;
   for (const usage of usages) {
-    const expected = consumptionFor(recipes.get(usage.variantId), Number(usage.units));
+    const recipe = usage.variantId ? recipes.variants.get(usage.variantId) : recipes.options.get(usage.modifierOptionId!);
+    const expected = consumptionFor(recipe, Number(usage.units));
     const applied = (usage.applied ?? {}) as Consumption;
     let differs = false;
     for (const itemId of new Set([...Object.keys(expected), ...Object.keys(applied)])) {

@@ -135,4 +135,55 @@ describe("GET /api/v1/food/menu", () => {
       await cleanupOrg(orgC.id);
     });
   });
+
+  it("CRITICAL: warns (never blocks) about dishes, variants and extras running out, and lists low supplies", async () => {
+    authMock.mockResolvedValue(null);
+    const cheese = await prisma.foodInventoryItem.create({ data: { organizationId: orgA.id, name: "Queso menú", unit: "kg", currentStock: 0.5, minStock: 1 } });
+    const beef = await prisma.foodInventoryItem.create({ data: { organizationId: orgA.id, name: "Carne menú", unit: "kg", currentStock: 0, minStock: 1 } });
+    const bread = await prisma.foodInventoryItem.create({ data: { organizationId: orgA.id, name: "Pan menú", unit: "pza", currentStock: 50, minStock: 5 } });
+    const group = await prisma.foodModifierGroup.create({
+      data: {
+        organizationId: orgA.id,
+        name: "Extras menú",
+        options: {
+          create: [
+            { name: "Extra queso", priceDelta: 10, ingredients: { create: [{ inventoryItemId: cheese.id, quantity: 0.03 }] } },
+            { name: "Sin carne", priceDelta: 0, ingredients: { create: [{ inventoryItemId: beef.id, quantity: -0.15 }] } },
+          ],
+        },
+      },
+    });
+    await prisma.foodDish.create({
+      data: {
+        organizationId: orgA.id,
+        name: "Hamburguesa menú",
+        variants: {
+          create: [
+            { organizationId: orgA.id, label: "Sencilla", price: 90, ingredients: { create: [{ inventoryItemId: bread.id, quantity: 1 }, { inventoryItemId: cheese.id, quantity: 0.05 }] } },
+            { organizationId: orgA.id, label: "Doble", price: 120, ingredients: { create: [{ inventoryItemId: beef.id, quantity: 0.3 }] } },
+          ],
+        },
+        modifierGroups: { create: [{ groupId: group.id }] },
+      },
+    });
+
+    const res = await GET(makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgA.id}`, { "x-api-key": orgA.n8nWebhookSecret }));
+    const body = await res.json();
+    const dish = body.data.find((d: { name: string }) => d.name === "Hamburguesa menú");
+    const byLabel = Object.fromEntries(dish.variants.map((v: { label: string; stockStatus: string }) => [v.label, v.stockStatus]));
+    expect(byLabel).toEqual({ Sencilla: "low", Doble: "out" });
+    expect(dish.stockStatus).toBe("low"); // una variante aún se puede vender
+    const options = Object.fromEntries(dish.modifierGroups[0].options.map((o: { name: string; stockStatus: string }) => [o.name, o.stockStatus]));
+    expect(options).toEqual({ "Extra queso": "low", "Sin carne": null }); // "Sin ..." no consume
+    expect(body.data.find((d: { name: string }) => d.name === "Org A Secret Dish").stockStatus).toBeNull(); // sin receta
+
+    const low = body.inventory.lowStock.map((i: { name: string; status: string }) => `${i.name}:${i.status}`);
+    expect(low).toEqual(expect.arrayContaining(["Carne menú:out", "Queso menú:low"]));
+    expect(low).not.toContain("Pan menú:low");
+
+    // Un cambio de existencia cambia el ETag para que el POS se entere.
+    await prisma.foodInventoryItem.update({ where: { id: beef.id }, data: { currentStock: 10 } });
+    const after = await GET(makeRequest(`http://localhost/api/v1/food/menu?orgId=${orgA.id}`, { "x-api-key": orgA.n8nWebhookSecret, "if-none-match": res.headers.get("etag")! }));
+    expect(after.status).toBe(200);
+  });
 });

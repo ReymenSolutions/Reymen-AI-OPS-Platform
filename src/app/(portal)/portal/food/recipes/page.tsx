@@ -49,7 +49,7 @@ export default async function FoodRecipesPage() {
     getFoodDishesWithCost(orgId),
     prisma.foodInventoryItem.findMany({
       // Los desactivados solo siguen disponibles si ya están en alguna receta.
-      where: { organizationId: orgId, OR: [{ isActive: true }, { dishLinks: { some: {} } }] },
+      where: { organizationId: orgId, OR: [{ isActive: true }, { dishLinks: { some: {} } }, { modifierLinks: { some: {} } }] },
       select: { id: true, name: true, unit: true, unitCost: true },
       orderBy: { name: "asc" },
     }),
@@ -194,7 +194,7 @@ export default async function FoodRecipesPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">{f.modifierGroups}</CardTitle>
-              {canManage && <FoodModifierGroupFormDialog />}
+              {canManage && <FoodModifierGroupFormDialog inventoryItems={inventoryItems} />}
             </CardHeader>
             <CardContent className="p-0">
               {modifierGroups.length === 0 ? (
@@ -218,13 +218,18 @@ export default async function FoodRecipesPage() {
                         </div>
                         {canManage && (
                           <div className="flex flex-shrink-0 items-center gap-1">
-                            <FoodModifierGroupFormDialog group={g} />
+                            <FoodModifierGroupFormDialog group={g} inventoryItems={inventoryItems} />
                             <FoodModifierGroupDeleteButton groupId={g.id} groupName={g.name} />
                           </div>
                         )}
                       </div>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        {g.options.map((o) => `${o.name}${o.priceDelta > 0 ? ` (+$${o.priceDelta.toFixed(2)})` : ""}`).join(", ")}
+                        {g.options
+                          .map((o) => {
+                            const parts = [o.priceDelta > 0 ? `+$${o.priceDelta.toFixed(2)}` : null, o.ingredients.length > 0 ? f.optionCost(`$${o.cost.toFixed(2)}`) : null].filter(Boolean);
+                            return parts.length ? `${o.name} (${parts.join(" · ")})` : o.name;
+                          })
+                          .join(", ")}
                       </p>
                     </li>
                   ))}
