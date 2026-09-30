@@ -22,7 +22,16 @@ function recommendPrice(cost: number, targetPct: number): number {
   return Math.round((cost / (targetPct / 100)) * 100) / 100;
 }
 
-export function FoodPriceCalculator({ dishes, initialTargetPct }: { dishes: FoodDishOption[]; initialTargetPct: number }) {
+export function FoodPriceCalculator({
+  dishes,
+  initialTargetPct,
+  canSaveDefault = true,
+}: {
+  dishes: FoodDishOption[];
+  initialTargetPct: number;
+  /** Guardar el % para toda la organización requiere food:manage; calcular no. */
+  canSaveDefault?: boolean;
+}) {
   const { lang } = usePreferences();
   const [selectedDishId, setSelectedDishId] = useState<string>("manual");
   const [manualCost, setManualCost] = useState("");
@@ -91,10 +100,12 @@ export function FoodPriceCalculator({ dishes, initialTargetPct }: { dishes: Food
           <p className="text-xl font-bold text-brand-900">${suggestedPrice.toFixed(2)}</p>
         </div>
 
-        <Button variant="outline" size="sm" onClick={handleSaveDefault} disabled={saving} className="w-full">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {lang === "es" ? "Guardar % como predeterminado" : "Save % as default"}
-        </Button>
+        {canSaveDefault && (
+          <Button variant="outline" size="sm" onClick={handleSaveDefault} disabled={saving} className="w-full">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {lang === "es" ? "Guardar % como predeterminado" : "Save % as default"}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

@@ -21,6 +21,13 @@ interface OrgWebhookOptions<T> {
   successBody?: (result: T) => Record<string, unknown>;
   /** Respuesta cuando el procesamiento falla. Por defecto 500 genérico. */
   failureResponse?: (error: string) => NextResponse;
+  /**
+   * Revisión previa, ya autenticada, ANTES de registrar el evento. Si
+   * responde algo, esa es la respuesta y el evento no queda registrado, así
+   * que el emisor puede reintentar con el mismo id cuando se resuelva (un
+   * evento registrado como fallido se descartaría como duplicado).
+   */
+  precheck?: (organizationId: string) => Promise<NextResponse | null>;
 }
 
 export function createOrgWebhookHandler<T>(options: OrgWebhookOptions<T>) {
@@ -52,6 +59,9 @@ export function createOrgWebhookHandler<T>(options: OrgWebhookOptions<T>) {
         { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
       );
     }
+
+    const rejected = options.precheck ? await options.precheck(orgId) : null;
+    if (rejected) return rejected;
 
     let parsedBody: unknown;
     try {

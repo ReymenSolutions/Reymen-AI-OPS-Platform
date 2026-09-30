@@ -1,18 +1,22 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { requireModule } from "@/lib/modules";
+import { hasModule, requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
 import { getFoodSalesSummary, getFoodSalesByChannel } from "@/lib/food";
 import { createFoodSale } from "@/actions/food";
+import { FoodSaleActions } from "@/components/portal/FoodSaleActions";
+import { can } from "@/lib/permissions";
 import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
 import { pickDict } from "@/lib/i18n-dict";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { formatDateTime, formatMoney } from "@/lib/utils";
 import { BarChart3, DollarSign } from "lucide-react";
+import { PosLockedNotice } from "@/components/portal/PosLockedNotice";
 
 // Valor para <input type="datetime-local"> en la hora local del servidor
 // (TZ del contenedor), que es la misma con la que createFoodSale interpreta
@@ -30,7 +34,7 @@ export default async function FoodSalesPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, lang, summary, byChannel, recentSales] = await Promise.all([
+  const [t, lang, summary, byChannel, recentSales, usesPos] = await Promise.all([
     getServerT(),
     getServerLang(),
     getFoodSalesSummary(orgId),
@@ -40,9 +44,11 @@ export default async function FoodSalesPage() {
       orderBy: { occurredAt: "desc" },
       take: 25,
     }),
+    hasModule(orgId, "REYMEN_POS"),
   ]);
 
   const f = pickDict(foodStrings, lang);
+  const canManage = can(session.user.role, "food:manage");
   const totalChannelGross = byChannel.reduce((sum, c) => sum + c.gross, 0);
 
   return (
@@ -107,14 +113,34 @@ export default async function FoodSalesPage() {
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {recentSales.map((sale) => (
-                    <li key={sale.id} className="flex items-center justify-between px-6 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{formatDateTime(sale.occurredAt)}</p>
+                    <li key={sale.id} className="flex items-center justify-between gap-3 px-6 py-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-slate-900">{formatDateTime(sale.occurredAt)}</p>
+                          {sale.source === "POS" && <Badge variant="secondary" className="text-[10px]">{f.posSaleBadge}</Badge>}
+                        </div>
                         <p className="text-xs text-slate-500">{sale.channel ?? f.noChannel}</p>
+                        {sale.notes && <p className="truncate text-xs text-slate-400">{sale.notes}</p>}
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-900">{formatMoney(Number(sale.grossAmount))}</p>
-                        <p className="text-xs text-slate-500">{f.netLabel(formatMoney(Number(sale.netAmount)))}</p>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-slate-900">{formatMoney(Number(sale.grossAmount))}</p>
+                          <p className="text-xs text-slate-500">{f.netLabel(formatMoney(Number(sale.netAmount)))}</p>
+                        </div>
+                        {canManage && sale.source === "MANUAL" && (
+                          <div className="flex items-center">
+                            <FoodSaleActions
+                              sale={{
+                                id: sale.id,
+                                occurredAt: toLocalDateTimeInput(sale.occurredAt),
+                                channel: sale.channel,
+                                grossAmount: Number(sale.grossAmount),
+                                netAmount: Number(sale.netAmount),
+                                notes: sale.notes,
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -124,44 +150,50 @@ export default async function FoodSalesPage() {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{f.recordSale}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={createFoodSale} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <label htmlFor="occurredAt" className="text-xs font-medium text-slate-600">{f.date}</label>
-                <input
-                  id="occurredAt" name="occurredAt" type="datetime-local" required
-                  defaultValue={toLocalDateTimeInput(new Date())}
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="channel" className="text-xs font-medium text-slate-600">{f.channel}</label>
-                <input id="channel" name="channel" type="text" placeholder={f.channelPlaceholder} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
-              </div>
-              <div className="flex gap-3">
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <label htmlFor="grossAmount" className="text-xs font-medium text-slate-600">{f.gross}</label>
-                  <input id="grossAmount" name="grossAmount" type="number" step="0.01" min="0" required className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+        {usesPos ? (
+          <PosLockedNotice title={f.posLockedTitle} description={f.posLockedSaleDesc} />
+        ) : !canManage ? (
+          <p className="self-start rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">{f.viewOnlyNotice}</p>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{f.recordSale}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form action={createFoodSale} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="occurredAt" className="text-xs font-medium text-slate-600">{f.date}</label>
+                  <input
+                    id="occurredAt" name="occurredAt" type="datetime-local" required
+                    defaultValue={toLocalDateTimeInput(new Date())}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                  />
                 </div>
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <label htmlFor="netAmount" className="text-xs font-medium text-slate-600">{f.netNoTax}</label>
-                  <input id="netAmount" name="netAmount" type="number" step="0.01" min="0" required className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="channel" className="text-xs font-medium text-slate-600">{f.channel}</label>
+                  <input id="channel" name="channel" type="text" placeholder={f.channelPlaceholder} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="notes" className="text-xs font-medium text-slate-600">{f.notes}</label>
-                <textarea id="notes" name="notes" rows={2} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
-              </div>
-              <button type="submit" className="mt-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-                {f.saveSale}
-              </button>
-            </form>
-          </CardContent>
-        </Card>
+                <div className="flex gap-3">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <label htmlFor="grossAmount" className="text-xs font-medium text-slate-600">{f.gross}</label>
+                    <input id="grossAmount" name="grossAmount" type="number" step="0.01" min="0" required className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <label htmlFor="netAmount" className="text-xs font-medium text-slate-600">{f.netNoTax}</label>
+                    <input id="netAmount" name="netAmount" type="number" step="0.01" min="0" required className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="notes" className="text-xs font-medium text-slate-600">{f.notes}</label>
+                  <textarea id="notes" name="notes" rows={2} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                </div>
+                <button type="submit" className="mt-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                  {f.saveSale}
+                </button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

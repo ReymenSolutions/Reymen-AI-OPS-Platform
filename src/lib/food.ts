@@ -1,5 +1,7 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { hasModule } from "./modules";
+import { consumeRecipes } from "./food-inventory";
 
 // ─── FOOD OPS — agregados de Ventas ──────────────────────────────────
 // Compartido entre /portal/food (resumen) y /portal/food/sales
@@ -171,7 +173,7 @@ export interface FoodLowStockEntry {
 
 export async function getFoodLowStockItems(organizationId: string, limit = 5): Promise<FoodLowStockEntry[]> {
   const items = await prisma.foodInventoryItem.findMany({
-    where: { organizationId },
+    where: { organizationId, isActive: true },
     select: { id: true, name: true, unit: true, currentStock: true, minStock: true },
   });
 
@@ -350,17 +352,47 @@ export function flattenVariants(dishes: FoodDishWithCost[]): FoodDishVariantWith
 // ese trae el join de insumos completo, que un consumidor de menú no
 // necesita.
 
+/**
+ * Aviso de inventario para el POS, calculado con la receta: "out" si algún
+ * insumo que usa está en 0 o menos, "low" si alguno está en o bajo su
+ * mínimo, "ok" si no; null si no tiene receta. Es solo un aviso: el
+ * inventario del sistema puede ir desfasado del real, así que nunca bloquea.
+ */
+export type FoodStockStatus = "ok" | "low" | "out" | null;
+
+type StockLine = { quantity: Prisma.Decimal; inventoryItem: { currentStock: Prisma.Decimal; minStock: Prisma.Decimal } };
+
+export function stockStatusFor(lines: StockLine[]): FoodStockStatus {
+  // Solo cuenta lo que consume; una línea negativa ("Sin cebolla") no gasta.
+  const used = lines.filter((l) => Number(l.quantity) > 0);
+  if (used.length === 0) return null;
+  if (used.some((l) => Number(l.inventoryItem.currentStock) <= 0)) return "out";
+  if (used.some((l) => Number(l.inventoryItem.currentStock) <= Number(l.inventoryItem.minStock))) return "low";
+  return "ok";
+}
+
+/** Estado del platillo completo: agotado solo si TODAS sus variantes con receta lo están. */
+function dishStockStatus(statuses: FoodStockStatus[]): FoodStockStatus {
+  const known = statuses.filter((st): st is Exclude<FoodStockStatus, null> => st !== null);
+  if (known.length === 0) return null;
+  if (known.every((st) => st === "out")) return "out";
+  if (known.some((st) => st !== "ok")) return "low";
+  return "ok";
+}
+
 export interface FoodMenuVariant {
   variantId: string;
   label: string;
   price: number;
   externalPosId: string | null;
+  stockStatus: FoodStockStatus;
 }
 
 export interface FoodMenuModifierOption {
   optionId: string;
   name: string;
   priceDelta: number;
+  stockStatus: FoodStockStatus;
 }
 
 export interface FoodMenuModifierGroup {
@@ -376,9 +408,15 @@ export interface FoodMenuDish {
   name: string;
   categoryId: string | null;
   categoryName: string | null;
+  stockStatus: FoodStockStatus;
   variants: FoodMenuVariant[];
   modifierGroups: FoodMenuModifierGroup[];
 }
+
+const STOCK_LINE_SELECT = {
+  quantity: true,
+  inventoryItem: { select: { currentStock: true, minStock: true } },
+} as const;
 
 export async function getFoodMenuForPos(organizationId: string): Promise<FoodMenuDish[]> {
   const dishes = await prisma.foodDish.findMany({
@@ -388,7 +426,7 @@ export async function getFoodMenuForPos(organizationId: string): Promise<FoodMen
       name: true,
       category: { select: { id: true, name: true } },
       variants: {
-        select: { id: true, label: true, price: true, externalPosId: true },
+        select: { id: true, label: true, price: true, externalPosId: true, ingredients: { select: STOCK_LINE_SELECT } },
         orderBy: { label: "asc" },
       },
       modifierGroups: {
@@ -400,7 +438,10 @@ export async function getFoodMenuForPos(organizationId: string): Promise<FoodMen
               minSelect: true,
               maxSelect: true,
               sortOrder: true,
-              options: { select: { id: true, name: true, priceDelta: true }, orderBy: { sortOrder: "asc" } },
+              options: {
+                select: { id: true, name: true, priceDelta: true, ingredients: { select: STOCK_LINE_SELECT } },
+                orderBy: { sortOrder: "asc" },
+              },
             },
           },
         },
@@ -409,27 +450,57 @@ export async function getFoodMenuForPos(organizationId: string): Promise<FoodMen
     orderBy: { name: "asc" },
   });
 
-  return dishes.map((d) => ({
-    dishId: d.id,
-    name: d.name,
-    categoryId: d.category?.id ?? null,
-    categoryName: d.category?.name ?? null,
-    variants: d.variants.map((v) => ({
+  return dishes.map((d) => {
+    const variants = d.variants.map((v) => ({
       variantId: v.id,
       label: v.label,
       price: Number(v.price),
       externalPosId: v.externalPosId,
-    })),
-    modifierGroups: d.modifierGroups
-      .map((link) => link.group)
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((g) => ({
-        groupId: g.id,
-        name: g.name,
-        minSelect: g.minSelect,
-        maxSelect: g.maxSelect,
-        options: g.options.map((o) => ({ optionId: o.id, name: o.name, priceDelta: Number(o.priceDelta) })),
-      })),
+      stockStatus: stockStatusFor(v.ingredients),
+    }));
+    return {
+      dishId: d.id,
+      name: d.name,
+      categoryId: d.category?.id ?? null,
+      categoryName: d.category?.name ?? null,
+      stockStatus: dishStockStatus(variants.map((v) => v.stockStatus)),
+      variants,
+      modifierGroups: d.modifierGroups
+        .map((link) => link.group)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((g) => ({
+          groupId: g.id,
+          name: g.name,
+          minSelect: g.minSelect,
+          maxSelect: g.maxSelect,
+          options: g.options.map((o) => ({
+            optionId: o.id,
+            name: o.name,
+            priceDelta: Number(o.priceDelta),
+            stockStatus: stockStatusFor(o.ingredients),
+          })),
+        })),
+    };
+  });
+}
+
+export interface FoodPosLowStockItem {
+  name: string;
+  unit: string;
+  currentStock: number;
+  minStock: number;
+  status: "low" | "out";
+}
+
+/** Insumos activos en o bajo su mínimo, para que el gerente los vea en el POS. */
+export async function getFoodLowStockForPos(organizationId: string): Promise<FoodPosLowStockItem[]> {
+  const items = await getFoodLowStockItems(organizationId, 50);
+  return items.map((i) => ({
+    name: i.name,
+    unit: i.unit,
+    currentStock: i.currentStock,
+    minStock: i.minStock,
+    status: i.currentStock <= 0 ? "out" : "low",
   }));
 }
 
@@ -457,6 +528,10 @@ export interface FoodModifierOptionEntry {
   id: string;
   name: string;
   priceDelta: number;
+  /** Mini-receta por unidad del platillo; cantidades negativas devuelven insumo ("Sin cebolla"). */
+  ingredients: { inventoryItemId: string; quantity: number }[];
+  /** Costo de insumos de la opción con el costo actual de cada insumo (negativo si ahorra insumo). */
+  cost: number;
 }
 
 export interface FoodModifierGroupEntry {
@@ -474,7 +549,10 @@ export async function getFoodModifierGroups(organizationId: string): Promise<Foo
     where: { organizationId },
     orderBy: { sortOrder: "asc" },
     include: {
-      options: { orderBy: { sortOrder: "asc" } },
+      options: {
+        orderBy: { sortOrder: "asc" },
+        include: { ingredients: { include: { inventoryItem: { select: { unitCost: true } } } } },
+      },
       _count: { select: { dishLinks: true } },
     },
   });
@@ -484,7 +562,13 @@ export async function getFoodModifierGroups(organizationId: string): Promise<Foo
     minSelect: g.minSelect,
     maxSelect: g.maxSelect,
     sortOrder: g.sortOrder,
-    options: g.options.map((o) => ({ id: o.id, name: o.name, priceDelta: Number(o.priceDelta) })),
+    options: g.options.map((o) => ({
+      id: o.id,
+      name: o.name,
+      priceDelta: Number(o.priceDelta),
+      ingredients: o.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: Number(i.quantity) })),
+      cost: Math.round(o.ingredients.reduce((sum, i) => sum + Number(i.quantity) * Number(i.inventoryItem.unitCost ?? 0), 0) * 100) / 100,
+    })),
     dishCount: g._count.dishLinks,
   }));
 }
@@ -620,11 +704,22 @@ export interface FoodNetProfitResult {
   coverage: { itemsWithSales: number; totalActiveItems: number };
 }
 
+/** Costo actual de insumos de cada opción de modificador con receta (optionId → costo por unidad). */
+async function getModifierOptionCosts(organizationId: string): Promise<Map<string, number>> {
+  const lines = await prisma.foodModifierOptionIngredient.findMany({
+    where: { option: { group: { organizationId } } },
+    select: { optionId: true, quantity: true, inventoryItem: { select: { unitCost: true } } },
+  });
+  const costs = new Map<string, number>();
+  for (const l of lines) costs.set(l.optionId, (costs.get(l.optionId) ?? 0) + Number(l.quantity) * Number(l.inventoryItem.unitCost ?? 0));
+  return costs;
+}
+
 export async function getFoodNetProfit(organizationId: string, period: FoodProfitPeriod): Promise<FoodNetProfitResult> {
   const days = PERIOD_LABEL_DAYS[period];
   const from = period === "today" ? startOfDay(new Date()) : daysAgo(days);
 
-  const [salesAgg, variantSales, dishes, fixedCostsMonthly] = await Promise.all([
+  const [salesAgg, variantSales, dishes, fixedCostsMonthly, optionSales, optionCosts] = await Promise.all([
     prisma.foodSale.aggregate({
       where: { organizationId, occurredAt: { gte: from } },
       _sum: { netAmount: true },
@@ -636,6 +731,12 @@ export async function getFoodNetProfit(organizationId: string, period: FoodProfi
     }),
     getFoodDishesWithCost(organizationId, { activeOnly: true }),
     getTotalMonthlyFixedCosts(organizationId),
+    prisma.foodModifierOptionSale.groupBy({
+      by: ["optionId"],
+      where: { organizationId, occurredAt: { gte: from } },
+      _sum: { quantity: true },
+    }),
+    getModifierOptionCosts(organizationId),
   ]);
 
   const variants = flattenVariants(dishes);
@@ -648,6 +749,8 @@ export async function getFoodNetProfit(organizationId: string, period: FoodProfi
     cogs += variant.cost * (row._sum.quantity ?? 0);
     variantsWithSalesIds.add(row.variantId);
   }
+  // Los extras con receta ("Extra queso") también cuestan; "Sin ..." resta.
+  for (const row of optionSales) cogs += (optionCosts.get(row.optionId) ?? 0) * (row._sum.quantity ?? 0);
 
   const revenue = Number(salesAgg._sum.netAmount ?? 0);
   const fixedCostsProrated = Math.round((fixedCostsMonthly / 30) * days * 100) / 100;
@@ -985,25 +1088,27 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
   }
   const recognizedModifierEntries = modifierEntries.filter((m) => optionNameById.has(m.optionId));
 
-  await prisma.$transaction([
-    prisma.foodSale.create({
+  const items = body.items;
+  await prisma.$transaction(async (tx) => {
+    const sale = await tx.foodSale.create({
       data: {
         organizationId,
         occurredAt,
         channel: body.channel ?? "POS",
-        grossAmount: body.grossAmount,
-        netAmount: body.netAmount,
+        grossAmount: body.grossAmount!,
+        netAmount: body.netAmount!,
+        source: "POS",
       },
-    }),
-    ...body.items.map((item) =>
-      prisma.foodDishSale.upsert({
+    });
+    for (const item of items) {
+      await tx.foodDishSale.upsert({
         where: { variantId_occurredAt: { variantId: item.variantId, occurredAt: businessDay } },
         update: { quantity: { increment: item.quantity } },
         create: { organizationId, variantId: item.variantId, occurredAt: businessDay, quantity: item.quantity },
-      })
-    ),
-    ...recognizedModifierEntries.map((mod) =>
-      prisma.foodModifierOptionSale.upsert({
+      });
+    }
+    for (const mod of recognizedModifierEntries) {
+      await tx.foodModifierOptionSale.upsert({
         where: { optionId_occurredAt: { optionId: mod.optionId, occurredAt: businessDay } },
         update: { quantity: { increment: mod.quantity } },
         create: {
@@ -1013,7 +1118,22 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
           occurredAt: businessDay,
           quantity: mod.quantity,
         },
-      })
-    ),
-  ]);
+      });
+    }
+
+    // Descuento de insumos según la receta de cada platillo vendido; una
+    // cancelación (cantidades negativas) los devuelve.
+    // Los modificadores reconocidos descuentan su propia mini-receta junto
+    // con el platillo en el que se eligieron (mismo signo que ese platillo).
+    const withModifiers = (list: typeof items) => ({
+      variants: list,
+      modifiers: list.flatMap((i) => (i.modifiers ?? []).filter((m) => optionNameById.has(m.optionId))),
+    });
+    const sold = items.filter((i) => i.quantity > 0);
+    const cancelled = items.filter((i) => i.quantity < 0);
+    if (sold.length) await consumeRecipes(tx, organizationId, withModifiers(sold), { type: "SALE", occurredAt, foodSaleId: sale.id });
+    if (cancelled.length) {
+      await consumeRecipes(tx, organizationId, withModifiers(cancelled), { type: "SALE_CANCELLATION", occurredAt, foodSaleId: sale.id });
+    }
+  });
 }

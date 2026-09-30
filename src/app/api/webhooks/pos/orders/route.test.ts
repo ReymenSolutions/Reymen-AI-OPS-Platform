@@ -29,6 +29,7 @@ describe("POST /api/webhooks/pos/orders", () => {
   beforeAll(async () => {
     org = await createTestOrg("Webhook Pos Orders Org");
     await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+    await prisma.organizationModule.create({ data: { organizationId: org.id, module: "REYMEN_POS", status: "ACTIVE", source: "SUBSCRIBED" } });
     const dish = await prisma.foodDish.create({
       data: { organizationId: org.id, name: "Taco", variants: { create: [{ organizationId: org.id, label: "Único", price: 25 }] } },
       include: { variants: true },
@@ -124,5 +125,29 @@ describe("POST /api/webhooks/pos/orders", () => {
     const modSale = await prisma.foodModifierOptionSale.findFirst({ where: { optionId } });
     expect(modSale?.quantity).toBe(1);
     expect(modSale?.optionName).toBe("Extra queso");
+  });
+
+  it("CRITICAL: without the Reymen POS module the sale is refused but not lost — the same event id goes through once it's enabled", async () => {
+    await prisma.organizationModule.updateMany({ where: { organizationId: org.id, module: "REYMEN_POS" }, data: { status: "SUSPENDED" } });
+    const body = JSON.stringify({ grossAmount: 25, netAmount: 22, items: [{ variantId, quantity: 1 }] });
+    const eventId = "pos-order-module-off-1";
+    const salesBefore = await prisma.foodSale.count({ where: { organizationId: org.id } });
+
+    const refused = await POST(
+      makeRequest(body, { ...signed(body, org.n8nWebhookSecret), "x-reymen-orgid": org.id, "x-reymen-event-id": eventId })
+    );
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).code).toBe("pos_module_disabled");
+    expect(await prisma.foodSale.count({ where: { organizationId: org.id } })).toBe(salesBefore);
+    expect(await prisma.webhookEvent.count({ where: { organizationId: org.id, externalEventId: eventId } })).toBe(0);
+
+    await prisma.organizationModule.updateMany({ where: { organizationId: org.id, module: "REYMEN_POS" }, data: { status: "ACTIVE" } });
+    const retried = await POST(
+      makeRequest(body, { ...signed(body, org.n8nWebhookSecret), "x-reymen-orgid": org.id, "x-reymen-event-id": eventId })
+    );
+    expect(retried.status).toBe(200);
+    expect((await retried.json()).duplicate).toBeUndefined();
+    expect(await prisma.foodSale.count({ where: { organizationId: org.id } })).toBe(salesBefore + 1);
+    expect((await prisma.foodSale.findFirst({ where: { organizationId: org.id }, orderBy: { createdAt: "desc" } }))?.source).toBe("POS");
   });
 });
