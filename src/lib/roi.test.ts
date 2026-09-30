@@ -1,16 +1,25 @@
 // @vitest-environment node
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestOrg, createTestPipelineStages, cleanupOrg } from "@/test/helpers";
 import { getRoiData } from "./roi";
+import { resetExchangeRateCache } from "./exchange-rate";
 
 describe("getRoiData", () => {
   let org: { id: string } | undefined;
+
+  // Sin red en las pruebas: la fuente automática "falla" y se usa MXN_PER_USD
+  // como respaldo, salvo en la prueba que simula la fuente automática.
+  beforeEach(() => {
+    resetExchangeRateCache();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+  });
 
   afterEach(async () => {
     if (org) await cleanupOrg(org.id);
     org = undefined;
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("reports no won deals when the org has none", async () => {
@@ -101,7 +110,7 @@ describe("getRoiData", () => {
     const data = await getRoiData(org.id, "not-a-real-plan");
     expect(data.planCost).toBe(299);
   });
-  it("converts MXN opportunities to USD with MXN_PER_USD before comparing against the plan price", async () => {
+  it("converts MXN opportunities to USD with the MXN_PER_USD fallback when the automatic source is down", async () => {
     vi.stubEnv("MXN_PER_USD", "20");
     org = await createTestOrg("Roi Mxn Org");
     const stages = await createTestPipelineStages(org.id);
@@ -124,7 +133,7 @@ describe("getRoiData", () => {
     expect(data.roi).toBe(Math.round(((1500 - 299) / 299) * 100));
   });
 
-  it("leaves MXN opportunities out of the totals, and reports them, when MXN_PER_USD is not configured", async () => {
+  it("leaves MXN opportunities out of the totals, and reports them, when no exchange rate is available", async () => {
     vi.stubEnv("MXN_PER_USD", "");
     org = await createTestOrg("Roi No Rate Org");
     const stages = await createTestPipelineStages(org.id);
@@ -143,5 +152,26 @@ describe("getRoiData", () => {
     expect(data.totalWonOpportunities).toBe(1);
     expect(data.mxnPerUsd).toBeNull();
     expect(data.unconvertedOpportunities).toBe(1);
+  });
+
+  it("uses the automatic exchange rate when the source responds", async () => {
+    vi.stubEnv("BANXICO_TOKEN", "");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ date: "2026-09-29", rates: { MXN: 25 } }), { status: 200 }))
+    );
+    org = await createTestOrg("Roi Auto Rate Org");
+    const stages = await createTestPipelineStages(org.id);
+    const wonStage = stages.find((s) => s.isWon)!;
+    const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "Roi Lead" } });
+    await prisma.opportunity.create({
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Pesos", amount: 25000, currency: "MXN", closedAt: new Date() },
+    });
+
+    const data = await getRoiData(org.id, "starter");
+    expect(data.last30Revenue).toBe(1000);
+    expect(data.mxnPerUsd).toBe(25);
+    expect(data.rateSource).toBe("frankfurter");
+    expect(data.rateDate).toBe("2026-09-29");
   });
 });

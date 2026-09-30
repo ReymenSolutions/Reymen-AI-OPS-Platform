@@ -1,11 +1,11 @@
 // ─── Conversión de moneda para reportes ──────────────────────────────
-// Los precios de los planes están en USD (PLAN_PRICES), pero las
-// oportunidades se capturan en MXN o USD (Opportunity.currency). Para
-// compararlos, los montos en MXN se convierten con un tipo de cambio que
-// se configura en el servidor con MXN_PER_USD (cuántos pesos vale 1 USD,
-// p. ej. "18.25"). A propósito no hay un valor por defecto en el código:
-// un tipo de cambio inventado haría pasar un número equivocado por real.
-// Sin la variable, los montos en MXN simplemente no se convierten y quien
+// Los precios de los planes están en USD, pero las oportunidades se
+// capturan en MXN o USD (Opportunity.currency). El tipo de cambio se toma
+// automáticamente de una fuente externa (exchange-rate.ts); MXN_PER_USD
+// (cuántos pesos vale 1 USD, p. ej. "18.25") queda solo como respaldo si
+// esa fuente no responde. A propósito no hay un valor por defecto en el
+// código: un tipo de cambio inventado haría pasar un número equivocado por
+// real. Sin ninguno de los dos, los montos en MXN no se convierten y quien
 // los muestre debe avisarlo.
 
 export function getMxnPerUsd(): number | null {

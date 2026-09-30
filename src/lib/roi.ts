@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { PLAN_PRICES } from "./permissions";
-import { getMxnPerUsd, toUsd } from "./currency";
+import { toUsd } from "./currency";
+import { getMxnPerUsdRate, type ExchangeRateSource } from "./exchange-rate";
 
 export interface RoiData {
   hasWonDeals: boolean;
@@ -10,8 +11,11 @@ export interface RoiData {
   last30WonOpportunities: number;
   last30Revenue: number;
   planCost: number;
-  /** Pesos por dólar usados para convertir los montos en MXN, o null si MXN_PER_USD no está configurado. */
+  /** Pesos por dólar usados para convertir los montos en MXN, o null si no hubo tipo de cambio disponible. */
   mxnPerUsd: number | null;
+  rateSource: ExchangeRateSource | null;
+  /** Fecha del tipo de cambio según la fuente (YYYY-MM-DD). */
+  rateDate: string | null;
   /** Oportunidades ganadas que no se pudieron convertir a USD y quedaron fuera de los totales. */
   unconvertedOpportunities: number;
   /** null when there's no plan cost to divide by (shouldn't happen in practice — every plan has a price). */
@@ -25,7 +29,7 @@ export interface RoiData {
  * the sales pipeline itself considers a won deal, not a separate estimate.
  *
  * Amounts are converted to USD (the currency plan prices are in) with the
- * MXN_PER_USD exchange rate — see currency.ts. Opportunities that can't be
+ * automatic MXN/USD exchange rate — see exchange-rate.ts. Opportunities that can't be
  * converted are left out of the totals and counted in unconvertedOpportunities.
  *
  * last30* mirrors the reports page's own 30-day window so the revenue figure
@@ -36,7 +40,8 @@ export async function getRoiData(organizationId: string, plan: string): Promise<
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const mxnPerUsd = getMxnPerUsd();
+  const rate = await getMxnPerUsdRate();
+  const mxnPerUsd = rate?.rate ?? null;
 
   // Agrupado por moneda: el plan cuesta USD y las oportunidades pueden estar
   // en MXN, así que sumar los montos tal cual mezclaría pesos con dólares.
@@ -90,6 +95,8 @@ export async function getRoiData(organizationId: string, plan: string): Promise<
     last30Revenue,
     planCost,
     mxnPerUsd,
+    rateSource: rate?.source ?? null,
+    rateDate: rate?.date ?? null,
     unconvertedOpportunities: totals.unconverted,
     roi: planCost > 0 ? Math.round(((last30Revenue - planCost) / planCost) * 100) : null,
   };
