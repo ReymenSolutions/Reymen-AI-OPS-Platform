@@ -18,6 +18,7 @@ import { FoodOperatingCostFormDialog } from "@/components/portal/FoodOperatingCo
 import { FoodOperatingCostToggle } from "@/components/portal/FoodOperatingCostToggle";
 import { FoodNetProfitPanel } from "@/components/portal/FoodNetProfitPanel";
 import { FoodPriceCalculator } from "@/components/portal/FoodPriceCalculator";
+import { can } from "@/lib/permissions";
 import { cn, formatMoney } from "@/lib/utils";
 import { Wallet, Target, TrendingDown, TrendingUp, Megaphone } from "lucide-react";
 
@@ -61,6 +62,7 @@ export default async function FoodProfitabilityPage() {
   ]);
 
   const f = pickDict(foodStrings, lang);
+  const canManage = can(session.user.role, "food:manage");
   const recLabel: Record<string, string> = {
     review_urgent: f.recUrgent,
     raise_price_or_cut_cost: f.recRaisePrice,
@@ -85,7 +87,7 @@ export default async function FoodProfitabilityPage() {
                 <Wallet className="h-4 w-4 text-slate-400" />
                 <CardTitle className="text-base">{f.monthlyFixedCosts}</CardTitle>
               </div>
-              <FoodOperatingCostFormDialog />
+              {canManage && <FoodOperatingCostFormDialog />}
             </CardHeader>
             <CardContent className="p-0">
               {operatingCosts.length === 0 ? (
@@ -103,8 +105,8 @@ export default async function FoodProfitabilityPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-slate-900">{formatMoney(cost.amountMonthly)}</p>
-                          <FoodOperatingCostFormDialog cost={cost} />
-                          <FoodOperatingCostToggle costId={cost.id} isActive={cost.isActive} />
+                          {canManage && <FoodOperatingCostFormDialog cost={cost} />}
+                          {canManage && <FoodOperatingCostToggle costId={cost.id} isActive={cost.isActive} />}
                         </div>
                       </li>
                     ))}
@@ -282,6 +284,7 @@ export default async function FoodProfitabilityPage() {
           <FoodPriceCalculator
             dishes={flattenVariants(dishesWithCost).map((v) => ({ id: v.id, name: v.displayName, cost: v.cost }))}
             initialTargetPct={org?.foodTargetCostPct ?? 30}
+            canSaveDefault={canManage}
           />
         </div>
       </div>

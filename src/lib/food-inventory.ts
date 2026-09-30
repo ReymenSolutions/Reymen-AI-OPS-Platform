@@ -15,30 +15,113 @@ export interface StockDelta {
   delta: number;
 }
 
+type Consumption = Record<string, number>;
+
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+async function loadRecipes(tx: Tx, variantIds: string[]): Promise<Map<string, { inventoryItemId: string; quantity: number }[]>> {
+  const lines = variantIds.length
+    ? await tx.foodDishVariantIngredient.findMany({
+        where: { variantId: { in: variantIds } },
+        select: { variantId: true, inventoryItemId: true, quantity: true },
+      })
+    : [];
+  const byVariant = new Map<string, { inventoryItemId: string; quantity: number }[]>();
+  for (const line of lines) {
+    const list = byVariant.get(line.variantId) ?? [];
+    list.push({ inventoryItemId: line.inventoryItemId, quantity: Number(line.quantity) });
+    byVariant.set(line.variantId, list);
+  }
+  return byVariant;
+}
+
+/** Lo que consumen `units` unidades con esta receta (unidades negativas devuelven). */
+function consumptionFor(recipe: { inventoryItemId: string; quantity: number }[] | undefined, units: number): Consumption {
+  const out: Consumption = {};
+  for (const line of recipe ?? []) {
+    const used = round3(line.quantity * units);
+    if (used !== 0) out[line.inventoryItemId] = round3((out[line.inventoryItemId] ?? 0) + used);
+  }
+  return out;
+}
+
 /**
- * Insumos que consumen estas unidades vendidas según la receta ACTUAL de
- * cada variante (FoodDishVariantIngredient). Unidades negativas (una
- * cancelación) dan consumo negativo, o sea, devuelven insumos.
+ * Descuenta los insumos de unidades vendidas según la receta ACTUAL de cada
+ * variante y deja un FoodRecipeUsage por variante con lo descontado, para
+ * poder recalcular después si la receta cambia. Unidades negativas (una
+ * cancelación o una corrección a la baja) devuelven insumos.
  */
-export async function recipeConsumption(
+export async function consumeRecipes(
   tx: Tx,
-  items: { variantId: string; quantity: number }[]
-): Promise<Map<string, number>> {
-  const variantIds = [...new Set(items.map((i) => i.variantId))];
-  if (variantIds.length === 0) return new Map();
-  const lines = await tx.foodDishVariantIngredient.findMany({
-    where: { variantId: { in: variantIds } },
-    select: { variantId: true, inventoryItemId: true, quantity: true },
+  organizationId: string,
+  items: { variantId: string; quantity: number }[],
+  meta: {
+    type: Extract<FoodInventoryMovementType, "SALE" | "SALE_CANCELLATION" | "MANUAL_DISH_SALES">;
+    occurredAt: Date;
+    foodSaleId?: string;
+    note?: string;
+    userId?: string | null;
+  }
+): Promise<void> {
+  const unitsByVariant = new Map<string, number>();
+  for (const item of items) unitsByVariant.set(item.variantId, (unitsByVariant.get(item.variantId) ?? 0) + item.quantity);
+  const recipes = await loadRecipes(tx, [...unitsByVariant.keys()]);
+
+  const total = new Map<string, number>();
+  for (const [variantId, units] of unitsByVariant) {
+    if (units === 0) continue;
+    const applied = consumptionFor(recipes.get(variantId), units);
+    // También sin receta: si después se le agrega una, el recálculo la alcanza.
+    await tx.foodRecipeUsage.create({
+      data: { organizationId, variantId, units, occurredAt: meta.occurredAt, type: meta.type, foodSaleId: meta.foodSaleId ?? null, applied },
+    });
+    for (const [itemId, used] of Object.entries(applied)) total.set(itemId, (total.get(itemId) ?? 0) + used);
+  }
+
+  await applyStockMovements(tx, organizationId, consumptionToDeltas(total), meta);
+}
+
+/**
+ * Recalcula con las recetas ACTUALES las ventas desde `since`: por cada
+ * FoodRecipeUsage compara lo que se descontó con lo que indica la receta hoy
+ * y mueve solo la diferencia (un movimiento RECIPE_RECALC por insumo).
+ * Correrlo dos veces no cambia nada la segunda vez.
+ */
+export async function recalculateRecipeUsage(
+  tx: Tx,
+  organizationId: string,
+  since: Date,
+  meta: { note?: string; userId?: string | null }
+): Promise<{ usages: number; items: number }> {
+  const usages = await tx.foodRecipeUsage.findMany({
+    where: { organizationId, occurredAt: { gte: since } },
+    select: { id: true, variantId: true, units: true, applied: true },
   });
-  const consumption = new Map<string, number>();
-  for (const item of items) {
-    for (const line of lines) {
-      if (line.variantId !== item.variantId) continue;
-      const used = Number(line.quantity) * item.quantity;
-      consumption.set(line.inventoryItemId, (consumption.get(line.inventoryItemId) ?? 0) + used);
+  const recipes = await loadRecipes(tx, [...new Set(usages.map((u) => u.variantId))]);
+
+  const diff = new Map<string, number>();
+  let changed = 0;
+  for (const usage of usages) {
+    const expected = consumptionFor(recipes.get(usage.variantId), Number(usage.units));
+    const applied = (usage.applied ?? {}) as Consumption;
+    let differs = false;
+    for (const itemId of new Set([...Object.keys(expected), ...Object.keys(applied)])) {
+      const d = round3((expected[itemId] ?? 0) - Number(applied[itemId] ?? 0));
+      if (d === 0) continue;
+      differs = true;
+      diff.set(itemId, (diff.get(itemId) ?? 0) + d);
+    }
+    if (differs) {
+      changed++;
+      await tx.foodRecipeUsage.update({ where: { id: usage.id }, data: { applied: expected } });
     }
   }
-  return consumption;
+
+  const deltas = consumptionToDeltas(diff).filter((d) => round3(d.delta) !== 0);
+  await applyStockMovements(tx, organizationId, deltas, { type: "RECIPE_RECALC", note: meta.note, userId: meta.userId });
+  return { usages: changed, items: deltas.length };
 }
 
 /** Aplica los cambios de existencia y registra un movimiento por insumo. */
@@ -82,6 +165,6 @@ export async function applyStockMovements(
 }
 
 /** Convierte un consumo (lo que se gasta) en cambios de existencia (lo gastado resta). */
-export function consumptionToDeltas(consumption: Map<string, number>): StockDelta[] {
+function consumptionToDeltas(consumption: Map<string, number>): StockDelta[] {
   return [...consumption.entries()].map(([inventoryItemId, used]) => ({ inventoryItemId, delta: -used }));
 }

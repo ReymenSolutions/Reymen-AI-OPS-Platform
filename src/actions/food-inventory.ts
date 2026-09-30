@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { requireFoodManager } from "@/lib/guards";
-import { applyStockMovements } from "@/lib/food-inventory";
+import { applyStockMovements, recalculateRecipeUsage } from "@/lib/food-inventory";
 import { UserError } from "@/lib/user-error";
 
 // ─── FOOD OPS — Insumos, proveedores y compras ───────────────────────
@@ -65,6 +65,53 @@ export async function updateFoodInventoryItem(itemId: string, data: z.input<type
     resource: "FoodInventoryItem",
     resourceId: itemId,
     metadata: { before: { name: item.name, unitCost: item.unitCost?.toString() ?? null }, after: parsed.data },
+  });
+  revalidateInventory();
+}
+
+/** Desactivar oculta el insumo de compras y recetas nuevas sin perder su historial. */
+export async function setFoodInventoryItemActive(itemId: string, isActive: boolean) {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  const item = await prisma.foodInventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, name: true } });
+  if (!item) throw new UserError("Insumo no encontrado");
+
+  await prisma.foodInventoryItem.update({ where: { id: itemId }, data: { isActive } });
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: isActive ? "food.inventory_item_activate" : "food.inventory_item_deactivate",
+    resource: "FoodInventoryItem",
+    resourceId: itemId,
+    metadata: { name: item.name },
+  });
+  revalidateInventory();
+}
+
+/**
+ * Borra un insumo dado de alta por error. Si ya está en una receta o en una
+ * compra, se rechaza: borrarlo rompería ese historial, para eso está desactivar.
+ */
+export async function deleteFoodInventoryItem(itemId: string) {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  const item = await prisma.foodInventoryItem.findFirst({
+    where: { id: itemId, organizationId },
+    select: { name: true, _count: { select: { dishLinks: true, purchaseItems: true } } },
+  });
+  if (!item) throw new UserError("Insumo no encontrado");
+  if (item._count.dishLinks > 0 || item._count.purchaseItems > 0) {
+    throw new UserError("Este insumo se usa en recetas o compras; desactívalo en lugar de eliminarlo");
+  }
+
+  await prisma.foodInventoryItem.delete({ where: { id: itemId } });
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: "food.inventory_item_delete",
+    resource: "FoodInventoryItem",
+    resourceId: itemId,
+    metadata: { name: item.name },
   });
   revalidateInventory();
 }
@@ -141,6 +188,51 @@ export async function updateFoodSupplier(supplierId: string, data: z.input<typeo
     resourceId: supplierId,
     metadata: { name: parsed.data.name },
   });
+  revalidateSuppliers();
+}
+
+export async function setFoodSupplierActive(supplierId: string, isActive: boolean) {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  const supplier = await prisma.foodSupplier.findFirst({ where: { id: supplierId, organizationId }, select: { name: true } });
+  if (!supplier) throw new UserError("Proveedor no encontrado");
+
+  await prisma.foodSupplier.update({ where: { id: supplierId }, data: { isActive } });
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: isActive ? "food.supplier_activate" : "food.supplier_deactivate",
+    resource: "FoodSupplier",
+    resourceId: supplierId,
+    metadata: { name: supplier.name },
+  });
+  revalidateSuppliers();
+}
+
+/** Borra un proveedor sin compras. Con compras se rechaza: se desactiva para no perder de quién fue cada compra. */
+export async function deleteFoodSupplier(supplierId: string) {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  const supplier = await prisma.foodSupplier.findFirst({
+    where: { id: supplierId, organizationId },
+    select: { name: true, _count: { select: { purchases: true } } },
+  });
+  if (!supplier) throw new UserError("Proveedor no encontrado");
+  if (supplier._count.purchases > 0) throw new UserError("Este proveedor tiene compras registradas; desactívalo en lugar de eliminarlo");
+
+  await prisma.foodSupplier.delete({ where: { id: supplierId } });
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: "food.supplier_delete",
+    resource: "FoodSupplier",
+    resourceId: supplierId,
+    metadata: { name: supplier.name },
+  });
+  revalidateSuppliers();
+}
+
+function revalidateSuppliers() {
   revalidatePath("/portal/food/suppliers");
   revalidatePath("/portal/food/purchases");
   revalidatePath("/portal/food");
@@ -179,16 +271,24 @@ export async function createFoodPurchase(data: z.input<typeof purchaseSchema>) {
 
   const itemIds = [...new Set(parsed.data.items.map((i) => i.inventoryItemId))];
   if (itemIds.length !== parsed.data.items.length) throw new UserError("Un insumo aparece dos veces en la compra");
-  const owned = await prisma.foodInventoryItem.count({ where: { id: { in: itemIds }, organizationId } });
-  if (owned !== itemIds.length) throw new UserError("Uno o más insumos no son válidos");
+  const owned = await prisma.foodInventoryItem.findMany({
+    where: { id: { in: itemIds }, organizationId },
+    select: { id: true, isActive: true, unitCost: true },
+  });
+  if (owned.length !== itemIds.length) throw new UserError("Uno o más insumos no son válidos");
+  if (owned.some((i) => !i.isActive)) throw new UserError("Uno o más insumos están desactivados");
   if (parsed.data.supplierId) {
-    const supplier = await prisma.foodSupplier.count({ where: { id: parsed.data.supplierId, organizationId } });
+    const supplier = await prisma.foodSupplier.findFirst({ where: { id: parsed.data.supplierId, organizationId }, select: { isActive: true } });
     if (!supplier) throw new UserError("Proveedor no encontrado");
+    if (!supplier.isActive) throw new UserError("Este proveedor está desactivado");
   }
 
   const total = Math.round(parsed.data.items.reduce((sum, i) => sum + i.quantity * i.unitCost, 0) * 100) / 100;
 
   const purchase = await prisma.$transaction(async (tx) => {
+    // Costo vigente de cada insumo antes de esta compra, para regresarlo si se anula.
+    const before = await tx.foodInventoryItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, unitCost: true } });
+    const previousCost = new Map(before.map((i) => [i.id, i.unitCost]));
     const created = await tx.foodPurchase.create({
       data: {
         organizationId,
@@ -198,7 +298,12 @@ export async function createFoodPurchase(data: z.input<typeof purchaseSchema>) {
         notes: parsed.data.notes || null,
         userId: session.user.id,
         items: {
-          create: parsed.data.items.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity, unitCost: i.unitCost })),
+          create: parsed.data.items.map((i) => ({
+            inventoryItemId: i.inventoryItemId,
+            quantity: i.quantity,
+            unitCost: i.unitCost,
+            previousUnitCost: previousCost.get(i.inventoryItemId) ?? null,
+          })),
         },
       },
     });
@@ -226,7 +331,12 @@ export async function createFoodPurchase(data: z.input<typeof purchaseSchema>) {
   return { id: purchase.id };
 }
 
-/** Anula una compra capturada por error: quita de la existencia lo que había sumado. No regresa el costo anterior. */
+/**
+ * Anula una compra capturada por error: quita de la existencia lo que había
+ * sumado y regresa el costo que tenía cada insumo antes de ella, salvo que
+ * ese costo ya no sea el de esta compra (una compra posterior o una edición
+ * manual lo cambió): entonces el costo vigente se respeta.
+ */
 export async function voidFoodPurchase(purchaseId: string, reason: string) {
   const session = await requireFoodManager();
   const organizationId = session.user.organizationId;
@@ -248,6 +358,18 @@ export async function voidFoodPurchase(purchaseId: string, reason: string) {
       purchase.items.map((i) => ({ inventoryItemId: i.inventoryItemId, delta: -Number(i.quantity) })),
       { type: "PURCHASE_VOID", purchaseId, note: trimmed, userId: session.user.id }
     );
+    for (const line of purchase.items) {
+      const current = await tx.foodInventoryItem.findUnique({ where: { id: line.inventoryItemId }, select: { unitCost: true } });
+      if (current?.unitCost === null || current?.unitCost === undefined || !current.unitCost.equals(line.unitCost)) continue;
+      const later = await tx.foodPurchaseItem.count({
+        where: {
+          inventoryItemId: line.inventoryItemId,
+          purchase: { organizationId, voidedAt: null, createdAt: { gt: purchase.createdAt } },
+        },
+      });
+      if (later > 0) continue;
+      await tx.foodInventoryItem.update({ where: { id: line.inventoryItemId }, data: { unitCost: line.previousUnitCost } });
+    }
   });
 
   await logAudit({
@@ -259,4 +381,33 @@ export async function voidFoodPurchase(purchaseId: string, reason: string) {
     metadata: { reason: trimmed },
   });
   revalidateInventory();
+}
+
+// ── Recálculo por cambio de receta ───────────────────────────────────
+
+/**
+ * Vuelve a calcular el consumo de insumos de las ventas desde `since` con
+ * las recetas actuales y corrige la existencia por la diferencia.
+ */
+export async function recalculateFoodRecipeUsage(since: string) {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  const sinceDate = new Date(since);
+  if (!since || Number.isNaN(sinceDate.getTime())) throw new UserError("Fecha inválida");
+  if (sinceDate.getTime() > Date.now()) throw new UserError("La fecha no puede ser futura");
+
+  const result = await prisma.$transaction(
+    (tx) => recalculateRecipeUsage(tx, organizationId, sinceDate, { note: sinceDate.toLocaleDateString("es-MX"), userId: session.user.id }),
+    { timeout: 60_000 }
+  );
+
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: "food.recipe_recalculate",
+    resource: "FoodRecipeUsage",
+    metadata: { since, ...result },
+  });
+  revalidateInventory();
+  return result;
 }

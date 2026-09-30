@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { assertManualSalesAllowed } from "@/lib/modules";
 import { UserError } from "@/lib/user-error";
-import { applyStockMovements, consumptionToDeltas, recipeConsumption } from "@/lib/food-inventory";
+import { applyStockMovements, consumeRecipes } from "@/lib/food-inventory";
 import { requireFoodManager } from "@/lib/guards";
 
 
@@ -61,6 +61,66 @@ export async function createFoodSale(formData: FormData) {
     metadata: { grossAmount: parsed.data.grossAmount, channel: parsed.data.channel ?? null },
   });
 
+  revalidatePath("/portal/food/sales");
+  revalidatePath("/portal/food");
+}
+
+/** Busca una venta manual de la organización; las del POS se corrigen cancelando en el POS. */
+async function findManualSale(saleId: string, organizationId: string) {
+  const sale = await prisma.foodSale.findFirst({ where: { id: saleId, organizationId }, select: { id: true, source: true } });
+  if (!sale) throw new UserError("Venta no encontrada");
+  if (sale.source === "POS") throw new UserError("Las ventas del POS no se editan aquí; cancélala en el POS");
+  return sale;
+}
+
+export async function updateFoodSale(
+  saleId: string,
+  data: { occurredAt: string; channel?: string; grossAmount: number; netAmount: number; notes?: string }
+) {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  const parsed = createSaleSchema.safeParse(data);
+  if (!parsed.success) throw new UserError("Datos de venta inválidos");
+  if (parsed.data.netAmount > parsed.data.grossAmount) throw new UserError("El neto no puede ser mayor que el bruto");
+  await findManualSale(saleId, organizationId);
+
+  await prisma.foodSale.update({
+    where: { id: saleId },
+    data: {
+      occurredAt: new Date(parsed.data.occurredAt),
+      channel: parsed.data.channel?.trim() || null,
+      grossAmount: parsed.data.grossAmount,
+      netAmount: parsed.data.netAmount,
+      notes: parsed.data.notes?.trim() || null,
+    },
+  });
+
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: "food.sale_update",
+    resource: "FoodSale",
+    resourceId: saleId,
+    metadata: { grossAmount: parsed.data.grossAmount, netAmount: parsed.data.netAmount },
+  });
+  revalidatePath("/portal/food/sales");
+  revalidatePath("/portal/food");
+}
+
+export async function deleteFoodSale(saleId: string) {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  await findManualSale(saleId, organizationId);
+
+  await prisma.foodSale.delete({ where: { id: saleId } });
+
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: "food.sale_delete",
+    resource: "FoodSale",
+    resourceId: saleId,
+  });
   revalidatePath("/portal/food/sales");
   revalidatePath("/portal/food");
 }
@@ -653,8 +713,9 @@ export async function logFoodDishSales(data: { date: string; entries: { variantI
     const changes = parsed.data.entries
       .map((e) => ({ variantId: e.variantId, quantity: e.quantity - (previousByVariant.get(e.variantId) ?? 0) }))
       .filter((c) => c.quantity !== 0);
-    await applyStockMovements(tx, organizationId, consumptionToDeltas(await recipeConsumption(tx, changes)), {
+    await consumeRecipes(tx, organizationId, changes, {
       type: "MANUAL_DISH_SALES",
+      occurredAt,
       note: parsed.data.date,
       userId: session.user.id,
     });

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { FoodPurchaseForm } from "@/components/portal/FoodPurchaseForm";
 import { FoodPurchaseVoidDialog } from "@/components/portal/FoodPurchaseVoidDialog";
 import { ShoppingCart } from "lucide-react";
+import { can } from "@/lib/permissions";
 
 export default async function FoodPurchasesPage() {
   const session = await auth();
@@ -33,15 +34,16 @@ export default async function FoodPurchasesPage() {
         items: { include: { inventoryItem: { select: { name: true, unit: true } } } },
       },
     }),
-    prisma.foodSupplier.findMany({ where: { organizationId: orgId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.foodSupplier.findMany({ where: { organizationId: orgId, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.foodInventoryItem.findMany({
-      where: { organizationId: orgId },
+      where: { organizationId: orgId, isActive: true },
       select: { id: true, name: true, unit: true, unitCost: true },
       orderBy: { name: "asc" },
     }),
   ]);
 
   const f = pickDict(foodStrings, lang);
+  const canManage = can(session.user.role, "food:manage");
   const qty = (n: number) => n.toLocaleString(f.dateLocale, { maximumFractionDigits: 3 });
 
   return (
@@ -77,7 +79,7 @@ export default async function FoodPurchasesPage() {
                           <p className={p.voidedAt ? "text-sm font-semibold text-slate-400 line-through" : "text-sm font-semibold text-slate-900"}>
                             {formatMoney(Number(p.total))}
                           </p>
-                          {!p.voidedAt && <FoodPurchaseVoidDialog purchaseId={p.id} />}
+                          {canManage && !p.voidedAt && <FoodPurchaseVoidDialog purchaseId={p.id} />}
                         </div>
                       </div>
                       <ul className="mt-1.5 space-y-0.5">
@@ -97,17 +99,21 @@ export default async function FoodPurchasesPage() {
           </Card>
         </div>
 
-        <Card className="self-start">
-          <CardHeader>
-            <CardTitle className="text-base">{f.newPurchase}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FoodPurchaseForm
-              suppliers={suppliers}
-              items={items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, unitCost: i.unitCost === null ? null : Number(i.unitCost) }))}
-            />
-          </CardContent>
-        </Card>
+        {!canManage ? (
+          <p className="self-start rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">{f.viewOnlyNotice}</p>
+        ) : (
+          <Card className="self-start">
+            <CardHeader>
+              <CardTitle className="text-base">{f.newPurchase}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FoodPurchaseForm
+                suppliers={suppliers}
+                items={items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, unitCost: i.unitCost === null ? null : Number(i.unitCost) }))}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

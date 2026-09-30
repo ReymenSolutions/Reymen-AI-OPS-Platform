@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { hasModule } from "./modules";
-import { applyStockMovements, consumptionToDeltas, recipeConsumption } from "./food-inventory";
+import { consumeRecipes } from "./food-inventory";
 
 // ─── FOOD OPS — agregados de Ventas ──────────────────────────────────
 // Compartido entre /portal/food (resumen) y /portal/food/sales
@@ -172,7 +172,7 @@ export interface FoodLowStockEntry {
 
 export async function getFoodLowStockItems(organizationId: string, limit = 5): Promise<FoodLowStockEntry[]> {
   const items = await prisma.foodInventoryItem.findMany({
-    where: { organizationId },
+    where: { organizationId, isActive: true },
     select: { id: true, name: true, unit: true, currentStock: true, minStock: true },
   });
 
@@ -995,6 +995,7 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
         channel: body.channel ?? "POS",
         grossAmount: body.grossAmount!,
         netAmount: body.netAmount!,
+        source: "POS",
       },
     });
     for (const item of items) {
@@ -1022,17 +1023,9 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
     // cancelación (cantidades negativas) los devuelve.
     const sold = items.filter((i) => i.quantity > 0);
     const cancelled = items.filter((i) => i.quantity < 0);
-    if (sold.length) {
-      await applyStockMovements(tx, organizationId, consumptionToDeltas(await recipeConsumption(tx, sold)), {
-        type: "SALE",
-        foodSaleId: sale.id,
-      });
-    }
+    if (sold.length) await consumeRecipes(tx, organizationId, sold, { type: "SALE", occurredAt, foodSaleId: sale.id });
     if (cancelled.length) {
-      await applyStockMovements(tx, organizationId, consumptionToDeltas(await recipeConsumption(tx, cancelled)), {
-        type: "SALE_CANCELLATION",
-        foodSaleId: sale.id,
-      });
+      await consumeRecipes(tx, organizationId, cancelled, { type: "SALE_CANCELLATION", occurredAt, foodSaleId: sale.id });
     }
   });
 }

@@ -4,12 +4,15 @@ import { hasModule, requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
 import { getFoodSalesSummary, getFoodSalesByChannel } from "@/lib/food";
 import { createFoodSale } from "@/actions/food";
+import { FoodSaleActions } from "@/components/portal/FoodSaleActions";
+import { can } from "@/lib/permissions";
 import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
 import { pickDict } from "@/lib/i18n-dict";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { formatDateTime, formatMoney } from "@/lib/utils";
 import { BarChart3, DollarSign } from "lucide-react";
@@ -45,6 +48,7 @@ export default async function FoodSalesPage() {
   ]);
 
   const f = pickDict(foodStrings, lang);
+  const canManage = can(session.user.role, "food:manage");
   const totalChannelGross = byChannel.reduce((sum, c) => sum + c.gross, 0);
 
   return (
@@ -109,14 +113,34 @@ export default async function FoodSalesPage() {
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {recentSales.map((sale) => (
-                    <li key={sale.id} className="flex items-center justify-between px-6 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{formatDateTime(sale.occurredAt)}</p>
+                    <li key={sale.id} className="flex items-center justify-between gap-3 px-6 py-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-slate-900">{formatDateTime(sale.occurredAt)}</p>
+                          {sale.source === "POS" && <Badge variant="secondary" className="text-[10px]">{f.posSaleBadge}</Badge>}
+                        </div>
                         <p className="text-xs text-slate-500">{sale.channel ?? f.noChannel}</p>
+                        {sale.notes && <p className="truncate text-xs text-slate-400">{sale.notes}</p>}
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-900">{formatMoney(Number(sale.grossAmount))}</p>
-                        <p className="text-xs text-slate-500">{f.netLabel(formatMoney(Number(sale.netAmount)))}</p>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-slate-900">{formatMoney(Number(sale.grossAmount))}</p>
+                          <p className="text-xs text-slate-500">{f.netLabel(formatMoney(Number(sale.netAmount)))}</p>
+                        </div>
+                        {canManage && sale.source === "MANUAL" && (
+                          <div className="flex items-center">
+                            <FoodSaleActions
+                              sale={{
+                                id: sale.id,
+                                occurredAt: toLocalDateTimeInput(sale.occurredAt),
+                                channel: sale.channel,
+                                grossAmount: Number(sale.grossAmount),
+                                netAmount: Number(sale.netAmount),
+                                notes: sale.notes,
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -128,6 +152,8 @@ export default async function FoodSalesPage() {
 
         {usesPos ? (
           <PosLockedNotice title={f.posLockedTitle} description={f.posLockedSaleDesc} />
+        ) : !canManage ? (
+          <p className="self-start rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">{f.viewOnlyNotice}</p>
         ) : (
           <Card>
             <CardHeader>

@@ -18,6 +18,7 @@ import {
   getFoodModifierGroups,
   processFoodPosOrder,
 } from "./food";
+import { recalculateRecipeUsage } from "./food-inventory";
 
 async function makeInventoryItem(orgId: string, name: string, unitCost: number, unit = "kg") {
   return prisma.foodInventoryItem.create({
@@ -617,6 +618,55 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       expect(sale?.quantity).toBe(5);
       const sales = await prisma.foodSale.findMany({ where: { organizationId: org.id } });
       expect(sales).toHaveLength(2);
+    });
+
+    it("CRITICAL: recalculating after a recipe change moves only the difference, and a second run changes nothing", async () => {
+      const o = await createTestOrg("Food Recipe Recalc Org");
+      org = o;
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const cheese = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Queso", unit: "kg", currentStock: 10 } });
+      const dough = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Masa", unit: "kg", currentStock: 10 } });
+      const { variant } = await makeDish(org.id, "Pizza", 180, [{ inventoryItemId: cheese.id, quantity: 0.1 }]);
+
+      await processFoodPosOrder({ grossAmount: 540, netAmount: 465, items: [{ variantId: variant.id, quantity: 3 }] }, org.id);
+      await processFoodPosOrder({ grossAmount: -180, netAmount: -155, items: [{ variantId: variant.id, quantity: -1 }] }, org.id);
+      const sale = await prisma.foodSale.findFirstOrThrow({ where: { organizationId: org.id }, orderBy: { createdAt: "asc" } });
+      expect(sale.source).toBe("POS");
+      const stock = async (id: string) => Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id } })).currentStock);
+      expect(await stock(cheese.id)).toBeCloseTo(9.8, 3); // 10 − 0.1 × (3 − 1)
+
+      // La receta real llevaba 0.15 de queso y además 0.2 de masa.
+      await prisma.foodDishVariantIngredient.updateMany({ where: { variantId: variant.id, inventoryItemId: cheese.id }, data: { quantity: 0.15 } });
+      await prisma.foodDishVariantIngredient.create({ data: { variantId: variant.id, inventoryItemId: dough.id, quantity: 0.2 } });
+
+      const first = await prisma.$transaction((tx) => recalculateRecipeUsage(tx, o.id, daysAgoDate(1), { note: "test" }));
+      expect(first.items).toBe(2);
+      expect(await stock(cheese.id)).toBeCloseTo(9.7, 3); // 10 − 0.15 × 2
+      expect(await stock(dough.id)).toBeCloseTo(9.6, 3); // 10 − 0.2 × 2
+      const recalc = await prisma.foodInventoryMovement.findMany({ where: { organizationId: org.id, type: "RECIPE_RECALC" } });
+      expect(recalc).toHaveLength(2);
+
+      const second = await prisma.$transaction((tx) => recalculateRecipeUsage(tx, o.id, daysAgoDate(1), { note: "test" }));
+      expect(second).toEqual({ usages: 0, items: 0 });
+      expect(await stock(cheese.id)).toBeCloseTo(9.7, 3);
+    });
+
+    it("a sale of a dish with no recipe yet is picked up once the recipe is added", async () => {
+      const o = await createTestOrg("Food Recipe Recalc Late Recipe Org");
+      org = o;
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const beef = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Arrachera", unit: "kg", currentStock: 5 } });
+      const variant = await makePosDish(org.id);
+
+      await processFoodPosOrder({ grossAmount: 200, netAmount: 172, items: [{ variantId: variant.id, quantity: 2 }] }, org.id);
+      expect(await prisma.foodRecipeUsage.count({ where: { variantId: variant.id } })).toBe(1);
+
+      await prisma.foodDishVariantIngredient.create({ data: { variantId: variant.id, inventoryItemId: beef.id, quantity: 0.25 } });
+      // Una fecha posterior a la venta no la toca.
+      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+      expect((await prisma.$transaction((tx) => recalculateRecipeUsage(tx, o.id, tomorrow, {}))).items).toBe(0);
+      await prisma.$transaction((tx) => recalculateRecipeUsage(tx, o.id, daysAgoDate(1), {}));
+      expect(Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: beef.id } })).currentStock)).toBeCloseTo(4.5, 3);
     });
 
     it("rejects an order for a variant that belongs to another organization", async () => {

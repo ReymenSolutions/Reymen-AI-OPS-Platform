@@ -117,7 +117,7 @@ export default async function FoodOverviewPage() {
     getFoodLowStockItems(orgId, 5),
     getFoodTopSellingDishes(orgId, 30, 5),
     prisma.foodSupplier.findMany({
-      where: { organizationId: orgId },
+      where: { organizationId: orgId, isActive: true },
       select: {
         id: true,
         name: true,

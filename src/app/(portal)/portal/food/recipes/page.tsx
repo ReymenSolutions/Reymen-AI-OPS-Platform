@@ -20,6 +20,8 @@ import { FoodModifierGroupDeleteButton } from "@/components/portal/FoodModifierG
 import { cn } from "@/lib/utils";
 import { ChefHat, Tag, SlidersHorizontal } from "lucide-react";
 import { PosLockedNotice } from "@/components/portal/PosLockedNotice";
+import { FoodRecipeRecalcForm } from "@/components/portal/FoodRecipeRecalcForm";
+import { can } from "@/lib/permissions";
 
 function marginColor(marginPct: number | null): string {
   if (marginPct === null) return "text-slate-400";
@@ -46,7 +48,8 @@ export default async function FoodRecipesPage() {
     getServerLang(),
     getFoodDishesWithCost(orgId),
     prisma.foodInventoryItem.findMany({
-      where: { organizationId: orgId },
+      // Los desactivados solo siguen disponibles si ya están en alguna receta.
+      where: { organizationId: orgId, OR: [{ isActive: true }, { dishLinks: { some: {} } }] },
       select: { id: true, name: true, unit: true, unitCost: true },
       orderBy: { name: "asc" },
     }),
@@ -60,6 +63,7 @@ export default async function FoodRecipesPage() {
   ]);
 
   const f = pickDict(foodStrings, lang);
+  const canManage = can(session.user.role, "food:manage");
   const inventoryItems = inventoryItemsRaw.map((i) => ({ ...i, unitCost: i.unitCost !== null ? Number(i.unitCost) : null }));
   const todayQtyByVariant = new Map(todaySales.map((s) => [s.variantId, s.quantity]));
   const activeVariants = flattenVariants(dishes.filter((d) => d.isActive));
@@ -72,7 +76,9 @@ export default async function FoodRecipesPage() {
       <PageHeader
         title={t.foodRecipes}
         description={f.recipesDesc}
-        actions={<FoodDishFormDialog inventoryItems={inventoryItems} categories={categoryOptions} modifierGroups={modifierGroupOptions} />}
+        actions={
+          canManage ? <FoodDishFormDialog inventoryItems={inventoryItems} categories={categoryOptions} modifierGroups={modifierGroupOptions} /> : undefined
+        }
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -98,26 +104,28 @@ export default async function FoodRecipesPage() {
                           )}
                           {!dish.isActive && <Badge variant="secondary" className="text-[10px]">{f.inactive}</Badge>}
                         </div>
-                        <div className="flex flex-shrink-0 items-center gap-1">
-                          <FoodDishFormDialog
-                            inventoryItems={inventoryItems}
-                            categories={categoryOptions}
-                            modifierGroups={modifierGroupOptions}
-                            dish={{
-                              id: dish.id,
-                              name: dish.name,
-                              categoryId: dish.categoryId,
-                              modifierGroupIds: dish.modifierGroupIds,
-                              variants: dish.variants.map((v) => ({
-                                id: v.id,
-                                label: v.label,
-                                price: v.price,
-                                ingredients: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })),
-                              })),
-                            }}
-                          />
-                          <FoodDishActiveToggle dishId={dish.id} isActive={dish.isActive} />
-                        </div>
+                        {canManage && (
+                          <div className="flex flex-shrink-0 items-center gap-1">
+                            <FoodDishFormDialog
+                              inventoryItems={inventoryItems}
+                              categories={categoryOptions}
+                              modifierGroups={modifierGroupOptions}
+                              dish={{
+                                id: dish.id,
+                                name: dish.name,
+                                categoryId: dish.categoryId,
+                                modifierGroupIds: dish.modifierGroupIds,
+                                variants: dish.variants.map((v) => ({
+                                  id: v.id,
+                                  label: v.label,
+                                  price: v.price,
+                                  ingredients: v.ingredients.map((i) => ({ inventoryItemId: i.inventoryItemId, quantity: i.quantity })),
+                                })),
+                              }}
+                            />
+                            <FoodDishActiveToggle dishId={dish.id} isActive={dish.isActive} />
+                          </div>
+                        )}
                       </div>
                       <ul className="mt-1.5 space-y-0.5 pl-0.5">
                         {dish.variants.map((v) => (
@@ -153,7 +161,7 @@ export default async function FoodRecipesPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">{f.categories}</CardTitle>
-              <FoodDishCategoryFormDialog />
+              {canManage && <FoodDishCategoryFormDialog />}
             </CardHeader>
             <CardContent className="p-0">
               {categories.length === 0 ? (
@@ -170,10 +178,12 @@ export default async function FoodRecipesPage() {
                           {f.dishCount(c.dishCount)}
                         </span>
                       </div>
-                      <div className="flex flex-shrink-0 items-center gap-1">
-                        <FoodDishCategoryFormDialog category={c} />
-                        <FoodDishCategoryDeleteButton categoryId={c.id} categoryName={c.name} />
-                      </div>
+                      {canManage && (
+                        <div className="flex flex-shrink-0 items-center gap-1">
+                          <FoodDishCategoryFormDialog category={c} />
+                          <FoodDishCategoryDeleteButton categoryId={c.id} categoryName={c.name} />
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -184,7 +194,7 @@ export default async function FoodRecipesPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">{f.modifierGroups}</CardTitle>
-              <FoodModifierGroupFormDialog />
+              {canManage && <FoodModifierGroupFormDialog />}
             </CardHeader>
             <CardContent className="p-0">
               {modifierGroups.length === 0 ? (
@@ -206,10 +216,12 @@ export default async function FoodRecipesPage() {
                             {f.dishCount(g.dishCount)}
                           </span>
                         </div>
-                        <div className="flex flex-shrink-0 items-center gap-1">
-                          <FoodModifierGroupFormDialog group={g} />
-                          <FoodModifierGroupDeleteButton groupId={g.id} groupName={g.name} />
-                        </div>
+                        {canManage && (
+                          <div className="flex flex-shrink-0 items-center gap-1">
+                            <FoodModifierGroupFormDialog group={g} />
+                            <FoodModifierGroupDeleteButton groupId={g.id} groupName={g.name} />
+                          </div>
+                        )}
                       </div>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {g.options.map((o) => `${o.name}${o.priceDelta > 0 ? ` (+$${o.priceDelta.toFixed(2)})` : ""}`).join(", ")}
@@ -222,15 +234,27 @@ export default async function FoodRecipesPage() {
           </Card>
         </div>
 
-        {usesPos ? (
-          <div>
+        <div className="space-y-6">
+          {usesPos ? (
             <PosLockedNotice title={f.posLockedTitle} description={f.posLockedDishDesc} />
-          </div>
-        ) : (
-          <FoodDailyDishSalesForm
-            variants={activeVariants.map((v) => ({ variantId: v.id, displayName: v.displayName, todayQuantity: todayQtyByVariant.get(v.id) ?? 0 }))}
-          />
-        )}
+          ) : !canManage ? (
+            <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">{f.viewOnlyNotice}</p>
+          ) : (
+            <FoodDailyDishSalesForm
+              variants={activeVariants.map((v) => ({ variantId: v.id, displayName: v.displayName, todayQuantity: todayQtyByVariant.get(v.id) ?? 0 }))}
+            />
+          )}
+          {canManage && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{f.recalcTitle}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <FoodRecipeRecalcForm />
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );

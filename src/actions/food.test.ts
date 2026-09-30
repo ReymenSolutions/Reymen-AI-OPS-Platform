@@ -109,3 +109,49 @@ describe("food:manage permission", () => {
     expect(await prisma.foodOperatingCost.count({ where: { organizationId: org.id } })).toBe(1);
   });
 });
+
+describe("manual sales can be edited and deleted; POS sales can't", () => {
+  let org: { id: string };
+  let owner: { id: string };
+  let viewer: { id: string };
+
+  beforeAll(async () => {
+    org = await createTestOrg("Food Manual Sale Edit Org");
+    owner = await createTestUser(org.id, "OWNER", "food-sale-edit-owner");
+    viewer = await createTestUser(org.id, "VIEWER", "food-sale-edit-viewer");
+    await enable(org.id, "FOOD_OPS");
+  });
+  afterAll(async () => {
+    await cleanupOrg(org.id);
+  });
+
+  it("edits and deletes a manual sale", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    await food.createFoodSale(saleForm());
+    const sale = await prisma.foodSale.findFirstOrThrow({ where: { organizationId: org.id } });
+    expect(sale.source).toBe("MANUAL");
+
+    await food.updateFoodSale(sale.id, { occurredAt: "2026-09-29T20:00", channel: "Domicilio", grossAmount: 150, netAmount: 129.31, notes: "Corregida" });
+    const edited = await prisma.foodSale.findUniqueOrThrow({ where: { id: sale.id } });
+    expect(edited).toMatchObject({ channel: "Domicilio", notes: "Corregida" });
+    expect(Number(edited.grossAmount)).toBe(150);
+    await expect(food.updateFoodSale(sale.id, { occurredAt: "2026-09-29T20:00", grossAmount: 100, netAmount: 120 })).rejects.toThrow(
+      "El neto no puede ser mayor que el bruto"
+    );
+
+    authMock.mockResolvedValue(fakeSession({ id: viewer.id, role: "VIEWER", organizationId: org.id }));
+    await expect(food.deleteFoodSale(sale.id)).rejects.toThrow();
+
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    await food.deleteFoodSale(sale.id);
+    expect(await prisma.foodSale.count({ where: { id: sale.id } })).toBe(0);
+  });
+
+  it("refuses to edit or delete a sale that came from the POS", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    const pos = await prisma.foodSale.create({ data: { organizationId: org.id, grossAmount: 900, netAmount: 775.86, channel: "POS", source: "POS" } });
+    await expect(food.deleteFoodSale(pos.id)).rejects.toThrow("cancélala en el POS");
+    await expect(food.updateFoodSale(pos.id, { occurredAt: "2026-09-29T20:00", grossAmount: 1, netAmount: 1 })).rejects.toThrow("cancélala en el POS");
+    expect(await prisma.foodSale.count({ where: { id: pos.id } })).toBe(1);
+  });
+});

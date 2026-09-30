@@ -114,11 +114,73 @@ describe("food inventory, suppliers and purchases", () => {
     expect(Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: foreign.id } })).currentStock)).toBe(0);
   });
 
+  it("deactivating an item hides it from purchases; deleting is only allowed while it has no recipes or purchases", async () => {
+    const item = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Chile", unit: "kg", currentStock: 1 } });
+    await inv.setFoodInventoryItemActive(item.id, false);
+    await expect(
+      inv.createFoodPurchase({ supplierId: null, purchasedAt: "2026-09-30T18:00:00.000Z", items: [{ inventoryItemId: item.id, quantity: 1, unitCost: 1 }] })
+    ).rejects.toThrow("Uno o más insumos están desactivados");
+    await inv.setFoodInventoryItemActive(item.id, true);
+    await inv.createFoodPurchase({ supplierId: null, purchasedAt: "2026-09-30T18:00:00.000Z", items: [{ inventoryItemId: item.id, quantity: 1, unitCost: 1 }] });
+    await expect(inv.deleteFoodInventoryItem(item.id)).rejects.toThrow("desactívalo en lugar de eliminarlo");
+
+    const mistake = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Error de captura", unit: "kg" } });
+    await inv.adjustFoodInventoryStock(mistake.id, { countedStock: 2 });
+    await inv.deleteFoodInventoryItem(mistake.id);
+    expect(await prisma.foodInventoryItem.count({ where: { id: mistake.id } })).toBe(0);
+  });
+
+  it("suppliers: deactivated ones can't receive purchases; only suppliers without purchases can be deleted", async () => {
+    const item = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Crema", unit: "lt" } });
+    const used = await prisma.foodSupplier.create({ data: { organizationId: org.id, name: "Lala" } });
+    await inv.createFoodPurchase({ supplierId: used.id, purchasedAt: "2026-09-30T18:00:00.000Z", items: [{ inventoryItemId: item.id, quantity: 1, unitCost: 30 }] });
+    await expect(inv.deleteFoodSupplier(used.id)).rejects.toThrow("tiene compras registradas");
+    await inv.setFoodSupplierActive(used.id, false);
+    await expect(
+      inv.createFoodPurchase({ supplierId: used.id, purchasedAt: "2026-09-30T18:00:00.000Z", items: [{ inventoryItemId: item.id, quantity: 1, unitCost: 30 }] })
+    ).rejects.toThrow("Este proveedor está desactivado");
+
+    const unused = await prisma.foodSupplier.create({ data: { organizationId: org.id, name: "Duplicado" } });
+    await inv.deleteFoodSupplier(unused.id);
+    expect(await prisma.foodSupplier.count({ where: { id: unused.id } })).toBe(0);
+  });
+
+  it("CRITICAL: voiding a purchase restores the item's previous cost, unless a later purchase or an edit already changed it", async () => {
+    const item = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Aguacate", unit: "kg", unitCost: 40 } });
+    const buy = (cost: number) =>
+      inv.createFoodPurchase({ supplierId: null, purchasedAt: "2026-09-30T18:00:00.000Z", items: [{ inventoryItemId: item.id, quantity: 1, unitCost: cost }] });
+    const cost = async () => Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: item.id } })).unitCost);
+
+    const wrong = await buy(450); // se tecleó 450 en vez de 45
+    expect(await cost()).toBe(450);
+    await inv.voidFoodPurchase(wrong.id, "Precio mal capturado");
+    expect(await cost()).toBe(40);
+
+    const first = await buy(45);
+    await buy(50);
+    await inv.voidFoodPurchase(first.id, "Duplicada");
+    expect(await cost()).toBe(50); // la compra posterior manda
+
+    const third = await buy(55);
+    await inv.updateFoodInventoryItem(item.id, { name: "Aguacate", unit: "kg", category: "EDIBLE", minStock: 0, unitCost: 52 });
+    await inv.voidFoodPurchase(third.id, "Error");
+    expect(await cost()).toBe(52); // la edición manual manda
+  });
+
+  it("the recipe recalculation rejects a future date", async () => {
+    const future = new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString();
+    await expect(inv.recalculateFoodRecipeUsage(future)).rejects.toThrow("La fecha no puede ser futura");
+  });
+
   it("a VIEWER can't edit, adjust or buy", async () => {
     authMock.mockResolvedValue(fakeSession({ id: viewer.id, role: "VIEWER", organizationId: org.id }));
     const item = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Papa", unit: "kg", currentStock: 3 } });
     await expect(inv.adjustFoodInventoryStock(item.id, { countedStock: 0 })).rejects.toThrow();
     await expect(inv.createFoodPurchase({ supplierId: null, purchasedAt: "2026-09-30T18:00:00.000Z", items: [{ inventoryItemId: item.id, quantity: 1, unitCost: 1 }] })).rejects.toThrow();
+    await expect(inv.setFoodInventoryItemActive(item.id, false)).rejects.toThrow();
+    await expect(inv.deleteFoodInventoryItem(item.id)).rejects.toThrow();
+    await expect(inv.recalculateFoodRecipeUsage(new Date().toISOString())).rejects.toThrow();
+    expect(await prisma.foodInventoryItem.count({ where: { id: item.id, isActive: true } })).toBe(1);
     expect(Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: item.id } })).currentStock)).toBe(3);
   });
 });
