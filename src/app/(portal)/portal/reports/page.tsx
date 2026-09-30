@@ -14,6 +14,7 @@ import { AutomationHealthChart } from "@/components/charts/AutomationHealthChart
 import { RoiCalculator } from "@/components/portal/RoiCalculator";
 import { Users, Zap, Calendar, TrendingUp } from "lucide-react";
 import type { PlatformModule } from "@prisma/client";
+import { buildLeadTrend } from "@/lib/lead-trend";
 
 // STATUS_LABELS sourced from server translations at render time
 
@@ -22,26 +23,6 @@ const FUNNEL_COLORS: Record<string, string> = {
   PROPOSAL: "#f59e0b", WON: "#10b981", LOST: "#ef4444",
 };
 
-function buildLeadTrend(leads: { createdAt: Date }[]): { date: string; total: number }[] {
-  const days = 30;
-  const now = new Date();
-  const map = new Map<string, number>();
-
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const key = `${d.getMonth() + 1}/${d.getDate()}`;
-    map.set(key, 0);
-  }
-
-  for (const lead of leads) {
-    const d = new Date(lead.createdAt);
-    const key = `${d.getMonth() + 1}/${d.getDate()}`;
-    if (map.has(key)) map.set(key, (map.get(key) ?? 0) + 1);
-  }
-
-  return Array.from(map.entries()).map(([date, total]) => ({ date, total }));
-}
 
 async function getReportData(orgId: string) {
   const thirtyDaysAgo = new Date();

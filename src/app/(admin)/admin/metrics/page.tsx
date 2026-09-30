@@ -8,23 +8,8 @@ import { LeadTrendChart } from "@/components/charts/LeadTrendChart";
 import { Users, Zap, TrendingUp, Activity, CreditCard } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PLAN_LIMITS } from "@/lib/permissions";
+import { buildLeadTrend } from "@/lib/lead-trend";
 
-function buildLeadTrend(leads: { createdAt: Date }[]): { date: string; total: number }[] {
-  const days = 30;
-  const now = new Date();
-  const map = new Map<string, number>();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    map.set(`${d.getMonth() + 1}/${d.getDate()}`, 0);
-  }
-  for (const lead of leads) {
-    const d = new Date(lead.createdAt);
-    const key = `${d.getMonth() + 1}/${d.getDate()}`;
-    if (map.has(key)) map.set(key, (map.get(key) ?? 0) + 1);
-  }
-  return Array.from(map.entries()).map(([date, total]) => ({ date, total }));
-}
 
 async function getGlobalMetrics() {
   const thirtyDaysAgo = new Date();
