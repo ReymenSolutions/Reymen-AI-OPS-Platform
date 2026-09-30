@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
-import { secretsMatch } from "@/lib/webhook-validator";
+import { authenticateOrgRequest } from "@/lib/api-key-auth";
 
 // Internal n8n query: GET /api/v1/appointments/due-reminders?orgId=xxx
 // n8n polls this on its own schedule (there is no cron inside the platform
@@ -12,34 +11,9 @@ import { secretsMatch } from "@/lib/webhook-validator";
 // /api/v1/knowledge-base: X-Api-Key matched against THAT organization's own
 // n8nWebhookSecret, or a NextAuth session for browser callers.
 export async function GET(req: NextRequest) {
-  const { searchParams } = req.nextUrl;
-  const apiKey = req.headers.get("x-api-key");
-
-  let orgId: string;
-
-  if (apiKey) {
-    const paramOrgId = searchParams.get("orgId");
-    if (!paramOrgId) {
-      return NextResponse.json({ error: "orgId required" }, { status: 400 });
-    }
-
-    const org = await prisma.organization.findUnique({
-      where: { id: paramOrgId },
-      select: { id: true, n8nWebhookSecret: true },
-    });
-
-    if (!org || !secretsMatch(apiKey, org.n8nWebhookSecret)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    orgId = org.id;
-  } else {
-    const session = await auth();
-    if (!session?.user.organizationId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    orgId = session.user.organizationId;
-  }
+  const authResult = await authenticateOrgRequest(req);
+  if (authResult.response) return authResult.response;
+  const orgId = authResult.orgId;
 
   const rules = await prisma.appointmentReminderRule.findMany({
     where: { organizationId: orgId, isActive: true },
