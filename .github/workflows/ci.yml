@@ -84,6 +84,9 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:password@localhost:5432/reymen_ops
+      # La suite e2e inicia sesión más de 20 veces desde la misma IP; con el
+      # límite de producción (20 por IP cada 10 min) las últimas pruebas fallan.
+      LOGIN_IP_RATE_LIMIT: "1000"
 
     steps:
       - uses: actions/checkout@v4

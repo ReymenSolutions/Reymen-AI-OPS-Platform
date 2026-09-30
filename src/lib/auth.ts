@@ -7,6 +7,7 @@ import { prisma } from "./prisma";
 import { checkRateLimit } from "./rate-limit";
 import { verifyTotpCode } from "./totp";
 import { authConfig } from "./auth.config";
+import { clientIp, loginIpRateLimit } from "./client-ip";
 export { isAdmin, isClientRole } from "./roles";
 
 class RateLimitedSignin extends CredentialsSignin {
@@ -35,10 +36,6 @@ async function consumeBackupCode(userId: string, code: string, hashes: string[])
   return false;
 }
 
-function clientIp(request?: Request): string | null {
-  const forwarded = request?.headers.get("x-forwarded-for");
-  return forwarded ? forwarded.split(",")[0].trim() : null;
-}
 
 // A precomputed bcrypt hash with no matching plaintext. Compared against
 // when the user doesn't exist (or has no password set) so that
@@ -79,7 +76,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const [emailLimit, ipLimit] = await Promise.all([
           checkRateLimit(`login:email:${email.toLowerCase()}`, { limit: 5, windowMs: 10 * 60 * 1000 }),
           ip
-            ? checkRateLimit(`login:ip:${ip}`, { limit: 20, windowMs: 10 * 60 * 1000 })
+            ? checkRateLimit(`login:ip:${ip}`, { limit: loginIpRateLimit(), windowMs: 10 * 60 * 1000 })
             : Promise.resolve({ allowed: true }),
         ]);
         if (!emailLimit.allowed || !ipLimit.allowed) throw new RateLimitedSignin();
