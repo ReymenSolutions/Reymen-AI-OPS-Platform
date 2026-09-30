@@ -46,7 +46,6 @@ export const foodStrings = defineDict({
     moduleAreas: "Áreas del módulo",
     comingSoon: "Próximamente",
     // Ventas (/portal/food/sales)
-    salesPageDesc: "Registro de ventas, comparación diaria/semanal/mensual.",
     salesCountGross: (n: number) => `${n} venta(s) · bruto`,
     last7Days: "Últimos 7 días",
     last30Days: "Últimos 30 días",
@@ -64,10 +63,6 @@ export const foodStrings = defineDict({
     netNoTax: "Neto (sin IVA)",
     notes: "Notas",
     saveSale: "Guardar venta",
-    // Analítica (/portal/food/analytics)
-    analyticsPageDesc: "Ventas de los últimos 30 días. Recetas, consumo y costos se integran cuando esos módulos tengan modelo propio.",
-    gross30: "Bruto (30 días)",
-    net30: "Neto (30 días)",
     salesCount30: "Ventas registradas (30 días)",
     salesByChannel30: "Ventas por canal (30 días)",
     noDataYet: "Sin datos todavía",
@@ -153,6 +148,8 @@ export const foodStrings = defineDict({
     promotionsEmpty: "Registra ventas de platillos en Recetas para ver aquí cuáles se venden menos y merecen una promoción.",
     soldIn30Days: (n: number) => `${n} vendidos en 30 días`,
     promotionTip: "Considera un descuento o un combo con tu platillo más popular para darle salida.",
+    // Ventas y analítica (unificadas en /portal/food/sales)
+    salesAnalyticsDesc: "Registro de ventas, comparación diaria/semanal/mensual y desglose por canal.",
   },
   en: {
     dateLocale: "en-US",
@@ -195,7 +192,6 @@ export const foodStrings = defineDict({
     moduleAreas: "Module areas",
     comingSoon: "Coming soon",
     // Ventas (/portal/food/sales)
-    salesPageDesc: "Sales log, with daily, weekly and monthly comparison.",
     salesCountGross: (n: number) => `${n} sale(s) · gross`,
     last7Days: "Last 7 days",
     last30Days: "Last 30 days",
@@ -213,10 +209,6 @@ export const foodStrings = defineDict({
     netNoTax: "Net (before tax)",
     notes: "Notes",
     saveSale: "Save sale",
-    // Analítica (/portal/food/analytics)
-    analyticsPageDesc: "Sales for the last 30 days. Recipes, usage and costs will be added once those modules have their own data.",
-    gross30: "Gross (30 days)",
-    net30: "Net (30 days)",
     salesCount30: "Recorded sales (30 days)",
     salesByChannel30: "Sales by channel (30 days)",
     noDataYet: "No data yet",
@@ -302,5 +294,7 @@ export const foodStrings = defineDict({
     promotionsEmpty: "Record dish sales in Recipes to see here which ones sell least and deserve a promotion.",
     soldIn30Days: (n: number) => `${n} sold in 30 days`,
     promotionTip: "Consider a discount or a combo with your most popular dish to move it.",
+    // Ventas y analítica (unificadas en /portal/food/sales)
+    salesAnalyticsDesc: "Sales log, daily/weekly/monthly comparison and channel breakdown.",
   },
 });

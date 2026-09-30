@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
-import { getFoodSalesSummary } from "@/lib/food";
+import { getFoodSalesSummary, getFoodSalesByChannel } from "@/lib/food";
 import { createFoodSale } from "@/actions/food";
 import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
@@ -12,7 +12,7 @@ import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { formatDateTime } from "@/lib/utils";
-import { DollarSign } from "lucide-react";
+import { BarChart3, DollarSign } from "lucide-react";
 
 const money = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`;
 
@@ -23,10 +23,11 @@ export default async function FoodSalesPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, lang, summary, recentSales] = await Promise.all([
+  const [t, lang, summary, byChannel, recentSales] = await Promise.all([
     getServerT(),
     getServerLang(),
     getFoodSalesSummary(orgId),
+    getFoodSalesByChannel(orgId),
     prisma.foodSale.findMany({
       where: { organizationId: orgId },
       orderBy: { occurredAt: "desc" },
@@ -35,12 +36,13 @@ export default async function FoodSalesPage() {
   ]);
 
   const f = pickDict(foodStrings, lang);
+  const totalChannelGross = byChannel.reduce((sum, c) => sum + c.gross, 0);
 
   return (
     <div>
-      <PageHeader title={t.foodSales} description={f.salesPageDesc} />
+      <PageHeader title={t.foodSales} description={f.salesAnalyticsDesc} />
 
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard title={f.today} value={money(summary.today.gross)} description={f.salesCountGross(summary.today.count)} icon={DollarSign} />
         <MetricCard title={f.last7Days} value={money(summary.last7Days.gross)} description={f.salesCountGross(summary.last7Days.count)} icon={DollarSign} />
         <MetricCard
@@ -50,7 +52,39 @@ export default async function FoodSalesPage() {
           icon={DollarSign}
           trend={summary.monthOverMonthGrossPct !== null ? { value: summary.monthOverMonthGrossPct, label: f.vsPrev30Days } : undefined}
         />
+        <MetricCard title={f.salesCount30} value={summary.last30Days.count} icon={BarChart3} />
       </div>
+
+      {/* Antes en /portal/food/analytics: desglose por canal de los últimos 30 días. */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">{f.salesByChannel30}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {byChannel.length === 0 ? (
+            <div className="p-6">
+              <EmptyState icon={BarChart3} title={f.noDataYet} description={f.noChannelDataDesc} />
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {byChannel.map((c) => {
+                const pct = totalChannelGross > 0 ? Math.round((c.gross / totalChannelGross) * 100) : 0;
+                return (
+                  <li key={c.channel ?? ""} className="px-6 py-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-900">{c.channel ?? f.noChannel}</span>
+                      <span className="text-slate-500">{money(c.gross)} · {f.salesCount(c.count)} · {pct}%</span>
+                    </div>
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">

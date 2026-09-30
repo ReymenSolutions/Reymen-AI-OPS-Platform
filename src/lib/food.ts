@@ -2,7 +2,7 @@ import { prisma } from "./prisma";
 import { hasModule } from "./modules";
 
 // ─── FOOD OPS — agregados de Ventas ──────────────────────────────────
-// Compartido entre /portal/food (resumen) y /portal/food/analytics
+// Compartido entre /portal/food (resumen) y /portal/food/sales
 // (detalle) -- mismo cálculo, no dos copias. Decimal de Prisma se
 // convierte a number aquí, una sola vez, para que ninguna página tenga
 // que acordarse de hacerlo.

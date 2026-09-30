@@ -61,7 +61,6 @@ export async function createFoodSale(formData: FormData) {
 
   revalidatePath("/portal/food/sales");
   revalidatePath("/portal/food");
-  revalidatePath("/portal/food/analytics");
 }
 
 const createInventoryItemSchema = z.object({

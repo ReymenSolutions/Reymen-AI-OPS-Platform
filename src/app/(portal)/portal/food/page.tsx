@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  DollarSign, Package, ChefHat, ClipboardList, BarChart3, ArrowRight, Receipt, Clock,
+  DollarSign, Package, ChefHat, ClipboardList, ArrowRight, Receipt, Clock,
   ArrowUpRight, ArrowDownRight, QrCode, MessageCircle, Eye, Phone, ShoppingBag,
   TrendingUp, Sparkles, Truck, Users, Wallet,
 } from "lucide-react";
@@ -34,7 +34,6 @@ const AREAS = [
   { href: "/portal/food/recipes", key: "foodRecipes", icon: ChefHat, ready: true },
   { href: "/portal/food/profitability", key: "foodProfitability", icon: Wallet, ready: true },
   { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: false },
-  { href: "/portal/food/analytics", key: "foodAnalytics", icon: BarChart3, ready: true },
 ] as const;
 
 function money(n: number, opts: Intl.NumberFormatOptions = {}) {
