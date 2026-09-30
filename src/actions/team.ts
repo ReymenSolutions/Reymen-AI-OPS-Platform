@@ -2,14 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { sendEmail } from "@/lib/email";
-import { teamInviteEmail } from "@/lib/email-templates";
-import { assertPlanCapacity } from "@/lib/plan-limits";
+import { createOrgUserRecord } from "@/lib/org-users";
 import type { UserRole } from "@prisma/client";
 
 const inviteSchema = z.object({
@@ -32,38 +29,15 @@ export async function inviteTeamMember(data: {
   const parsed = inviteSchema.safeParse(data);
   if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (existing) throw new Error("Ya existe un usuario con ese email");
-
-  await assertPlanCapacity(session.user.organizationId, "users");
-
-  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-
-  const [user, org] = await Promise.all([
-    prisma.user.create({
-      data: {
-        name: parsed.data.name,
-        email: parsed.data.email,
-        passwordHash,
-        role: parsed.data.role as UserRole,
-        organizationId: session.user.organizationId,
-      },
-    }),
-    prisma.organization.findUnique({ where: { id: session.user.organizationId }, select: { name: true } }),
-  ]);
-
-  await logAudit({
+  await createOrgUserRecord({
     organizationId: session.user.organizationId,
-    userId: session.user.id,
-    action: "team.invite",
-    resource: "User",
-    resourceId: user.id,
-    metadata: { email: user.email, role: user.role },
+    name: parsed.data.name,
+    email: parsed.data.email,
+    role: parsed.data.role as UserRole,
+    password: parsed.data.password,
+    actorUserId: session.user.id,
+    auditAction: "team.invite",
   });
-
-  const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/login`;
-  const email = teamInviteEmail(org?.name ?? "tu organización", loginUrl);
-  sendEmail({ to: user.email, subject: email.subject, html: email.html, text: email.text }).catch(() => {});
 
   revalidatePath("/portal/settings");
   return { success: true };

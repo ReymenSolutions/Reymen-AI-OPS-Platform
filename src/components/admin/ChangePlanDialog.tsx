@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { changePlan } from "@/actions/admin/clients";
-import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES, PLAN_PRICES } from "@/lib/permissions";
 import { getModuleLabel } from "@/lib/modules";
 import { usePreferences } from "@/context/preferences";
 
@@ -20,19 +20,16 @@ interface ChangePlanDialogProps {
 const PLANS = [
   {
     key: "starter",
-    price: "$299 USD/mo",
     color: "border-slate-200",
     badge: "bg-slate-100 text-slate-700",
   },
   {
     key: "professional",
-    price: "$699 USD/mo",
     color: "border-brand-300",
     badge: "bg-brand-100 text-brand-700",
   },
   {
     key: "enterprise",
-    price: "custom",
     color: "border-amber-300",
     badge: "bg-amber-100 text-amber-700",
   },
@@ -76,7 +73,8 @@ export function ChangePlanDialog({ orgId, currentPlan }: ChangePlanDialogProps) 
           {PLANS.map((plan) => {
             const limits = PLAN_LIMITS[plan.key];
             const isSelected = selected === plan.key;
-            const price = plan.key === "enterprise" ? (lang === "es" ? "Personalizado" : "Custom") : (lang === "es" ? plan.price.replace("/mo", "/mes") : plan.price);
+            // Mismo precio que usa el ROI (PLAN_PRICES), no una copia propia.
+            const price = `$${(PLAN_PRICES[plan.key] ?? 0).toLocaleString("en-US")} USD/${lang === "es" ? "mes" : "mo"}`;
             return (
               <button
                 key={plan.key}
