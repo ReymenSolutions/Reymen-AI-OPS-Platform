@@ -18,12 +18,12 @@ import {
   TrendingUp, Sparkles, Truck, Users, Wallet,
 } from "lucide-react";
 
-// Ventana de horario de restaurante que se grafica -- las ventas fuera de
-// este rango siguen contando en los totales del día, solo no se dibujan
-// como barra individual (mismo criterio visual que el dashboard de
-// referencia del negocio: 6:00 a 23:00).
-const CHART_START_HOUR = 6;
-const CHART_END_HOUR = 23;
+// Rango de horas que se dibuja por defecto (horario típico de restaurante).
+// Solo es el encuadre inicial: si hay ventas antes o después, el rango se
+// amplía para incluirlas (ver chartHours abajo), así ninguna venta del día
+// queda fuera de la gráfica aunque el negocio abra antes o cierre después.
+const DEFAULT_CHART_START_HOUR = 6;
+const DEFAULT_CHART_END_HOUR = 23;
 
 const AREAS = [
   { href: "/portal/food/sales", key: "foodSales", icon: DollarSign, ready: true },
@@ -134,7 +134,10 @@ export default async function FoodOverviewPage() {
 
   const avgTicketToday = summary.today.count > 0 ? summary.today.gross / summary.today.count : 0;
 
-  const chartHours = hourly.filter((h) => h.hour >= CHART_START_HOUR && h.hour <= CHART_END_HOUR);
+  const hoursWithSales = hourly.filter((h) => h.count > 0).map((h) => h.hour);
+  const chartStart = Math.min(DEFAULT_CHART_START_HOUR, ...hoursWithSales);
+  const chartEnd = Math.max(DEFAULT_CHART_END_HOUR, ...hoursWithSales);
+  const chartHours = hourly.filter((h) => h.hour >= chartStart && h.hour <= chartEnd);
   const maxHourlyGross = Math.max(...chartHours.map((h) => h.gross), 0);
 
   const grossSpark = daily.map((d) => d.gross);
