@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getSmartcardAdminClient } from "@/lib/smartcard-supabase";
 import { resolveSmartcardMembership, buildSmartcardPublicUrl } from "@/lib/smartcard-company";
 import { inviteTeamMember } from "@/actions/team";
+import { UserError } from "@/lib/user-error";
 
 // Owner/admin/manager can edit a company's own cards and download their QR
 // — widened from owner/admin-only (2026-09-29, explicit ask: a manager
@@ -105,36 +106,36 @@ export async function inviteSmartcardTeamMember(
 async function run(name: string, email: string, roleCode: string, password: string): Promise<void> {
   const session = await auth();
   if (!session?.user.organizationId || !session.user.email) {
-    throw new Error("Sesión inválida.");
+    throw new UserError("Sesión inválida.");
   }
 
   const result = await resolveSmartcardMembership(session.user.organizationId, session.user.email);
   if (!result.ok) {
-    throw new Error("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
+    throw new UserError("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
   }
   if (!["owner", "admin"].includes(result.membership.roleCode)) {
-    throw new Error("No tienes permiso para hacer eso.");
+    throw new UserError("No tienes permiso para hacer eso.");
   }
   const { membership } = result;
 
   const normalizedName = name.trim();
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedRole = roleCode.trim();
-  if (normalizedName.length < 2) throw new Error("El nombre debe tener al menos 2 caracteres.");
-  if (!normalizedEmail) throw new Error("El correo es obligatorio.");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new Error("Ese correo no parece válido.");
-  if (!INVITABLE_ROLES.includes(normalizedRole)) throw new Error("Ese rol no es válido.");
-  if (!password || password.length < 8) throw new Error("La contraseña temporal debe tener al menos 8 caracteres.");
+  if (normalizedName.length < 2) throw new UserError("El nombre debe tener al menos 2 caracteres.");
+  if (!normalizedEmail) throw new UserError("El correo es obligatorio.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new UserError("Ese correo no parece válido.");
+  if (!INVITABLE_ROLES.includes(normalizedRole)) throw new UserError("Ese rol no es válido.");
+  if (!password || password.length < 8) throw new UserError("La contraseña temporal debe tener al menos 8 caracteres.");
 
   // Fail fast, before touching Supabase: does this email already belong to
   // a portal account, and if so, whose?
   const existingPortalUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existingPortalUser && existingPortalUser.organizationId !== session.user.organizationId) {
-    throw new Error("Ese correo ya pertenece a una cuenta de otra organización.");
+    throw new UserError("Ese correo ya pertenece a una cuenta de otra organización.");
   }
 
   const supabase = getSmartcardAdminClient();
-  if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+  if (!supabase) throw new UserError("SmartCard aún no está configurado en este entorno.");
 
   // Same app-level pre-check as before — the real limit is enforced by
   // Supabase's own check_limit()-backed policy on the company_users insert.
@@ -148,11 +149,11 @@ async function run(name: string, email: string, roleCode: string, password: stri
   ]);
 
   if (limitValue !== null && (currentSeats ?? 0) >= Number(limitValue)) {
-    throw new Error("Llegaste al límite de integrantes de tu plan de SmartCard. Contacta a REYMEN para subir de plan.");
+    throw new UserError("Llegaste al límite de integrantes de tu plan de SmartCard. Contacta a REYMEN para subir de plan.");
   }
 
   const { data: role } = await supabase.from("roles").select("id").eq("code", normalizedRole).maybeSingle();
-  if (!role) throw new Error("Ese rol no es válido.");
+  if (!role) throw new UserError("Ese rol no es válido.");
 
   // 1. Supabase Auth user: reuse if one already exists for this email (e.g.
   // added to SmartCard before, or belongs to another company too), otherwise
@@ -179,10 +180,10 @@ async function run(name: string, email: string, roleCode: string, password: stri
       match = listed.users.find((u) => u.email?.toLowerCase() === normalizedEmail);
       if (listed.users.length < 200) break;
     }
-    if (!match) throw new Error("No se pudo procesar la invitación. Intenta de nuevo.");
+    if (!match) throw new UserError("No se pudo procesar la invitación. Intenta de nuevo.");
     supabaseUserId = match.id;
   } else {
-    throw new Error("No se pudo procesar la invitación. Intenta de nuevo.");
+    throw new UserError("No se pudo procesar la invitación. Intenta de nuevo.");
   }
 
   // 2. company_users, active immediately — no separate activation step left
@@ -201,7 +202,7 @@ async function run(name: string, email: string, roleCode: string, password: stri
         .deleteUser(supabaseUserId)
         .catch((e) => console.error("[smartcard/actions] No se pudo revertir el usuario huérfano de Supabase:", e));
     }
-    throw new Error("No se pudo agregar a la company. Intenta de nuevo.");
+    throw new UserError("No se pudo agregar a la company. Intenta de nuevo.");
   }
 
   // 3. The real login: reuse the existing account if this email is already
@@ -269,19 +270,19 @@ export async function updateSmartcardCardDestination(
   async function run(cardId: string, destinationType: string, destinationUrl: string): Promise<void> {
     const session = await auth();
     if (!session?.user.organizationId || !session.user.email) {
-      throw new Error("Sesión inválida.");
+      throw new UserError("Sesión inválida.");
     }
 
     const result = await resolveSmartcardMembership(session.user.organizationId, session.user.email);
     if (!result.ok) {
-      throw new Error("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
+      throw new UserError("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
     }
     if (!CARD_MANAGEMENT_ROLES.includes(result.membership.roleCode)) {
-      throw new Error("No tienes permiso para editar tarjetas.");
+      throw new UserError("No tienes permiso para editar tarjetas.");
     }
 
     const supabase = getSmartcardAdminClient();
-    if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+    if (!supabase) throw new UserError("SmartCard aún no está configurado en este entorno.");
 
     const { data: card, error: cardError } = await supabase
       .from("cards")
@@ -292,10 +293,10 @@ export async function updateSmartcardCardDestination(
 
     if (cardError) {
       console.error("[smartcard/actions] Error buscando card:", cardError.message);
-      throw new Error("No se pudo cargar la tarjeta. Intenta de nuevo.");
+      throw new UserError("No se pudo cargar la tarjeta. Intenta de nuevo.");
     }
     if (!card || card.clients.company_id !== result.membership.companyId) {
-      throw new Error("Esa tarjeta no pertenece a tu empresa.");
+      throw new UserError("Esa tarjeta no pertenece a tu empresa.");
     }
 
     const { data: type, error: typeError } = await supabase
@@ -307,11 +308,11 @@ export async function updateSmartcardCardDestination(
 
     if (typeError) {
       console.error("[smartcard/actions] Error buscando destination_type:", typeError.message);
-      throw new Error("No se pudo validar el tipo de destino. Intenta de nuevo.");
+      throw new UserError("No se pudo validar el tipo de destino. Intenta de nuevo.");
     }
-    if (!type) throw new Error("Ese tipo de destino no es válido.");
+    if (!type) throw new UserError("Ese tipo de destino no es válido.");
     if (type.requires_profile) {
-      throw new Error(
+      throw new UserError(
         "Ese tipo de destino (perfil digital) todavía no se puede editar desde aquí. Contacta a Reymen."
       );
     }
@@ -319,9 +320,9 @@ export async function updateSmartcardCardDestination(
     let normalizedUrl: string | null = null;
     if (type.requires_url) {
       normalizedUrl = destinationUrl.trim();
-      if (!normalizedUrl) throw new Error("Ese tipo de destino necesita una URL.");
+      if (!normalizedUrl) throw new UserError("Ese tipo de destino necesita una URL.");
       if (!/^https?:\/\//i.test(normalizedUrl)) {
-        throw new Error("La URL debe empezar con http:// o https://");
+        throw new UserError("La URL debe empezar con http:// o https://");
       }
     }
 
@@ -336,7 +337,7 @@ export async function updateSmartcardCardDestination(
 
     if (updateError) {
       console.error("[smartcard/actions] Error actualizando card:", updateError.message);
-      throw new Error("No se pudo guardar el cambio. Intenta de nuevo.");
+      throw new UserError("No se pudo guardar el cambio. Intenta de nuevo.");
     }
   }
 }
@@ -357,19 +358,19 @@ export async function getSmartcardCardQrCode(cardId: string): Promise<SmartcardC
   try {
     const session = await auth();
     if (!session?.user.organizationId || !session.user.email) {
-      throw new Error("Sesión inválida.");
+      throw new UserError("Sesión inválida.");
     }
 
     const result = await resolveSmartcardMembership(session.user.organizationId, session.user.email);
     if (!result.ok) {
-      throw new Error("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
+      throw new UserError("No se pudo confirmar tu membresía en SmartCard. Recarga la página e intenta de nuevo.");
     }
     if (!CARD_MANAGEMENT_ROLES.includes(result.membership.roleCode)) {
-      throw new Error("No tienes permiso para descargar el QR de esta tarjeta.");
+      throw new UserError("No tienes permiso para descargar el QR de esta tarjeta.");
     }
 
     const supabase = getSmartcardAdminClient();
-    if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
+    if (!supabase) throw new UserError("SmartCard aún no está configurado en este entorno.");
 
     const { data: card, error: cardError } = await supabase
       .from("cards")
@@ -380,13 +381,13 @@ export async function getSmartcardCardQrCode(cardId: string): Promise<SmartcardC
 
     if (cardError) {
       console.error("[smartcard/actions] Error buscando card para QR:", cardError.message);
-      throw new Error("No se pudo cargar la tarjeta. Intenta de nuevo.");
+      throw new UserError("No se pudo cargar la tarjeta. Intenta de nuevo.");
     }
     if (!card || card.clients.company_id !== result.membership.companyId) {
-      throw new Error("Esa tarjeta no pertenece a tu empresa.");
+      throw new UserError("Esa tarjeta no pertenece a tu empresa.");
     }
     if (!card.card_code) {
-      throw new Error("Esta tarjeta todavía no tiene un código asignado.");
+      throw new UserError("Esta tarjeta todavía no tiene un código asignado.");
     }
 
     const url = buildSmartcardPublicUrl(card.card_code);

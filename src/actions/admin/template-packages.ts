@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const createSchema = z.object({
   name: z.string().min(2),
@@ -23,7 +24,7 @@ export async function createTemplatePackage(data: z.infer<typeof createSchema>) 
     select: { id: true },
   });
   if (templates.length !== parsed.templateIds.length) {
-    throw new Error("Uno o más templates seleccionados no existen");
+    throw new UserError("Uno o más templates seleccionados no existen");
   }
 
   const pkg = await prisma.templatePackage.create({
@@ -62,9 +63,9 @@ export async function updateTemplatePackageItems(
       select: { id: true },
     }),
   ]);
-  if (!pkg) throw new Error("Paquete no encontrado");
+  if (!pkg) throw new UserError("Paquete no encontrado");
   if (templates.length !== parsed.templateIds.length) {
-    throw new Error("Uno o más templates seleccionados no existen");
+    throw new UserError("Uno o más templates seleccionados no existen");
   }
 
   // Replace the full item set — simplest correct approach for admin
@@ -88,9 +89,9 @@ export async function publishTemplatePackage(packageId: string, isPublished: boo
     where: { id: packageId },
     include: { items: { include: { template: { select: { isPublished: true } } } } },
   });
-  if (!pkg) throw new Error("Paquete no encontrado");
+  if (!pkg) throw new UserError("Paquete no encontrado");
   if (isPublished && !pkg.items.some((i) => i.template.isPublished)) {
-    throw new Error("El paquete necesita al menos un template publicado antes de publicarse");
+    throw new UserError("El paquete necesita al menos un template publicado antes de publicarse");
   }
 
   await prisma.templatePackage.update({

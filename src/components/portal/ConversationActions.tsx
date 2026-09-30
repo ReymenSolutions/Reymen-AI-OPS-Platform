@@ -11,6 +11,7 @@ import {
   escalateConversation, resolveConversation, takeHumanControl, releaseToAI, assignConversation,
 } from "@/actions/conversations";
 import type { ConversationStatus } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface TeamUser { id: string; name: string | null; email: string }
 
@@ -38,7 +39,7 @@ export function ConversationActions({
       toast.success(successMsg);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error" : "Error"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error" : "Error")));
     } finally {
       setLoading(null);
     }

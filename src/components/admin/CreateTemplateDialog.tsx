@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createTemplate } from "@/actions/admin/templates";
 import { usePreferences } from "@/context/preferences";
 import type { Lang } from "@/lib/i18n";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 export function getIndustries(lang: Lang) {
   return lang === "es"
@@ -104,7 +105,7 @@ export function CreateTemplateDialog() {
       reset();
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear template" : "Error creating template"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear template" : "Error creating template")));
     } finally {
       setLoading(false);
     }
@@ -142,7 +143,7 @@ export function CreateTemplateDialog() {
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
             <Input placeholder={lang === "es" ? "Agendamiento de citas médicas" : "Medical appointment booking"} {...register("name")} />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -156,7 +157,7 @@ export function CreateTemplateDialog() {
                   ))}
                 </SelectContent>
               </Select>
-              {errors.industry && <p className="text-xs text-red-500">{errors.industry.message}</p>}
+              {errors.industry && <p className="text-xs text-red-500">{translateMessage(errors.industry.message)}</p>}
             </div>
             <div className="space-y-2">
               <Label>{lang === "es" ? "Categoría *" : "Category *"}</Label>
@@ -168,14 +169,14 @@ export function CreateTemplateDialog() {
                   ))}
                 </SelectContent>
               </Select>
-              {errors.category && <p className="text-xs text-red-500">{errors.category.message}</p>}
+              {errors.category && <p className="text-xs text-red-500">{translateMessage(errors.category.message)}</p>}
             </div>
           </div>
 
           <div className="space-y-2">
             <Label>{lang === "es" ? "Descripción corta *" : "Short description *"}</Label>
             <Input placeholder={lang === "es" ? "Captura y califica leads desde WhatsApp automáticamente" : "Automatically captures and qualifies leads from WhatsApp"} {...register("description")} />
-            {errors.description && <p className="text-xs text-red-500">{errors.description.message}</p>}
+            {errors.description && <p className="text-xs text-red-500">{translateMessage(errors.description.message)}</p>}
           </div>
 
           <div className="space-y-2">

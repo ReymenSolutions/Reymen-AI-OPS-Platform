@@ -27,6 +27,7 @@ import {
   archiveAutomation,
 } from "@/actions/admin/automations";
 import { CopyButton, useCopyToClipboard } from "@/components/shared/CopyButton";
+import { getErrorMessage } from "@/lib/user-error";
 
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -296,7 +297,7 @@ function CreateAutomationDialog({
         toast.success(t.adminAutoCreatedMsg);
         handleClose();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : t.adminCreateError);
+        toast.error(getErrorMessage(err, t.adminCreateError));
       }
     });
   }

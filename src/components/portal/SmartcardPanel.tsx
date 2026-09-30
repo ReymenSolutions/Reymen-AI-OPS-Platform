@@ -32,6 +32,7 @@ import {
   type CardStatsEntry,
   type DestinationTypeOption,
 } from "@/lib/smartcard-company";
+import { translateMessage } from "@/lib/user-error";
 
 const MODULE_LABELS_ES: Record<string, string> = {
   smartcard: "SmartCard",
@@ -167,7 +168,7 @@ export function SmartcardPanel({
     startCardEditTransition(async () => {
       const result = await updateSmartcardCardDestination(editingCard.cardId, editType, editUrl);
       if (!result.success) {
-        toast.error(result.error);
+        toast.error(translateMessage(result.error));
         return;
       }
       toast.success(lang === "es" ? "Tarjeta actualizada." : "Card updated.");
@@ -182,7 +183,7 @@ export function SmartcardPanel({
     try {
       const result = await getSmartcardCardQrCode(c.cardId);
       if (!result.success) {
-        toast.error(result.error);
+        toast.error(translateMessage(result.error));
         return;
       }
       // Trigger a browser download of the generated PNG data URL — no
@@ -213,7 +214,7 @@ export function SmartcardPanel({
       try {
         const result = await inviteSmartcardTeamMember(name, email, roleCode, password);
         if (!result.success) {
-          toast.error(result.error);
+          toast.error(translateMessage(result.error));
           return;
         }
         toast.success(

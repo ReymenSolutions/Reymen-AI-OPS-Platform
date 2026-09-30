@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { deleteFoodModifierGroup } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function FoodModifierGroupDeleteButton({ groupId, groupName }: { groupId: string; groupName: string }) {
   const { lang } = usePreferences();
@@ -24,7 +25,7 @@ export function FoodModifierGroupDeleteButton({ groupId, groupName }: { groupId:
       await deleteFoodModifierGroup(groupId);
       toast.success(lang === "es" ? "Grupo borrado" : "Group deleted");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

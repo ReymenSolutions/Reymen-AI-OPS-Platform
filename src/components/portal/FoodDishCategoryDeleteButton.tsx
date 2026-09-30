@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { deleteFoodDishCategory } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function FoodDishCategoryDeleteButton({ categoryId, categoryName }: { categoryId: string; categoryName: string }) {
   const { lang } = usePreferences();
@@ -24,7 +25,7 @@ export function FoodDishCategoryDeleteButton({ categoryId, categoryName }: { cat
       await deleteFoodDishCategory(categoryId);
       toast.success(lang === "es" ? "Categoría borrada" : "Category deleted");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

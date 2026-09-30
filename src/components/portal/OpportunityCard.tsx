@@ -8,6 +8,7 @@ import { usePreferences } from "@/context/preferences";
 import { moveOpportunityStage } from "@/actions/opportunities";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface StageOption { id: string; name: string }
 
@@ -37,7 +38,7 @@ export function OpportunityCard({ opportunity, stages, canManage }: OpportunityC
       try {
         await moveOpportunityStage(opportunity.id, stageId);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al mover la oportunidad" : "Error moving opportunity"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al mover la oportunidad" : "Error moving opportunity")));
       }
     });
   }

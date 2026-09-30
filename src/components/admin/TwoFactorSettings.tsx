@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { start2FAEnrollment, confirm2FAEnrollment, disable2FA } from "@/actions/two-factor";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 type Step = "idle" | "enrolling" | "backup-codes";
 
@@ -36,7 +37,7 @@ export function TwoFactorSettings({ initialEnabled }: { initialEnabled: boolean 
       setManualSecret(result.secret);
       setStep("enrolling");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al iniciar la configuración" : "Error starting setup"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al iniciar la configuración" : "Error starting setup")));
     } finally {
       setLoading(false);
     }
@@ -51,7 +52,7 @@ export function TwoFactorSettings({ initialEnabled }: { initialEnabled: boolean 
       setEnabled(true);
       setCode("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Código inválido" : "Invalid code"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Código inválido" : "Invalid code")));
     } finally {
       setLoading(false);
     }
@@ -66,7 +67,7 @@ export function TwoFactorSettings({ initialEnabled }: { initialEnabled: boolean 
       setPassword("");
       toast.success(lang === "es" ? "2FA desactivado" : "2FA disabled");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al desactivar" : "Error disabling"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al desactivar" : "Error disabling")));
     } finally {
       setLoading(false);
     }

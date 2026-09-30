@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { toggleFoodDishActive } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function FoodDishActiveToggle({ dishId, isActive }: { dishId: string; isActive: boolean }) {
   const { lang } = usePreferences();
@@ -22,7 +23,7 @@ export function FoodDishActiveToggle({ dishId, isActive }: { dishId: string; isA
           : (lang === "es" ? "Platillo desactivado" : "Dish deactivated")
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { triggerN8nWorkflowSync } from "./n8n";
 import type { PromptType } from "@prisma/client";
+import { UserError } from "./user-error";
 
 const KB_CONTEXT_LIMIT = 5;
 
@@ -97,7 +98,7 @@ export async function runAiLabInference(input: AiLabInferenceInput): Promise<AiL
   const latencyMs = Date.now() - startedAt;
 
   if (!result.success || !result.reply) {
-    throw new Error(
+    throw new UserError(
       `El Laboratorio de IA no pudo generar una respuesta: ${result.error ?? "n8n no configurado"}. ` +
         `Configura el workflow de n8n en la ruta "${AI_LAB_WEBHOOK_PATH}" para esta organización.`
     );

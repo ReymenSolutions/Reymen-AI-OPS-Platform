@@ -10,6 +10,7 @@ import { assertModuleEnabled } from "@/lib/modules";
 import { findPotentialDuplicateLeads } from "@/lib/duplicate-detection";
 import { recordMetric, METRIC_KEYS } from "@/lib/metrics";
 import type { LeadStatus } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 const createLeadSchema = z.object({
   name: z.string().min(1),
@@ -21,7 +22,7 @@ const createLeadSchema = z.object({
 
 export async function createLead(formData: FormData) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const parsed = createLeadSchema.safeParse({
     name: formData.get("name"),
@@ -31,7 +32,7 @@ export async function createLead(formData: FormData) {
     notes: formData.get("notes") || undefined,
   });
 
-  if (!parsed.success) throw new Error("Datos inválidos");
+  if (!parsed.success) throw new UserError("Datos inválidos");
 
   await assertModuleEnabled(session.user.organizationId, "CRM");
   await assertPlanCapacity(session.user.organizationId, "leads");
@@ -66,7 +67,7 @@ export async function createLead(formData: FormData) {
 
 export async function updateLeadStatus(leadId: string, status: LeadStatus) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
@@ -74,7 +75,7 @@ export async function updateLeadStatus(leadId: string, status: LeadStatus) {
     where: { id: leadId, organizationId: session.user.organizationId },
   });
 
-  if (!lead) throw new Error("Lead no encontrado");
+  if (!lead) throw new UserError("Lead no encontrado");
 
   await prisma.lead.update({
     where: { id: leadId },
@@ -87,7 +88,7 @@ export async function updateLeadStatus(leadId: string, status: LeadStatus) {
 
 export async function deleteLead(leadId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
@@ -95,7 +96,7 @@ export async function deleteLead(leadId: string) {
     where: { id: leadId, organizationId: session.user.organizationId },
   });
 
-  if (!lead) throw new Error("Lead no encontrado");
+  if (!lead) throw new UserError("Lead no encontrado");
 
   // Soft delete
   await prisma.lead.update({
@@ -117,13 +118,13 @@ export async function deleteLead(leadId: string) {
 
 export async function updateLeadTags(leadId: string, tags: string[]) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
   const lead = await prisma.lead.findFirst({
     where: { id: leadId, organizationId: session.user.organizationId },
   });
-  if (!lead) throw new Error("Lead no encontrado");
+  if (!lead) throw new UserError("Lead no encontrado");
 
   const cleaned = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
   await prisma.lead.update({ where: { id: leadId }, data: { tags: cleaned } });
@@ -136,13 +137,13 @@ export async function updateLeadTags(leadId: string, tags: string[]) {
 /** Opts a lead in/out of automated follow-ups (see FollowUpRule) — never affects manual outreach. */
 export async function setLeadDoNotContact(leadId: string, doNotContact: boolean) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
   const lead = await prisma.lead.findFirst({
     where: { id: leadId, organizationId: session.user.organizationId },
   });
-  if (!lead) throw new Error("Lead no encontrado");
+  if (!lead) throw new UserError("Lead no encontrado");
 
   await prisma.lead.update({ where: { id: leadId }, data: { doNotContact } });
 
@@ -161,7 +162,7 @@ export async function setLeadDoNotContact(leadId: string, doNotContact: boolean)
 /** Small search used by the "new opportunity" lead picker — not a list page, so a tight limit is fine. */
 export async function searchLeads(query: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
   if (!query.trim()) return [];
@@ -184,13 +185,13 @@ export async function searchLeads(query: string) {
 
 export async function checkLeadDuplicates(leadId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
   const lead = await prisma.lead.findFirst({
     where: { id: leadId, organizationId: session.user.organizationId },
   });
-  if (!lead) throw new Error("Lead no encontrado");
+  if (!lead) throw new UserError("Lead no encontrado");
 
   const duplicates = await findPotentialDuplicateLeads(session.user.organizationId, lead, leadId);
   return duplicates.map((d) => ({ id: d.id, name: d.name, email: d.email, phone: d.phone, createdAt: d.createdAt }));
@@ -208,16 +209,16 @@ export async function checkLeadDuplicates(leadId: string) {
  */
 export async function mergeLeads(primaryLeadId: string, duplicateLeadId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
-  if (primaryLeadId === duplicateLeadId) throw new Error("No puedes fusionar un lead consigo mismo");
+  if (primaryLeadId === duplicateLeadId) throw new UserError("No puedes fusionar un lead consigo mismo");
 
   const orgId = session.user.organizationId;
   const [primary, duplicate] = await Promise.all([
     prisma.lead.findFirst({ where: { id: primaryLeadId, organizationId: orgId, deletedAt: null } }),
     prisma.lead.findFirst({ where: { id: duplicateLeadId, organizationId: orgId, deletedAt: null } }),
   ]);
-  if (!primary || !duplicate) throw new Error("Lead no encontrado");
+  if (!primary || !duplicate) throw new UserError("Lead no encontrado");
 
   await prisma.$transaction([
     prisma.opportunity.updateMany({ where: { leadId: duplicateLeadId }, data: { leadId: primaryLeadId } }),

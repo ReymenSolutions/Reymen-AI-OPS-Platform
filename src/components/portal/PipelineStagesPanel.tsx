@@ -10,6 +10,7 @@ import { usePreferences } from "@/context/preferences";
 import {
   createPipelineStage, updatePipelineStage, swapPipelineStageOrder, deletePipelineStage,
 } from "@/actions/pipeline-stages";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface StageRow {
   id: string;
@@ -31,7 +32,7 @@ export function PipelineStagesPanel({ stages, canManage }: { stages: StageRow[];
       try {
         await updatePipelineStage({ stageId, name: name.trim() });
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al renombrar" : "Error renaming"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al renombrar" : "Error renaming")));
       }
     });
   }
@@ -41,7 +42,7 @@ export function PipelineStagesPanel({ stages, canManage }: { stages: StageRow[];
       try {
         await updatePipelineStage({ stageId, [field]: value });
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar" : "Error updating"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar" : "Error updating")));
       }
     });
   }
@@ -54,7 +55,7 @@ export function PipelineStagesPanel({ stages, canManage }: { stages: StageRow[];
       try {
         await swapPipelineStageOrder(stageId, target.id);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al reordenar" : "Error reordering"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al reordenar" : "Error reordering")));
       }
     });
   }
@@ -69,7 +70,7 @@ export function PipelineStagesPanel({ stages, canManage }: { stages: StageRow[];
       try {
         await deletePipelineStage(stageId);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al eliminar" : "Error deleting"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al eliminar" : "Error deleting")));
       }
     });
   }
@@ -82,7 +83,7 @@ export function PipelineStagesPanel({ stages, canManage }: { stages: StageRow[];
         await createPipelineStage({ name });
         setNewName("");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear etapa" : "Error creating stage"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear etapa" : "Error creating stage")));
       }
     });
   }

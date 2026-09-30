@@ -6,6 +6,7 @@ import { sendEmail } from "./email";
 import { teamInviteEmail } from "./email-templates";
 import { assertPlanCapacity } from "./plan-limits";
 import { appUrl } from "./app-url";
+import { UserError } from "./user-error";
 
 // ─── Alta de un usuario dentro de una organización ───────────────────
 // Único camino para crear un usuario de cliente, lo use el panel de admin
@@ -25,7 +26,7 @@ export async function createOrgUserRecord(input: {
   auditAction: string;
 }) {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
-  if (existing) throw new Error("Ya existe un usuario con ese email");
+  if (existing) throw new UserError("Ya existe un usuario con ese email");
 
   await assertPlanCapacity(input.organizationId, "users");
 

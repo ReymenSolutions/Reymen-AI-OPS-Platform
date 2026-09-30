@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { updateRequestStatus } from "@/actions/requests";
 import { usePreferences } from "@/context/preferences";
 import type { RequestStatus } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 const OPTIONS_ES: { value: RequestStatus; label: string }[] = [
   { value: "OPEN", label: "Abierta" },
@@ -40,7 +41,7 @@ export function UpdateRequestStatusSelect({
       setStatus(newStatus);
       toast.success(lang === "es" ? "Estado actualizado" : "Status updated");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

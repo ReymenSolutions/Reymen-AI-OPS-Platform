@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getIndustries } from "@/components/admin/CreateTemplateDialog";
 import { createTemplatePackage } from "@/actions/admin/template-packages";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 interface TemplateOption {
   id: string;
@@ -72,7 +73,7 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
       setSelectedTemplateIds([]);
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear paquete" : "Error creating package"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear paquete" : "Error creating package")));
     } finally {
       setLoading(false);
     }
@@ -107,7 +108,7 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
             <Input placeholder={lang === "es" ? "Paquete inicial de Clínica" : "Starter Clinic package"} {...register("name")} />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
           </div>
 
           <div className="space-y-2">
@@ -120,13 +121,13 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
                 ))}
               </SelectContent>
             </Select>
-            {errors.industry && <p className="text-xs text-red-500">{errors.industry.message}</p>}
+            {errors.industry && <p className="text-xs text-red-500">{translateMessage(errors.industry.message)}</p>}
           </div>
 
           <div className="space-y-2">
             <Label>{lang === "es" ? "Descripción *" : "Description *"}</Label>
             <Textarea placeholder={lang === "es" ? "Lo esencial para arrancar una clínica con Reymen AI Ops" : "The essentials to get a clinic started with Reymen AI Ops"} rows={2} {...register("description")} />
-            {errors.description && <p className="text-xs text-red-500">{errors.description.message}</p>}
+            {errors.description && <p className="text-xs text-red-500">{translateMessage(errors.description.message)}</p>}
           </div>
 
           <div className="space-y-2">

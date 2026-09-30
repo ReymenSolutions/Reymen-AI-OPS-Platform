@@ -7,10 +7,11 @@ import { prisma } from "@/lib/prisma";
 import { auth, isAdmin } from "@/lib/auth";
 import { generateTotpSecret, buildOtpauthUri, verifyTotpCode, generateBackupCodes } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
+import { UserError } from "@/lib/user-error";
 
 async function requireAdminSession() {
   const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  if (!session || !isAdmin(session.user.role)) throw new UserError("No autorizado");
   return session;
 }
 
@@ -43,8 +44,8 @@ export async function confirm2FAEnrollment(code: string): Promise<{ backupCodes:
   const session = await requireAdminSession();
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
-  if (!user.totpSecret) throw new Error("No hay una configuración de 2FA en progreso");
-  if (!verifyTotpCode(user.totpSecret, code)) throw new Error("Código inválido");
+  if (!user.totpSecret) throw new UserError("No hay una configuración de 2FA en progreso");
+  if (!verifyTotpCode(user.totpSecret, code)) throw new UserError("Código inválido");
 
   const backupCodes = generateBackupCodes();
   const totpBackupCodeHashes = await Promise.all(backupCodes.map((c) => bcrypt.hash(c, 10)));
@@ -70,7 +71,7 @@ export async function disable2FA(password: string): Promise<{ success: true }> {
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
   if (!user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
-    throw new Error("Contraseña incorrecta");
+    throw new UserError("Contraseña incorrecta");
   }
 
   await prisma.user.update({

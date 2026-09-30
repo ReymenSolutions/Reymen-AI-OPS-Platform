@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { retryAllFailedWebhookEventsAction } from "@/actions/admin/webhook-events";
 import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function RetryAllFailedWebhooksButton({ disabled }: { disabled?: boolean }) {
   const { t, lang } = usePreferences();
@@ -18,7 +19,7 @@ export function RetryAllFailedWebhooksButton({ disabled }: { disabled?: boolean 
       const suffix = lang === "es" ? "reprocesados con éxito" : "reprocessed successfully";
       toast.success(`${result.succeeded}/${result.retried} ${suffix}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.error);
+      toast.error(getErrorMessage(e, t.error));
     } finally {
       setLoading(false);
     }

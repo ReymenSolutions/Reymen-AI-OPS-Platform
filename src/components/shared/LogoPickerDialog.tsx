@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getErrorMessage } from "@/lib/user-error";
 
 // Diálogo para elegir el logo (imagen predefinida, archivo o URL). Antes
 // estaba copiado completo en AdminSidebar y PortalSidebar, y la copia del
@@ -86,7 +87,7 @@ export function LogoPickerDialog({ open, onOpenChange, currentLogoUrl, onSaved }
         onOpenChange(false);
         toast.success(t.success);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
+        toast.error(getErrorMessage(e, t.error));
       }
     });
   }

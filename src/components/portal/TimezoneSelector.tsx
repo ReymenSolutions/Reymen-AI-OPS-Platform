@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePreferences } from "@/context/preferences";
 import { setOrgTimezone } from "@/actions/availability";
+import { getErrorMessage } from "@/lib/user-error";
 
 const COMMON_TIMEZONES = [
   "America/Mexico_City",
@@ -38,7 +39,7 @@ export function TimezoneSelector({ currentTimezone }: { currentTimezone: string 
         await setOrgTimezone(value);
         toast.success(lang === "es" ? "Zona horaria actualizada" : "Timezone updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar" : "Error updating"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar" : "Error updating")));
       }
     });
   }

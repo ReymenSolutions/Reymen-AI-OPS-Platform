@@ -8,6 +8,7 @@ import { generateSlug, generateWebhookSecret } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
 import { hasCustomPrice } from "@/lib/permissions";
 import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const createClientSchema = z.object({
   orgName: z.string().min(2),
@@ -28,7 +29,7 @@ export async function createClient(formData: FormData) {
     password: formData.get("password"),
   });
 
-  if (!parsed.success) throw new Error("Datos inválidos");
+  if (!parsed.success) throw new UserError("Datos inválidos");
 
   const { orgName, orgIndustry, userName, userEmail, password } = parsed.data;
   const slug = generateSlug(orgName);
@@ -84,13 +85,13 @@ export async function changePlan(orgId: string, plan: string, customMonthlyPrice
   const session = await requireAdmin();
 
   const validPlans = ["starter", "professional", "enterprise"];
-  if (!validPlans.includes(plan)) throw new Error("Plan inválido");
+  if (!validPlans.includes(plan)) throw new UserError("Plan inválido");
 
   // El precio pactado solo existe en planes de precio personalizado; al pasar
   // a un plan de precio fijo se borra para no dejar un precio viejo colgando.
   const customPrice = hasCustomPrice(plan) ? customMonthlyPriceUsd : null;
   if (customPrice !== null && !(Number.isFinite(customPrice) && customPrice > 0)) {
-    throw new Error("El precio personalizado debe ser mayor a 0");
+    throw new UserError("El precio personalizado debe ser mayor a 0");
   }
 
   const org = await prisma.organization.update({

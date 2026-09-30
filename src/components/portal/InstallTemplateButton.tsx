@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { installTemplate, uninstallTemplate } from "@/actions/templates";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface InstallTemplateButtonProps {
   templateId: string;
@@ -25,7 +26,7 @@ export function InstallTemplateButton({ templateId, isInstalled: initialInstalle
       setInstalled(true);
       toast.success(lang === "es" ? "Template instalado. La automatización ya está activa." : "Template installed. The automation is now active.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al instalar" : "Error installing"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al instalar" : "Error installing")));
     } finally {
       setLoading(false);
     }
@@ -40,7 +41,7 @@ export function InstallTemplateButton({ templateId, isInstalled: initialInstalle
       setShowUninstall(false);
       toast.success(lang === "es" ? "Template desinstalado" : "Template uninstalled");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al desinstalar" : "Error uninstalling"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al desinstalar" : "Error uninstalling")));
     } finally {
       setLoading(false);
     }

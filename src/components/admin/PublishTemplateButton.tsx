@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { publishTemplate } from "@/actions/admin/templates";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface PublishTemplateButtonProps {
   templateId: string;
@@ -28,7 +29,7 @@ export function PublishTemplateButton({ templateId, isPublished }: PublishTempla
           : (lang === "es" ? "Template publicado — visible para clientes" : "Template published — visible to clients")
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

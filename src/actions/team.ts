@@ -8,6 +8,7 @@ import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { createOrgUserRecord } from "@/lib/org-users";
 import type { UserRole } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 const inviteSchema = z.object({
   name: z.string().min(2, "Mínimo 2 caracteres"),
@@ -23,11 +24,11 @@ export async function inviteTeamMember(data: {
   password: string;
 }) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "team:manage")) throw new Error("Sin permisos para gestionar el equipo");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
+  if (!can(session.user.role as UserRole, "team:manage")) throw new UserError("Sin permisos para gestionar el equipo");
 
   const parsed = inviteSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   await createOrgUserRecord({
     organizationId: session.user.organizationId,
@@ -45,16 +46,16 @@ export async function inviteTeamMember(data: {
 
 export async function removeTeamMember(userId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "team:manage")) throw new Error("Sin permisos");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
+  if (!can(session.user.role as UserRole, "team:manage")) throw new UserError("Sin permisos");
 
   const user = await prisma.user.findFirst({
     where: { id: userId, organizationId: session.user.organizationId },
   });
 
-  if (!user) throw new Error("Usuario no encontrado");
-  if (user.id === session.user.id) throw new Error("No puedes eliminarte a ti mismo");
-  if (user.role === "OWNER") throw new Error("No puedes eliminar al propietario");
+  if (!user) throw new UserError("Usuario no encontrado");
+  if (user.id === session.user.id) throw new UserError("No puedes eliminarte a ti mismo");
+  if (user.role === "OWNER") throw new UserError("No puedes eliminar al propietario");
 
   await prisma.user.update({
     where: { id: userId },
@@ -81,19 +82,19 @@ const updateSchema = z.object({
 
 export async function updateTeamMember(userId: string, data: { name: string; role: string }) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "team:manage")) throw new Error("Sin permisos para gestionar el equipo");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
+  if (!can(session.user.role as UserRole, "team:manage")) throw new UserError("Sin permisos para gestionar el equipo");
 
   const parsed = updateSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   const user = await prisma.user.findFirst({
     where: { id: userId, organizationId: session.user.organizationId },
   });
 
-  if (!user) throw new Error("Usuario no encontrado");
-  if (user.id === session.user.id) throw new Error("No puedes editarte a ti mismo desde aquí");
-  if (user.role === "OWNER") throw new Error("No puedes modificar al propietario");
+  if (!user) throw new UserError("Usuario no encontrado");
+  if (user.id === session.user.id) throw new UserError("No puedes editarte a ti mismo desde aquí");
+  if (user.role === "OWNER") throw new UserError("No puedes modificar al propietario");
 
   const updated = await prisma.user.update({
     where: { id: userId },

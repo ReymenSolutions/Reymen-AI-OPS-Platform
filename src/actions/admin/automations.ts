@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateWebhookSecret } from "@/lib/utils";
 import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const automationSchema = z.object({
   organizationId: z.string().min(1),
@@ -32,7 +33,7 @@ export async function createAutomation(data: {
 }) {
   await requireAdmin();
   const parsed = automationSchema.safeParse(data);
-  if (!parsed.success) throw new Error("Datos inválidos: " + parsed.error.errors[0].message);
+  if (!parsed.success) throw new UserError("Datos inválidos: " + parsed.error.errors[0].message);
 
   const automation = await prisma.automation.create({
     data: {
@@ -55,7 +56,7 @@ export async function updateAutomation(
 ) {
   await requireAdmin();
   const parsed = updateSchema.safeParse(data);
-  if (!parsed.success) throw new Error("Datos inválidos");
+  if (!parsed.success) throw new UserError("Datos inválidos");
 
   await prisma.automation.update({
     where: { id },

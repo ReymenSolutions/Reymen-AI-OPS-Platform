@@ -15,6 +15,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateTeamMember } from "@/actions/team";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   name: z.string().min(2, "Mínimo 2 caracteres"),
@@ -66,7 +67,7 @@ export function EditUserDialog({ userId, userName, userRole }: EditUserDialogPro
       toast.success(lang === "es" ? "Usuario actualizado" : "User updated");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar usuario" : "Error updating user"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar usuario" : "Error updating user")));
     } finally {
       setLoading(false);
     }
@@ -93,7 +94,7 @@ export function EditUserDialog({ userId, userName, userRole }: EditUserDialogPro
             <div className="space-y-2">
               <Label>{lang === "es" ? "Nombre completo *" : "Full name *"}</Label>
               <Input placeholder="Ana Martínez" {...register("name")} />
-              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+              {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
             </div>
             <div className="space-y-2">
               <Label>{lang === "es" ? "Rol *" : "Role *"}</Label>

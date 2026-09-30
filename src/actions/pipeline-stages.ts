@@ -8,11 +8,12 @@ import { can } from "@/lib/permissions";
 import { assertModuleEnabled } from "@/lib/modules";
 import { logAudit } from "@/lib/audit";
 import type { UserRole } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 async function requireOrgAndPipelinePermission() {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "pipeline:manage")) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
+  if (!can(session.user.role as UserRole, "pipeline:manage")) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
   return session;
 }
@@ -70,7 +71,7 @@ export async function updatePipelineStage(data: z.infer<typeof updateSchema>) {
   const orgId = session.user.organizationId!;
 
   const stage = await prisma.pipelineStage.findFirst({ where: { id: stageId, organizationId: orgId } });
-  if (!stage) throw new Error("Etapa no encontrada");
+  if (!stage) throw new UserError("Etapa no encontrada");
 
   await prisma.pipelineStage.update({ where: { id: stageId }, data: rest });
 
@@ -88,7 +89,7 @@ export async function swapPipelineStageOrder(stageIdA: string, stageIdB: string)
     prisma.pipelineStage.findFirst({ where: { id: stageIdA, organizationId: orgId } }),
     prisma.pipelineStage.findFirst({ where: { id: stageIdB, organizationId: orgId } }),
   ]);
-  if (!a || !b) throw new Error("Etapa no encontrada");
+  if (!a || !b) throw new UserError("Etapa no encontrada");
 
   await prisma.$transaction([
     // Route A's order through a temporary negative value first — order has
@@ -112,9 +113,9 @@ export async function deletePipelineStage(stageId: string) {
     where: { id: stageId, organizationId: orgId },
     include: { _count: { select: { opportunities: true } } },
   });
-  if (!stage) throw new Error("Etapa no encontrada");
+  if (!stage) throw new UserError("Etapa no encontrada");
   if (stage._count.opportunities > 0) {
-    throw new Error("No se puede eliminar una etapa con oportunidades activas. Muévelas primero.");
+    throw new UserError("No se puede eliminar una etapa con oportunidades activas. Muévelas primero.");
   }
 
   await prisma.pipelineStage.delete({ where: { id: stageId } });

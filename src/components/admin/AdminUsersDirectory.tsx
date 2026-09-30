@@ -17,6 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createStandaloneUser, setUserActive } from "@/actions/admin/users";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const STANDALONE_ROLES = ["ADMIN", "SUPER_ADMIN"] as const;
 type StandaloneRole = (typeof STANDALONE_ROLES)[number];
@@ -66,7 +67,7 @@ function CreateStandaloneUserDialog() {
       reset({ role: "ADMIN", name: "", email: "", password: "" });
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear usuario" : "Error creating user"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear usuario" : "Error creating user")));
     } finally {
       setLoading(false);
     }
@@ -93,12 +94,12 @@ function CreateStandaloneUserDialog() {
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre completo *" : "Full name *"}</Label>
             <Input placeholder={lang === "es" ? "Ana Martínez" : "Jane Doe"} {...register("name")} />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
           </div>
           <div className="space-y-2">
             <Label>Email *</Label>
             <Input type="email" placeholder="ana@reymen.io" {...register("email")} />
-            {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+            {errors.email && <p className="text-xs text-red-500">{translateMessage(errors.email.message)}</p>}
           </div>
           <div className="space-y-2">
             <Label>{lang === "es" ? "Rol *" : "Role *"}</Label>
@@ -114,7 +115,7 @@ function CreateStandaloneUserDialog() {
           <div className="space-y-2">
             <Label>{lang === "es" ? "Contraseña temporal *" : "Temporary password *"}</Label>
             <Input type="password" placeholder={lang === "es" ? "Mínimo 8 caracteres" : "At least 8 characters"} {...register("password")} />
-            {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+            {errors.password && <p className="text-xs text-red-500">{translateMessage(errors.password.message)}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>
@@ -147,7 +148,7 @@ function ToggleActiveButton({ user, onToggled }: { user: DirectoryUser; onToggle
       );
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

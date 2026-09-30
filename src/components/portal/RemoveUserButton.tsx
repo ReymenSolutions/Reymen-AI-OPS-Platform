@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { removeTeamMember } from "@/actions/team";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface RemoveUserButtonProps {
   userId: string;
@@ -27,7 +28,7 @@ export function RemoveUserButton({ userId, userName }: RemoveUserButtonProps) {
       toast.success(lang === "es" ? "Usuario desactivado" : "User deactivated");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

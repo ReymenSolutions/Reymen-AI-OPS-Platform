@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { assertModuleEnabled } from "@/lib/modules";
+import { UserError } from "@/lib/user-error";
 
 const createSchema = z.object({
   leadId: z.string(),
@@ -13,14 +14,14 @@ const createSchema = z.object({
 
 export async function createNote(data: z.infer<typeof createSchema>) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
   const parsed = createSchema.parse(data);
   const orgId = session.user.organizationId;
 
   const lead = await prisma.lead.findFirst({ where: { id: parsed.leadId, organizationId: orgId } });
-  if (!lead) throw new Error("Lead no encontrado");
+  if (!lead) throw new UserError("Lead no encontrado");
 
   const note = await prisma.note.create({
     data: {
@@ -37,15 +38,15 @@ export async function createNote(data: z.infer<typeof createSchema>) {
 
 export async function deleteNote(noteId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
 
   const note = await prisma.note.findFirst({ where: { id: noteId, organizationId: session.user.organizationId } });
-  if (!note) throw new Error("Nota no encontrada");
+  if (!note) throw new UserError("Nota no encontrada");
 
   // Only the author, or an OWNER/ADMIN/SUPER_ADMIN/MANAGER, can remove a note.
   const canManage = ["OWNER", "ADMIN", "SUPER_ADMIN", "MANAGER"].includes(session.user.role);
-  if (note.authorId !== session.user.id && !canManage) throw new Error("No autorizado");
+  if (note.authorId !== session.user.id && !canManage) throw new UserError("No autorizado");
 
   await prisma.note.delete({ where: { id: noteId } });
 

@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/context/preferences";
 import { setReminderRules } from "@/actions/appointment-reminders";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface RuleRow {
   offsetMinutes: number;
@@ -45,7 +46,7 @@ export function ReminderRulesManager({ initialRules }: { initialRules: RuleRow[]
         await setReminderRules(rules);
         toast.success(lang === "es" ? "Reglas de recordatorio guardadas" : "Reminder rules saved");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar" : "Error saving"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar" : "Error saving")));
       }
     });
   }

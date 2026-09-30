@@ -7,16 +7,17 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type { UserRole } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 export async function updateAvatar(imageData: string) {
   const session = await auth();
-  if (!session?.user.id) throw new Error("No autorizado");
+  if (!session?.user.id) throw new UserError("No autorizado");
 
   const isDataUri = imageData.startsWith("data:image/");
   const isUrl = imageData.startsWith("http://") || imageData.startsWith("https://");
 
-  if (!isDataUri && !isUrl) throw new Error("Formato de imagen inválido");
-  if (isDataUri && imageData.length > 300 * 1024) throw new Error("Imagen demasiado grande (máx. 300KB)");
+  if (!isDataUri && !isUrl) throw new UserError("Formato de imagen inválido");
+  if (isDataUri && imageData.length > 300 * 1024) throw new UserError("Imagen demasiado grande (máx. 300KB)");
 
   await prisma.user.update({
     where: { id: session.user.id },
@@ -30,7 +31,7 @@ export async function updateAvatar(imageData: string) {
 
 export async function removeAvatar() {
   const session = await auth();
-  if (!session?.user.id) throw new Error("No autorizado");
+  if (!session?.user.id) throw new UserError("No autorizado");
 
   await prisma.user.update({
     where: { id: session.user.id },
@@ -49,16 +50,16 @@ const passwordSchema = z.object({
 
 export async function changePassword(data: { currentPassword: string; newPassword: string }) {
   const session = await auth();
-  if (!session?.user.id) throw new Error("No autorizado");
+  if (!session?.user.id) throw new UserError("No autorizado");
 
   const parsed = passwordSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  if (!user || !user.passwordHash) throw new Error("Usuario no encontrado");
+  if (!user || !user.passwordHash) throw new UserError("Usuario no encontrado");
 
   const isValid = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
-  if (!isValid) throw new Error("Contraseña actual incorrecta");
+  if (!isValid) throw new UserError("Contraseña actual incorrecta");
 
   const newHash = await bcrypt.hash(parsed.data.newPassword, 12);
 
@@ -81,7 +82,7 @@ export async function changePassword(data: { currentPassword: string; newPasswor
 
 export async function updatePreferences(data: { theme?: string; language?: string }) {
   const session = await auth();
-  if (!session?.user.id) throw new Error("No autorizado");
+  if (!session?.user.id) throw new UserError("No autorizado");
 
   await prisma.user.update({
     where: { id: session.user.id },
@@ -96,19 +97,19 @@ export async function updatePreferences(data: { theme?: string; language?: strin
 
 export async function updateOrgLogo(logoUrl: string | null) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const allowed: UserRole[] = ["OWNER", "ADMIN", "SUPER_ADMIN", "MANAGER"];
-  if (!allowed.includes(session.user.role as UserRole)) throw new Error("Sin permisos");
+  if (!allowed.includes(session.user.role as UserRole)) throw new UserError("Sin permisos");
 
   if (logoUrl) {
     const isDataUri = logoUrl.startsWith("data:image/");
     const isHttpUrl = logoUrl.startsWith("http://") || logoUrl.startsWith("https://");
-    if (!isDataUri && !isHttpUrl) throw new Error("Formato de imagen inválido");
-    if (isDataUri && logoUrl.length > 500 * 1024) throw new Error("Imagen demasiado grande (máx. 500KB)");
+    if (!isDataUri && !isHttpUrl) throw new UserError("Formato de imagen inválido");
+    if (isDataUri && logoUrl.length > 500 * 1024) throw new UserError("Imagen demasiado grande (máx. 500KB)");
     if (isHttpUrl) {
       const parsed = z.string().url("URL inválida").safeParse(logoUrl);
-      if (!parsed.success) throw new Error("URL de logo inválida");
+      if (!parsed.success) throw new UserError("URL de logo inválida");
     }
   }
 

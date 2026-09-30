@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { usePreferences } from "@/context/preferences";
 import { createService, updateService, deleteService } from "@/actions/services";
 import { formatCurrency } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface ServiceRow {
   id: string;
@@ -41,7 +42,7 @@ export function ServicesManager({ services }: { services: ServiceRow[] }) {
         });
         setName(""); setDuration("30"); setBuffer("0"); setPrice("");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear el servicio" : "Error creating service"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear el servicio" : "Error creating service")));
       }
     });
   }
@@ -51,7 +52,7 @@ export function ServicesManager({ services }: { services: ServiceRow[] }) {
       try {
         await updateService({ serviceId: id, isActive });
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar" : "Error updating"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar" : "Error updating")));
       }
     });
   }
@@ -66,7 +67,7 @@ export function ServicesManager({ services }: { services: ServiceRow[] }) {
       try {
         await deleteService(id);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al eliminar" : "Error deleting"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al eliminar" : "Error deleting")));
       }
     });
   }

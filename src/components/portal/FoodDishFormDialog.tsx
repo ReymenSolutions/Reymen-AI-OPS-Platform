@@ -15,6 +15,7 @@ import {
 import { createFoodDish, updateFoodDish } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
 import { cn } from "@/lib/utils";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 export interface FoodInventoryOption {
   id: string;
@@ -130,7 +131,7 @@ export function FoodDishFormDialog({ inventoryItems, categories = [], modifierGr
       }
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar platillo" : "Error saving dish"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar platillo" : "Error saving dish")));
     } finally {
       setLoading(false);
     }
@@ -162,7 +163,7 @@ export function FoodDishFormDialog({ inventoryItems, categories = [], modifierGr
               <div className="space-y-2">
                 <Label>{lang === "es" ? "Nombre del platillo *" : "Dish name *"}</Label>
                 <Input placeholder={lang === "es" ? "Berry Bloom" : "Berry Bloom"} {...register("name")} />
-                {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+                {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
               </div>
               <div className="space-y-2">
                 <Label>{lang === "es" ? "Categoría" : "Category"}</Label>
@@ -223,7 +224,7 @@ export function FoodDishFormDialog({ inventoryItems, categories = [], modifierGr
                   {lang === "es" ? "Agregar variante" : "Add variant"}
                 </Button>
               </div>
-              {errors.variants?.message && <p className="text-xs text-red-500">{errors.variants.message}</p>}
+              {errors.variants?.message && <p className="text-xs text-red-500">{translateMessage(errors.variants.message)}</p>}
               <p className="text-xs text-slate-500">
                 {lang === "es"
                   ? `Si el platillo no maneja tamaños, deja una sola variante llamada "${DEFAULT_VARIANT_LABEL}".`

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { updateAppointmentStatus } from "@/actions/appointments";
 import { usePreferences } from "@/context/preferences";
 import type { AppointmentStatus } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 const OPTIONS_ES: { value: AppointmentStatus; label: string }[] = [
   { value: "SCHEDULED", label: "Agendada" },
@@ -42,7 +43,7 @@ export function AppointmentStatusSelect({
       setStatus(newStatus);
       toast.success(lang === "es" ? "Estado actualizado" : "Status updated");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { readImageFileAsSquareDataUrl, squareImageErrorMessage } from "@/lib/square-image";
+import { getErrorMessage } from "@/lib/user-error";
 
 const AVATAR_PRESETS = [
   // Adventurer
@@ -206,7 +207,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
         setActiveDialog(null);
         toast.success(lang === "es" ? "Avatar actualizado" : "Avatar updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
+        toast.error(getErrorMessage(e, t.error));
       }
     });
   }
@@ -225,7 +226,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
         setActiveDialog(null);
         toast.success(lang === "es" ? "Avatar eliminado" : "Avatar removed");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
+        toast.error(getErrorMessage(e, t.error));
       }
     });
   }
@@ -246,7 +247,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
         setPwdForm({ current: "", next: "", confirm: "" });
         toast.success(lang === "es" ? "Contraseña actualizada" : "Password updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
+        toast.error(getErrorMessage(e, t.error));
       }
     });
   }
@@ -294,7 +295,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
       await startImpersonation(userId);
       window.location.href = "/portal/dashboard";
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.impersonateError);
+      toast.error(getErrorMessage(e, t.impersonateError));
       setImpersonateLoadingId(null);
     }
   }

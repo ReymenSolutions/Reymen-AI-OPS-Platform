@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { usePreferences } from "@/context/preferences";
 import { setFollowUpRules } from "@/actions/follow-up-rules";
 import type { LeadStatus } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface RuleRow {
   name: string;
@@ -71,7 +72,7 @@ export function FollowUpRulesManager({ initialRules }: { initialRules: RuleRow[]
         await setFollowUpRules(rules);
         toast.success(lang === "es" ? "Reglas de seguimiento guardadas" : "Follow-up rules saved");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar" : "Error saving"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar" : "Error saving")));
       }
     });
   }

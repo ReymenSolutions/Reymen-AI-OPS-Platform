@@ -7,6 +7,7 @@ import {
   IMPERSONATION_COOKIE, IMPERSONATION_MAX_AGE, encodeImpersonationCookie, decodeImpersonationCookie,
 } from "@/lib/impersonation-cookie";
 import type { UserRole } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 export type PortalUser = {
   id: string;
@@ -20,7 +21,7 @@ export type PortalUser = {
 
 export async function getPortalUsers(): Promise<PortalUser[]> {
   const session = await auth();
-  if (!session?.user || !isAdmin(session.user.role)) throw new Error("Unauthorized");
+  if (!session?.user || !isAdmin(session.user.role)) throw new UserError("Unauthorized");
 
   const users = await prisma.user.findMany({
     where: {
@@ -45,16 +46,16 @@ export async function getPortalUsers(): Promise<PortalUser[]> {
 
 export async function startImpersonation(targetUserId: string): Promise<void> {
   const session = await auth();
-  if (!session?.user || !isAdmin(session.user.role)) throw new Error("Unauthorized");
-  if (session.user.impersonating) throw new Error("Already impersonating");
+  if (!session?.user || !isAdmin(session.user.role)) throw new UserError("Unauthorized");
+  if (session.user.impersonating) throw new UserError("Already impersonating");
 
   const target = await prisma.user.findUnique({
     where: { id: targetUserId, isActive: true },
     include: { organization: { select: { name: true } } },
   });
 
-  if (!target || !target.organizationId) throw new Error("User not found or not a portal user");
-  if (isAdmin(target.role as UserRole)) throw new Error("Cannot impersonate admin users");
+  if (!target || !target.organizationId) throw new UserError("User not found or not a portal user");
+  if (isAdmin(target.role as UserRole)) throw new UserError("Cannot impersonate admin users");
 
   const cookieStore = await cookies();
   cookieStore.set(IMPERSONATION_COOKIE, await encodeImpersonationCookie({
@@ -78,7 +79,7 @@ export async function startImpersonation(targetUserId: string): Promise<void> {
 
 export async function stopImpersonation(): Promise<void> {
   const session = await auth();
-  if (!session?.user) throw new Error("Not authenticated");
+  if (!session?.user) throw new UserError("Not authenticated");
   const cookieStore = await cookies();
   cookieStore.delete(IMPERSONATION_COOKIE);
 }

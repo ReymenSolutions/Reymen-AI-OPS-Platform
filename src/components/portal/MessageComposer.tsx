@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/context/preferences";
 import { sendManualMessage } from "@/actions/conversations";
 import type { Message } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 type MessageWithSender = Message & { sender: { name: string | null; email: string } | null };
 
@@ -61,7 +62,7 @@ export function MessageComposer({
         setAttachmentUrl(null);
         setAttachmentType(null);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al enviar el mensaje" : "Error sending message"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al enviar el mensaje" : "Error sending message")));
       }
     });
   }

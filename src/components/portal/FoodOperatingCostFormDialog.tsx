@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { createFoodOperatingCost, updateFoodOperatingCost } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   name: z.string().min(1, "Nombre requerido"),
@@ -52,7 +53,7 @@ export function FoodOperatingCostFormDialog({ cost }: { cost?: ExistingCost }) {
       }
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar" : "Error saving"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar" : "Error saving")));
     } finally {
       setLoading(false);
     }
@@ -82,12 +83,12 @@ export function FoodOperatingCostFormDialog({ cost }: { cost?: ExistingCost }) {
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
             <Input placeholder={lang === "es" ? "Renta del local" : "Rent"} {...register("name")} />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
           </div>
           <div className="space-y-2">
             <Label>{lang === "es" ? "Monto mensual *" : "Monthly amount *"}</Label>
             <Input type="number" step="0.01" min="0" {...register("amountMonthly")} />
-            {errors.amountMonthly && <p className="text-xs text-red-500">{errors.amountMonthly.message}</p>}
+            {errors.amountMonthly && <p className="text-xs text-red-500">{translateMessage(errors.amountMonthly.message)}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>{lang === "es" ? "Cancelar" : "Cancel"}</Button>

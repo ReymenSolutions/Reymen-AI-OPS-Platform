@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireOrgPermission } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 
 const ruleSchema = z.object({
@@ -49,7 +50,7 @@ export async function setOrgTimezone(timezone: string) {
   try {
     Intl.DateTimeFormat(undefined, { timeZone: timezone });
   } catch {
-    throw new Error("Zona horaria inválida");
+    throw new UserError("Zona horaria inválida");
   }
 
   await prisma.organization.update({ where: { id: session.user.organizationId! }, data: { timezone } });

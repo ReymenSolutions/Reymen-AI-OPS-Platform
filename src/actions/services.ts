@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { requireOrgPermission } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 
 const createSchema = z.object({
@@ -61,7 +62,7 @@ export async function updateService(data: z.infer<typeof updateSchema>) {
   const orgId = session.user.organizationId!;
 
   const service = await prisma.service.findFirst({ where: { id: serviceId, organizationId: orgId } });
-  if (!service) throw new Error("Servicio no encontrado");
+  if (!service) throw new UserError("Servicio no encontrado");
 
   await prisma.service.update({ where: { id: serviceId }, data: rest });
 
@@ -78,9 +79,9 @@ export async function deleteService(serviceId: string) {
     where: { id: serviceId, organizationId: orgId },
     include: { _count: { select: { appointments: true } } },
   });
-  if (!service) throw new Error("Servicio no encontrado");
+  if (!service) throw new UserError("Servicio no encontrado");
   if (service._count.appointments > 0) {
-    throw new Error("No se puede eliminar un servicio con citas asociadas. Desactívalo en su lugar.");
+    throw new UserError("No se puede eliminar un servicio con citas asociadas. Desactívalo en su lugar.");
   }
 
   await prisma.service.delete({ where: { id: serviceId } });

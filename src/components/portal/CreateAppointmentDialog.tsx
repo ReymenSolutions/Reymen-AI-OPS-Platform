@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { createAppointment } from "@/actions/appointments";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   title: z.string().min(2, "Mínimo 2 caracteres"),
@@ -70,7 +71,7 @@ export function CreateAppointmentDialog({ services = [] }: { services?: ServiceO
       setServiceId("__none__");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.apptErrorMsg);
+      toast.error(getErrorMessage(e, t.apptErrorMsg));
     } finally {
       setLoading(false);
     }
@@ -92,7 +93,7 @@ export function CreateAppointmentDialog({ services = [] }: { services?: ServiceO
           <div className="space-y-2">
             <Label>{t.apptTitleLabel} *</Label>
             <Input placeholder={t.apptTitlePlaceholder} {...register("title")} />
-            {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
+            {errors.title && <p className="text-xs text-red-500">{translateMessage(errors.title.message)}</p>}
           </div>
           {services.length > 0 && (
             <div className="space-y-2">
@@ -112,7 +113,7 @@ export function CreateAppointmentDialog({ services = [] }: { services?: ServiceO
             <div className="space-y-2">
               <Label>{t.apptStartLabel} *</Label>
               <Input type="datetime-local" {...register("startTime")} />
-              {errors.startTime && <p className="text-xs text-red-500">{errors.startTime.message}</p>}
+              {errors.startTime && <p className="text-xs text-red-500">{translateMessage(errors.startTime.message)}</p>}
             </div>
             <div className="space-y-2">
               <Label>{t.apptEndLabel} {!selectedService && "*"}</Label>
@@ -125,7 +126,7 @@ export function CreateAppointmentDialog({ services = [] }: { services?: ServiceO
               ) : (
                 <>
                   <Input type="datetime-local" {...register("endTime")} />
-                  {errors.endTime && <p className="text-xs text-red-500">{errors.endTime.message}</p>}
+                  {errors.endTime && <p className="text-xs text-red-500">{translateMessage(errors.endTime.message)}</p>}
                 </>
               )}
             </div>

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { retryWebhookEventAction } from "@/actions/admin/webhook-events";
 import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function RetryWebhookEventButton({ eventId, disabled }: { eventId: string; disabled?: boolean }) {
   const { t } = usePreferences();
@@ -21,7 +22,7 @@ export function RetryWebhookEventButton({ eventId, disabled }: { eventId: string
         toast.error(t.adminWebhooksRetryFailed);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.error);
+      toast.error(getErrorMessage(e, t.error));
     } finally {
       setLoading(false);
     }

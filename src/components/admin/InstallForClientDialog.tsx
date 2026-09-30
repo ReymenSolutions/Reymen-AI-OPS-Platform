@@ -11,6 +11,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { installTemplateForClient } from "@/actions/admin/templates";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface Client {
   id: string;
@@ -55,7 +56,7 @@ export function InstallForClientDialog({
       toast.success(lang === "es" ? "Template instalado para el cliente" : "Template installed for the client");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al instalar" : "Error installing"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al instalar" : "Error installing")));
     } finally {
       setLoading(false);
     }

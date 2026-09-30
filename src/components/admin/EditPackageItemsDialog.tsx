@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { updateTemplatePackageItems } from "@/actions/admin/template-packages";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface TemplateOption {
   id: string;
@@ -49,7 +50,7 @@ export function EditPackageItemsDialog({
       toast.success(lang === "es" ? "Templates del paquete actualizados" : "Package templates updated");
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar" : "Error updating"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar" : "Error updating")));
     } finally {
       setLoading(false);
     }

@@ -7,6 +7,7 @@ import { Loader2, CreditCard, ExternalLink, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createCheckoutSession, createBillingPortalSession } from "@/actions/billing";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface BillingActionsProps {
   hasActiveSubscription: boolean;
@@ -22,7 +23,7 @@ export function BillingActions({ hasActiveSubscription }: BillingActionsProps) {
       const { url } = await createCheckoutSession(plan);
       window.location.href = url;
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al iniciar el pago" : "Error starting payment"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al iniciar el pago" : "Error starting payment")));
       setLoadingPlan(null);
     }
   }
@@ -33,7 +34,7 @@ export function BillingActions({ hasActiveSubscription }: BillingActionsProps) {
       const { url } = await createBillingPortalSession();
       window.location.href = url;
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al abrir la facturación" : "Error opening billing"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al abrir la facturación" : "Error opening billing")));
       setLoadingPlan(null);
     }
   }

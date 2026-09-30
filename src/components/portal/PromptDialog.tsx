@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createPrompt, updatePrompt } from "@/actions/prompts";
 import { usePreferences } from "@/context/preferences";
 import type { Prompt, PromptType } from "@prisma/client";
+import { translateMessage } from "@/lib/user-error";
 
 const PROMPT_TYPE_LABELS_ES: Record<PromptType, string> = {
   SYSTEM: "Sistema (principal)",
@@ -105,7 +106,7 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
             <div className="space-y-2">
               <Label>{lang === "es" ? "Nombre" : "Name"}</Label>
               <Input placeholder={lang === "es" ? "Prompt sistema v2" : "System prompt v2"} {...register("name")} />
-              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+              {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
             </div>
             {mode === "create" && (
               <div className="space-y-2">
@@ -121,7 +122,7 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.type && <p className="text-xs text-red-500">{errors.type.message}</p>}
+                {errors.type && <p className="text-xs text-red-500">{translateMessage(errors.type.message)}</p>}
               </div>
             )}
           </div>
@@ -134,7 +135,7 @@ export function PromptDialog({ prompt, mode = "create", defaultType }: PromptDia
               className="font-mono text-xs"
               {...register("content")}
             />
-            {errors.content && <p className="text-xs text-red-500">{errors.content.message}</p>}
+            {errors.content && <p className="text-xs text-red-500">{translateMessage(errors.content.message)}</p>}
             <p className="text-xs text-slate-400">
               {lang === "es" ? "Puedes usar variables como" : "You can use variables like"} {`{{nombre_empresa}}`}, {`{{horario}}`}, {`{{servicios}}`}.
             </p>

@@ -7,6 +7,7 @@ import { Loader2, Ban, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { updateClientStatus } from "@/actions/admin/clients";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface ToggleClientStatusButtonProps {
   orgId: string;
@@ -28,7 +29,7 @@ export function ToggleClientStatusButton({ orgId, isActive: initialActive }: Tog
       toast.success(isActive ? t.adminClientSuspended : t.adminClientReactivated);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.error);
+      toast.error(getErrorMessage(e, t.error));
     } finally {
       setLoading(false);
     }

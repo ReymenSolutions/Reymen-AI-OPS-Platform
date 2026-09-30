@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { updateFoodTargetCostPct } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export interface FoodDishOption { id: string; name: string; cost: number }
 
@@ -42,7 +43,7 @@ export function FoodPriceCalculator({ dishes, initialTargetPct }: { dishes: Food
       await updateFoodTargetCostPct(pct);
       toast.success(lang === "es" ? "% objetivo guardado como predeterminado" : "Target % saved as default");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setSaving(false);
     }

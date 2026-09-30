@@ -12,17 +12,18 @@ import { triggerN8nWorkflow } from "@/lib/n8n";
 import { recordMetric, METRIC_KEYS } from "@/lib/metrics";
 import type { UserRole } from "@prisma/client";
 import { appUrl } from "@/lib/app-url";
+import { UserError } from "@/lib/user-error";
 
 async function requireOrgAndWhatsapp() {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
   return session;
 }
 
 export async function escalateConversation(conversationId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
@@ -30,8 +31,8 @@ export async function escalateConversation(conversationId: string) {
     where: { id: conversationId, organizationId: session.user.organizationId },
     include: { organization: { select: { name: true } } },
   });
-  if (!conv) throw new Error("Conversación no encontrada");
-  if (conv.status !== "OPEN") throw new Error("Solo se pueden escalar conversaciones abiertas");
+  if (!conv) throw new UserError("Conversación no encontrada");
+  if (conv.status !== "OPEN") throw new UserError("Solo se pueden escalar conversaciones abiertas");
 
   await prisma.conversation.update({
     where: { id: conversationId },
@@ -54,7 +55,7 @@ const MESSAGE_PAGE_SIZE = 50;
 /** Fetches the page of messages immediately before `beforeMessageId`, oldest of that page first. */
 export async function getOlderMessages(conversationId: string, beforeMessageId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
@@ -62,13 +63,13 @@ export async function getOlderMessages(conversationId: string, beforeMessageId: 
     where: { id: conversationId, organizationId: session.user.organizationId },
     select: { id: true },
   });
-  if (!conv) throw new Error("Conversación no encontrada");
+  if (!conv) throw new UserError("Conversación no encontrada");
 
   const cursor = await prisma.message.findUnique({
     where: { id: beforeMessageId },
     select: { createdAt: true },
   });
-  if (!cursor) throw new Error("Mensaje no encontrado");
+  if (!cursor) throw new UserError("Mensaje no encontrado");
 
   const older = await prisma.message.findMany({
     where: {
@@ -90,14 +91,14 @@ export async function getOlderMessages(conversationId: string, beforeMessageId: 
 
 export async function resolveConversation(conversationId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.user.organizationId },
   });
-  if (!conv) throw new Error("Conversación no encontrada");
+  if (!conv) throw new UserError("Conversación no encontrada");
 
   await prisma.conversation.update({
     where: { id: conversationId },
@@ -126,17 +127,17 @@ export async function sendManualMessage(data: {
   attachmentType?: string;
 }) {
   const session = await requireOrgAndWhatsapp();
-  if (!can(session.user.role as UserRole, "conversations:reply")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "conversations:reply")) throw new UserError("No autorizado");
 
   const content = data.content.trim();
-  if (!content && !data.attachmentUrl) throw new Error("El mensaje no puede estar vacío");
+  if (!content && !data.attachmentUrl) throw new UserError("El mensaje no puede estar vacío");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: data.conversationId, organizationId: session.user.organizationId! },
   });
-  if (!conv) throw new Error("Conversación no encontrada");
+  if (!conv) throw new UserError("Conversación no encontrada");
   if (conv.status === "RESOLVED" || conv.status === "CLOSED") {
-    throw new Error("No se puede responder a una conversación cerrada");
+    throw new UserError("No se puede responder a una conversación cerrada");
   }
 
   const message = await prisma.message.create({
@@ -197,16 +198,16 @@ export async function sendManualMessage(data: {
 /** A human agent takes over from the AI assistant, claiming the conversation if nobody else has it. */
 export async function takeHumanControl(conversationId: string) {
   const session = await requireOrgAndWhatsapp();
-  if (!can(session.user.role as UserRole, "conversations:reply")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "conversations:reply")) throw new UserError("No autorizado");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.user.organizationId! },
   });
-  if (!conv) throw new Error("Conversación no encontrada");
+  if (!conv) throw new UserError("Conversación no encontrada");
 
   if (conv.assignedToId && conv.assignedToId !== session.user.id) {
     if (!can(session.user.role as UserRole, "conversations:assign")) {
-      throw new Error("Esta conversación ya está siendo atendida por otro agente");
+      throw new UserError("Esta conversación ya está siendo atendida por otro agente");
     }
   }
 
@@ -231,12 +232,12 @@ export async function takeHumanControl(conversationId: string) {
 /** Hands the conversation back to the AI assistant and clears the human assignment. */
 export async function releaseToAI(conversationId: string) {
   const session = await requireOrgAndWhatsapp();
-  if (!can(session.user.role as UserRole, "conversations:reply")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "conversations:reply")) throw new UserError("No autorizado");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.user.organizationId! },
   });
-  if (!conv) throw new Error("Conversación no encontrada");
+  if (!conv) throw new UserError("Conversación no encontrada");
 
   await prisma.conversation.update({
     where: { id: conversationId },
@@ -259,18 +260,18 @@ export async function releaseToAI(conversationId: string) {
 /** Assigns (or unassigns, with userId=null) a conversation to a specific teammate. */
 export async function assignConversation(conversationId: string, userId: string | null) {
   const session = await requireOrgAndWhatsapp();
-  if (!can(session.user.role as UserRole, "conversations:assign")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "conversations:assign")) throw new UserError("No autorizado");
 
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId: session.user.organizationId! },
   });
-  if (!conv) throw new Error("Conversación no encontrada");
+  if (!conv) throw new UserError("Conversación no encontrada");
 
   if (userId) {
     const target = await prisma.user.findFirst({
       where: { id: userId, organizationId: session.user.organizationId, isActive: true },
     });
-    if (!target) throw new Error("Usuario no encontrado");
+    if (!target) throw new UserError("Usuario no encontrado");
   }
 
   await prisma.conversation.update({

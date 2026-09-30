@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { usePreferences } from "@/context/preferences";
 import { createNote, deleteNote } from "@/actions/notes";
 import { formatDateTime } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface NoteItem {
   id: string;
@@ -32,7 +33,7 @@ export function LeadNotesPanel({ leadId, initialNotes }: { leadId: string; initi
         setNotes([{ id: result.noteId, content: value, createdAt: new Date(), authorName: lang === "es" ? "Tú" : "You", canDelete: true }, ...notes]);
         setContent("");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar la nota" : "Error saving note"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar la nota" : "Error saving note")));
       }
     });
   }
@@ -43,7 +44,7 @@ export function LeadNotesPanel({ leadId, initialNotes }: { leadId: string; initi
         await deleteNote(noteId);
         setNotes((prev) => prev.filter((n) => n.id !== noteId));
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al eliminar la nota" : "Error deleting note"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al eliminar la nota" : "Error deleting note")));
       }
     });
   }
