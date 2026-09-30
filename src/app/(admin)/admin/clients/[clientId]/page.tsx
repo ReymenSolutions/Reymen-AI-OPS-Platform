@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerT } from "@/lib/i18n-server";
 import { getEnabledModules } from "@/lib/modules";
 import { METRIC_KEYS, monthPeriod } from "@/lib/metrics";
-import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES, isUnlimited } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -176,7 +176,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
               <p className="text-2xl font-bold text-slate-900">{client._count.leads}</p>
               <p className="text-xs text-slate-500 mt-1">{t.totalLeads}</p>
               <p className={`text-xs mt-0.5 ${client._count.leads >= leadsLimit ? "text-red-500 font-medium" : "text-slate-400"}`}>
-                {client._count.leads} / {leadsLimit} ({t.plan})
+                {client._count.leads} / {isUnlimited(leadsLimit) ? "∞" : leadsLimit} ({t.plan})
               </p>
             </CardContent>
           </Card>

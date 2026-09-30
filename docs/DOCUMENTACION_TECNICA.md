@@ -2652,6 +2652,7 @@ immediately.
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_PROFESSIONAL` / `STRIPE_PRICE_ENTERPRISE` | Billing (upgrade/manage-billing UI, Stripe webhook route) | Without `STRIPE_SECRET_KEY`, the upgrade/manage-billing UI stays hidden. `STRIPE_WEBHOOK_SECRET` gates `/api/webhooks/stripe`; without it that route rejects incoming Stripe events. |
 | `SENTRY_DSN` (server) / `NEXT_PUBLIC_SENTRY_DSN` (client) | Error tracking | Without these, `sentry.server.config.ts` / `sentry.edge.config.ts` / `instrumentation-client.ts` initialize Sentry with no DSN, so error capture is a no-op — errors are only visible in server logs, not in Sentry. Not knowing about this in production means silently losing visibility into crashes. |
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Source map upload at build time | Build-time only, unrelated to runtime error capture. Without them, Sentry still receives errors (if `SENTRY_DSN` is set) but stack traces point at minified code instead of original source. |
+| `MXN_PER_USD` | ROI in Reports (`src/lib/roi.ts`, `src/lib/currency.ts`) | Pesos per dollar used to convert MXN opportunities to USD before comparing against the plan price. Without it, MXN opportunities are left out of the ROI and the card shows a warning — there is deliberately no hardcoded default rate. |
 | `NEXT_PUBLIC_APP_NAME` | Branding text | Falls back to a hardcoded default app name. |
 
 ### SmartCard bridge (Fase 14) — a different pattern from everything else in this table
@@ -2663,6 +2664,7 @@ Supabase Auth instead of this app's NextAuth) — a shared-database integration,
 | Variable | Required | What breaks without it |
 |----------|----------|--------------------------|
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Only for the `NFC_QR` module's live stats (card scans, WhatsApp clicks) | Must be the **exact same Supabase project** `reymen-smartcard` itself uses — this app is reading that repo's tables, not its own. Without them, `getSmartcardCompanyIdForOrg()`/`getCompanyCardStats()` return `null`/empty and the SmartCard dashboard widget just shows zeros, nothing crashes. |
+| `SMARTCARD_PUBLIC_URL` | No — defaults to `https://link.reymen.mx` | Base URL encoded in each card's QR (`{url}/q/{card_code}`, see `buildSmartcardPublicUrl`). Only set it if the cards' public domain changes. |
 | `SMARTCARD_SSO_SECRET` | Only for the "Ir a SmartCard" single-sign-on hand-off | Must equal the same-named var in the `reymen-smartcard` repo — it verifies the signed, 60-second-TTL token minted by `createSmartcardSsoToken()` (`src/lib/smartcard-sso.ts`). Without it (or a mismatch), the redirect fails to sign the user in there. |
 | `SMARTCARD_OPS_URL` | Only for the SSO redirect | The public URL of the `reymen-smartcard` ops app (e.g. `https://ops.reymen.mx`) the token redirects to. |
 

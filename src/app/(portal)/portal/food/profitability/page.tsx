@@ -7,7 +7,9 @@ import {
   getFoodCostReductionInsights, getFoodProfitRecommendations, getFoodLeastSoldDishes,
   getFoodDishesWithCost, flattenVariants,
 } from "@/lib/food";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerLang, getServerT } from "@/lib/i18n-server";
+import { foodStrings } from "@/lib/i18n-food";
+import { pickDict } from "@/lib/i18n-dict";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,10 +30,10 @@ function marginColor(marginPct: number | null): string {
   return "text-emerald-600";
 }
 
-const RECOMMENDATION_STYLE: Record<string, { badge: "destructive" | "warning" | "info"; label: string }> = {
-  review_urgent: { badge: "destructive", label: "Urgente" },
-  raise_price_or_cut_cost: { badge: "warning", label: "Subir precio / bajar costo" },
-  promote: { badge: "info", label: "Promocionar" },
+const RECOMMENDATION_BADGE: Record<string, "destructive" | "warning" | "info"> = {
+  review_urgent: "destructive",
+  raise_price_or_cut_cost: "warning",
+  promote: "info",
 };
 
 export default async function FoodProfitabilityPage() {
@@ -42,10 +44,11 @@ export default async function FoodProfitabilityPage() {
   const orgId = session.user.organizationId;
 
   const [
-    t, operatingCosts, fixedCostsMonthly, breakEven, profitToday, profit7d, profit30d,
+    t, lang, operatingCosts, fixedCostsMonthly, breakEven, profitToday, profit7d, profit30d,
     costInsights, recommendations, leastSold, dishesWithCost, org,
   ] = await Promise.all([
     getServerT(),
+    getServerLang(),
     getFoodOperatingCosts(orgId),
     getTotalMonthlyFixedCosts(orgId),
     getFoodBreakEven(orgId),
@@ -59,9 +62,21 @@ export default async function FoodProfitabilityPage() {
     prisma.organization.findUnique({ where: { id: orgId }, select: { foodTargetCostPct: true } }),
   ]);
 
+  const f = pickDict(foodStrings, lang);
+  const recLabel: Record<string, string> = {
+    review_urgent: f.recUrgent,
+    raise_price_or_cut_cost: f.recRaisePrice,
+    promote: f.recPromote,
+  };
+  function recReason(rec: (typeof recommendations)[number]): string {
+    if (rec.type === "review_urgent") return f.recReasonUrgent(money(rec.cost), money(rec.price));
+    if (rec.type === "raise_price_or_cut_cost") return f.recReasonRaise(rec.unitsSold, rec.marginPct ?? 0);
+    return f.recReasonPromote(rec.unitsSold, rec.marginPct ?? 0);
+  }
+
   return (
     <div>
-      <PageHeader title={t.foodProfitability} description="Costos operativos, punto de equilibrio y utilidad de tu operación." />
+      <PageHeader title={t.foodProfitability} description={f.profitabilityDesc} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -70,14 +85,14 @@ export default async function FoodProfitabilityPage() {
             <CardHeader className="flex-row items-center justify-between">
               <div className="flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-slate-400" />
-                <CardTitle className="text-base">Gastos fijos mensuales</CardTitle>
+                <CardTitle className="text-base">{f.monthlyFixedCosts}</CardTitle>
               </div>
               <FoodOperatingCostFormDialog />
             </CardHeader>
             <CardContent className="p-0">
               {operatingCosts.length === 0 ? (
                 <div className="p-6">
-                  <EmptyState icon={Wallet} title="Sin gastos fijos registrados" description="Agrega renta, nómina, servicios, etc. con el botón de arriba." />
+                  <EmptyState icon={Wallet} title={f.noFixedCosts} description={f.noFixedCostsDesc} />
                 </div>
               ) : (
                 <>
@@ -86,7 +101,7 @@ export default async function FoodProfitabilityPage() {
                       <li key={cost.id} className={cn("flex items-center justify-between px-6 py-3", !cost.isActive && "opacity-50")}>
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium text-slate-900">{cost.name}</p>
-                          {!cost.isActive && <Badge variant="secondary" className="text-[10px]">Inactivo</Badge>}
+                          {!cost.isActive && <Badge variant="secondary" className="text-[10px]">{f.inactive}</Badge>}
                         </div>
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-slate-900">{money(cost.amountMonthly)}</p>
@@ -97,7 +112,7 @@ export default async function FoodProfitabilityPage() {
                     ))}
                   </ul>
                   <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-3">
-                    <p className="text-sm font-medium text-slate-700">Total mensual (activos)</p>
+                    <p className="text-sm font-medium text-slate-700">{f.monthlyTotalActive}</p>
                     <p className="text-base font-bold text-slate-900">{money(fixedCostsMonthly)}</p>
                   </div>
                 </>
@@ -110,30 +125,30 @@ export default async function FoodProfitabilityPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Target className="h-4 w-4 text-slate-400" />
-                <CardTitle className="text-base">Punto de equilibrio</CardTitle>
+                <CardTitle className="text-base">{f.breakEven}</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {breakEven.blended && (
                 <div className="rounded-lg border border-brand-200 bg-brand-50 p-4">
                   <p className="text-xs font-medium text-brand-700">
-                    Combinado (según tu mezcla real de ventas de los últimos {breakEven.blended.basedOnDays} días)
+                    {f.blendedBreakEven(breakEven.blended.basedOnDays)}
                   </p>
                   <p className="mt-1 text-lg font-bold text-brand-900">
-                    {breakEven.blended.breakEvenUnits.toLocaleString("es-MX")} unidades · {money(breakEven.blended.breakEvenRevenue)}
+                    {f.unitsAndRevenue(breakEven.blended.breakEvenUnits.toLocaleString(f.dateLocale), money(breakEven.blended.breakEvenRevenue))}
                   </p>
                 </div>
               )}
               {breakEven.perVariant.length === 0 ? (
-                <p className="text-sm text-slate-500">Crea platillos en Recetas para ver su punto de equilibrio aquí.</p>
+                <p className="text-sm text-slate-500">{f.breakEvenEmpty}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                        <th className="py-2 pr-3">Platillo</th>
-                        <th className="py-2 pr-3">Margen</th>
-                        <th className="py-2">Unidades para cubrir gastos fijos (solo)</th>
+                        <th className="py-2 pr-3">{f.dish}</th>
+                        <th className="py-2 pr-3">{f.margin}</th>
+                        <th className="py-2">{f.unitsToCoverFixed}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -143,9 +158,9 @@ export default async function FoodProfitabilityPage() {
                           <td className="py-2 pr-3">{money(row.contributionMargin)}</td>
                           <td className="py-2">
                             {row.breakEvenUnits !== null ? (
-                              `${row.breakEvenUnits.toLocaleString("es-MX")} unidades`
+                              f.unitsCount(row.breakEvenUnits.toLocaleString(f.dateLocale))
                             ) : (
-                              <span className="text-red-600">Nunca solo (margen ≤ 0)</span>
+                              <span className="text-red-600">{f.neverAlone}</span>
                             )}
                           </td>
                         </tr>
@@ -165,16 +180,16 @@ export default async function FoodProfitabilityPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <TrendingDown className="h-4 w-4 text-slate-400" />
-                <CardTitle className="text-base">Reducción de costos</CardTitle>
+                <CardTitle className="text-base">{f.costReduction}</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {costInsights.lowestMarginItems.length === 0 && costInsights.topCostIngredients.length === 0 ? (
-                <p className="text-sm text-slate-500">Crea platillos con receta en Recetas para ver estos insights.</p>
+                <p className="text-sm text-slate-500">{f.costInsightsEmpty}</p>
               ) : (
                 <>
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Platillos con menor margen</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{f.lowestMarginDishes}</p>
                     <ul className="space-y-1.5">
                       {costInsights.lowestMarginItems.map((d) => (
                         <li key={d.variantId} className="flex items-center justify-between text-sm">
@@ -185,12 +200,12 @@ export default async function FoodProfitabilityPage() {
                     </ul>
                   </div>
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Insumos que más pesan en tus recetas</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{f.heaviestIngredients}</p>
                     <ul className="space-y-1.5">
                       {costInsights.topCostIngredients.map((i) => (
                         <li key={i.inventoryItemId} className="flex items-center justify-between text-sm">
                           <span className="text-slate-700">{i.name}</span>
-                          <span className="font-medium text-slate-900">{money(i.totalRecipeCost)} · en {i.usedInDishes} platillo(s)</span>
+                          <span className="font-medium text-slate-900">{f.usedInDishes(money(i.totalRecipeCost), i.usedInDishes)}</span>
                         </li>
                       ))}
                     </ul>
@@ -205,25 +220,25 @@ export default async function FoodProfitabilityPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-slate-400" />
-                <CardTitle className="text-base">Recomendaciones para mejorar utilidad</CardTitle>
+                <CardTitle className="text-base">{f.profitRecommendations}</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
               {recommendations.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  Sin recomendaciones por ahora — registra ventas de platillos en Recetas para que aparezcan aquí.
+                  {f.noRecommendations}
                 </p>
               ) : (
                 <ul className="space-y-3">
                   {recommendations.map((rec, i) => {
-                    const style = RECOMMENDATION_STYLE[rec.type];
+                    const badge = RECOMMENDATION_BADGE[rec.type];
                     return (
                       <li key={`${rec.variantId}-${i}`} className="flex items-start gap-2">
-                        <Badge variant={style.badge as "destructive" | "warning" | "info"} className="mt-0.5 flex-shrink-0 text-[10px]">
-                          {style.label}
+                        <Badge variant={badge} className="mt-0.5 flex-shrink-0 text-[10px]">
+                          {recLabel[rec.type]}
                         </Badge>
                         <p className="text-sm text-slate-700">
-                          <span className="font-medium text-slate-900">{rec.name}:</span> {rec.reason}
+                          <span className="font-medium text-slate-900">{rec.name}:</span> {recReason(rec)}
                         </p>
                       </li>
                     );
@@ -238,13 +253,13 @@ export default async function FoodProfitabilityPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Megaphone className="h-4 w-4 text-slate-400" />
-                <CardTitle className="text-base">Promociones recomendadas</CardTitle>
+                <CardTitle className="text-base">{f.recommendedPromotions}</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
               {leastSold.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  Registra ventas de platillos en Recetas para ver aquí cuáles se venden menos y merecen una promoción.
+                  {f.promotionsEmpty}
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -252,10 +267,10 @@ export default async function FoodProfitabilityPage() {
                     <li key={d.variantId} className="rounded-md bg-slate-50 p-3">
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium text-slate-900">{d.name}</span>
-                        <span className="text-slate-500">{d.unitsSold} vendidos en 30 días</span>
+                        <span className="text-slate-500">{f.soldIn30Days(d.unitsSold)}</span>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
-                        Considera un descuento o un combo con tu platillo más popular para darle salida.
+                        {f.promotionTip}
                       </p>
                     </li>
                   ))}

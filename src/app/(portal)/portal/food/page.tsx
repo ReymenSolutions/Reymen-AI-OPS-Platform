@@ -8,7 +8,9 @@ import {
   getFoodTopSellingDishes,
 } from "@/lib/food";
 import { getSmartcardCompanyIdForOrg, getCompanyCardStats } from "@/lib/smartcard-company";
-import { getServerT } from "@/lib/i18n-server";
+import { getServerLang, getServerT } from "@/lib/i18n-server";
+import { foodStrings } from "@/lib/i18n-food";
+import { pickDict } from "@/lib/i18n-dict";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,12 +20,12 @@ import {
   TrendingUp, Sparkles, Truck, Users, Wallet,
 } from "lucide-react";
 
-// Ventana de horario de restaurante que se grafica -- las ventas fuera de
-// este rango siguen contando en los totales del día, solo no se dibujan
-// como barra individual (mismo criterio visual que el dashboard de
-// referencia del negocio: 6:00 a 23:00).
-const CHART_START_HOUR = 6;
-const CHART_END_HOUR = 23;
+// Rango de horas que se dibuja por defecto (horario típico de restaurante).
+// Solo es el encuadre inicial: si hay ventas antes o después, el rango se
+// amplía para incluirlas (ver chartHours abajo), así ninguna venta del día
+// queda fuera de la gráfica aunque el negocio abra antes o cierre después.
+const DEFAULT_CHART_START_HOUR = 6;
+const DEFAULT_CHART_END_HOUR = 23;
 
 const AREAS = [
   { href: "/portal/food/sales", key: "foodSales", icon: DollarSign, ready: true },
@@ -110,8 +112,9 @@ export default async function FoodOverviewPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, summary, hourly, daily, lowStock, topDishes, suppliers, smartcardCompanyId] = await Promise.all([
+  const [t, lang, summary, hourly, daily, lowStock, topDishes, suppliers, smartcardCompanyId, org] = await Promise.all([
     getServerT(),
+    getServerLang(),
     getFoodSalesSummary(orgId),
     getFoodHourlySales(orgId),
     getFoodDailySales(orgId, 7),
@@ -124,7 +127,10 @@ export default async function FoodOverviewPage() {
       take: 5,
     }),
     getSmartcardCompanyIdForOrg(orgId),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
   ]);
+
+  const f = pickDict(foodStrings, lang);
 
   const cardStats = smartcardCompanyId ? await getCompanyCardStats(smartcardCompanyId) : null;
   const realScans = cardStats?.byType["qr_scan"] ?? 0;
@@ -134,14 +140,17 @@ export default async function FoodOverviewPage() {
 
   const avgTicketToday = summary.today.count > 0 ? summary.today.gross / summary.today.count : 0;
 
-  const chartHours = hourly.filter((h) => h.hour >= CHART_START_HOUR && h.hour <= CHART_END_HOUR);
+  const hoursWithSales = hourly.filter((h) => h.count > 0).map((h) => h.hour);
+  const chartStart = Math.min(DEFAULT_CHART_START_HOUR, ...hoursWithSales);
+  const chartEnd = Math.max(DEFAULT_CHART_END_HOUR, ...hoursWithSales);
+  const chartHours = hourly.filter((h) => h.hour >= chartStart && h.hour <= chartEnd);
   const maxHourlyGross = Math.max(...chartHours.map((h) => h.gross), 0);
 
   const grossSpark = daily.map((d) => d.gross);
   const ordersSpark = daily.map((d) => d.count);
   const ticketSpark = daily.map((d) => (d.count > 0 ? d.gross / d.count : 0));
 
-  const todayLabel = new Date().toLocaleDateString("es-MX", { weekday: "short", day: "numeric", month: "short" });
+  const todayLabel = new Date().toLocaleDateString(f.dateLocale, { weekday: "short", day: "numeric", month: "short" });
 
   return (
     <div>
@@ -149,15 +158,15 @@ export default async function FoodOverviewPage() {
       <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-brand-900 via-brand-800 to-brand-950 px-6 py-6 text-white sm:px-8 sm:py-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-300">Bienvenido</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-300">{f.welcome}</p>
             <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">REYMEN Ops Food</h1>
-            <p className="mt-1 text-sm text-brand-200">Panel para restaurante</p>
+            <p className="mt-1 text-sm text-brand-200">{org?.name ?? f.restaurantPanel}</p>
           </div>
           <div className="flex flex-col items-start gap-3 sm:items-end">
-            <p className="text-sm italic text-brand-100">&ldquo;Grandes sabores. Mejores negocios.&rdquo;</p>
+            <p className="text-sm italic text-brand-100">{f.tagline}</p>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white">
               <Clock className="h-3.5 w-3.5" />
-              Hoy · {todayLabel}
+              {f.today} · {todayLabel}
             </span>
           </div>
         </div>
@@ -167,34 +176,34 @@ export default async function FoodOverviewPage() {
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <FoodKpiCard
           icon={DollarSign}
-          label="Ventas de hoy"
+          label={f.salesToday}
           value={money(summary.today.gross)}
           trendPct={summary.vsYesterdayGrossPct}
-          trendLabel="vs. ayer"
+          trendLabel={f.vsYesterday}
           sparkline={grossSpark}
           accent="orange"
         />
         <FoodKpiCard
           icon={Receipt}
-          label="Ticket promedio"
+          label={f.avgTicket}
           value={money(avgTicketToday)}
           trendPct={summary.vsYesterdayTicketPct}
-          trendLabel="vs. ayer"
+          trendLabel={f.vsYesterday}
           sparkline={ticketSpark}
         />
         <FoodKpiCard
           icon={ShoppingBag}
-          label="Pedidos de hoy"
+          label={f.ordersToday}
           value={String(summary.today.count)}
           trendPct={summary.vsYesterdayOrdersPct}
-          trendLabel="vs. ayer"
+          trendLabel={f.vsYesterday}
           sparkline={ordersSpark}
         />
         <FoodKpiCard
           icon={Package}
-          label="Insumos en stock bajo"
+          label={f.lowStockSupplies}
           value={String(lowStock.length)}
-          description="En o bajo el mínimo"
+          description={f.atOrBelowMin}
           accent={lowStock.length > 0 ? "red" : "brand"}
         />
       </div>
@@ -206,14 +215,14 @@ export default async function FoodOverviewPage() {
           <CardHeader className="flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-slate-400" />
-              <CardTitle className="text-base">Ventas por hora</CardTitle>
+              <CardTitle className="text-base">{f.salesByHour}</CardTitle>
             </div>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">Hoy</span>
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{f.today}</span>
           </CardHeader>
           <CardContent>
             {summary.today.count === 0 ? (
               <p className="rounded-md bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
-                Todavía no hay ventas registradas hoy.
+                {f.noSalesToday}
               </p>
             ) : (
               <div className="flex items-end gap-1 border-b border-slate-100 pb-0">
@@ -237,7 +246,7 @@ export default async function FoodOverviewPage() {
                           isPeak ? "bg-orange-500" : "bg-orange-300 group-hover:bg-orange-400"
                         )}
                         style={{ height: `${barPx}px` }}
-                        title={`${h.hour}:00 — $${h.gross.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${h.count} venta(s))`}
+                        title={f.hourTooltip(h.hour, money(h.gross), h.count)}
                       />
                       <span className="text-[10px] text-slate-400">{h.hour}h</span>
                     </div>
@@ -253,13 +262,13 @@ export default async function FoodOverviewPage() {
           <CardHeader className="flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <ChefHat className="h-4 w-4 text-slate-400" />
-              <CardTitle className="text-base">Platillos más vendidos</CardTitle>
+              <CardTitle className="text-base">{f.topDishes}</CardTitle>
             </div>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">30 días</span>
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{f.last30DaysShort}</span>
           </CardHeader>
           <CardContent className="p-0">
             {topDishes.length === 0 ? (
-              <p className="px-6 py-4 text-sm text-slate-500">Todavía no hay ventas por platillo registradas.</p>
+              <p className="px-6 py-4 text-sm text-slate-500">{f.noDishSales}</p>
             ) : (
               <ul className="divide-y divide-slate-100">
                 {topDishes.map((dish, i) => (
@@ -270,7 +279,7 @@ export default async function FoodOverviewPage() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-slate-900">{dish.name}</p>
-                      <p className="text-xs text-slate-500">{dish.unitsSold} vendidos</p>
+                      <p className="text-xs text-slate-500">{f.unitsSold(dish.unitsSold)}</p>
                     </div>
                     <p className="text-sm font-semibold text-slate-900">{money(dish.revenue, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                   </li>
@@ -279,7 +288,7 @@ export default async function FoodOverviewPage() {
             )}
             <div className="border-t border-slate-100 px-6 py-2.5">
               <Link href="/portal/food/sales" className="text-xs font-medium text-brand-600 hover:underline">
-                Ver todos →
+                {f.seeAll}
               </Link>
             </div>
           </CardContent>
@@ -288,9 +297,9 @@ export default async function FoodOverviewPage() {
         {/* SmartCard Restaurante -- widget real, parte de Food */}
         <Card className="overflow-hidden">
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle className="text-base">SmartCard Restaurante</CardTitle>
+            <CardTitle className="text-base">{f.smartcardWidget}</CardTitle>
             <Link href="/portal/smartcard" className="text-xs font-medium text-brand-600 hover:underline">
-              Ver detalle →
+              {f.seeDetail}
             </Link>
           </CardHeader>
           <CardContent>
@@ -299,7 +308,7 @@ export default async function FoodOverviewPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-brand-200">Reymen Solutions</p>
-                  <p className="mt-2 text-sm font-medium">Tu menú, en un solo toque.</p>
+                  <p className="mt-2 text-sm font-medium">{f.smartcardSlogan}</p>
                 </div>
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white">
                   <QrCode className="h-7 w-7 text-brand-900" />
@@ -312,28 +321,28 @@ export default async function FoodOverviewPage() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="flex items-center gap-1.5 text-slate-400">
                   <QrCode className="h-3.5 w-3.5" />
-                  <span className="text-[11px] font-medium">Escaneos</span>
+                  <span className="text-[11px] font-medium">{f.scans}</span>
                 </div>
                 <p className="mt-1 text-lg font-bold text-slate-900">{realScans.toLocaleString("es-MX")}</p>
               </div>
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="flex items-center gap-1.5 text-slate-400">
                   <MessageCircle className="h-3.5 w-3.5" />
-                  <span className="text-[11px] font-medium">Clics a WhatsApp</span>
+                  <span className="text-[11px] font-medium">{f.whatsappClicks}</span>
                 </div>
                 <p className="mt-1 text-lg font-bold text-slate-900">{realWhatsapp.toLocaleString("es-MX")}</p>
               </div>
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="flex items-center gap-1.5 text-slate-400">
                   <Eye className="h-3.5 w-3.5" />
-                  <span className="text-[11px] font-medium">Vistas de perfil</span>
+                  <span className="text-[11px] font-medium">{f.profileViews}</span>
                 </div>
                 <p className="mt-1 text-lg font-bold text-slate-900">{realProfileViews.toLocaleString("es-MX")}</p>
               </div>
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="flex items-center gap-1.5 text-slate-400">
                   <Phone className="h-3.5 w-3.5" />
-                  <span className="text-[11px] font-medium">Clics a llamar</span>
+                  <span className="text-[11px] font-medium">{f.callClicks}</span>
                 </div>
                 <p className="mt-1 text-lg font-bold text-slate-900">{realCalls.toLocaleString("es-MX")}</p>
               </div>
@@ -349,15 +358,15 @@ export default async function FoodOverviewPage() {
           <CardHeader className="flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <Package className="h-4 w-4 text-slate-400" />
-              <CardTitle className="text-base">Inventario bajo</CardTitle>
+              <CardTitle className="text-base">{f.lowInventory}</CardTitle>
             </div>
             <Link href="/portal/food/inventory" className="text-xs font-medium text-brand-600 hover:underline">
-              Ver inventario →
+              {f.seeInventory}
             </Link>
           </CardHeader>
           <CardContent className="p-0">
             {lowStock.length === 0 ? (
-              <p className="px-6 py-4 text-sm text-slate-500">Todos los insumos están por arriba de su mínimo.</p>
+              <p className="px-6 py-4 text-sm text-slate-500">{f.allAboveMin}</p>
             ) : (
               <ul className="divide-y divide-slate-100">
                 {lowStock.map((item) => (
@@ -371,7 +380,7 @@ export default async function FoodOverviewPage() {
                         {item.currentStock} / {item.minStock} {item.unit}
                       </p>
                     </div>
-                    <Badge variant="destructive" className="text-[10px]">Bajo</Badge>
+                    <Badge variant="destructive" className="text-[10px]">{f.low}</Badge>
                   </li>
                 ))}
               </ul>
@@ -384,12 +393,12 @@ export default async function FoodOverviewPage() {
           <CardHeader className="flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <Truck className="h-4 w-4 text-slate-400" />
-              <CardTitle className="text-base">Proveedores</CardTitle>
+              <CardTitle className="text-base">{f.suppliers}</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="p-0">
             {suppliers.length === 0 ? (
-              <p className="px-6 py-4 text-sm text-slate-500">Todavía no hay proveedores registrados.</p>
+              <p className="px-6 py-4 text-sm text-slate-500">{f.noSuppliers}</p>
             ) : (
               <ul className="divide-y divide-slate-100">
                 {suppliers.map((sup) => (
@@ -409,7 +418,7 @@ export default async function FoodOverviewPage() {
             )}
             <div className="border-t border-slate-100 px-6 py-2.5">
               <Link href="/portal/food/suppliers" className="text-xs font-medium text-brand-600 hover:underline">
-                Ver todos →
+                {f.seeAll}
               </Link>
             </div>
           </CardContent>
@@ -418,36 +427,36 @@ export default async function FoodOverviewPage() {
         {/* Insights del mes -- todo real */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Insights del mes</CardTitle>
+            <CardTitle className="text-base">{f.monthInsights}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-[11px] font-medium text-slate-500">Ventas</p>
+                <p className="text-[11px] font-medium text-slate-500">{f.sales}</p>
                 <p className={cn("mt-0.5 text-sm font-bold", (summary.monthOverMonthGrossPct ?? 0) >= 0 ? "text-emerald-600" : "text-red-600")}>
                   {summary.monthOverMonthGrossPct !== null ? `${summary.monthOverMonthGrossPct >= 0 ? "+" : ""}${summary.monthOverMonthGrossPct}%` : "—"}
                 </p>
               </div>
               <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-[11px] font-medium text-slate-500">Pedidos</p>
+                <p className="text-[11px] font-medium text-slate-500">{f.orders}</p>
                 <p className={cn("mt-0.5 text-sm font-bold", (summary.monthOverMonthOrdersPct ?? 0) >= 0 ? "text-emerald-600" : "text-red-600")}>
                   {summary.monthOverMonthOrdersPct !== null ? `${summary.monthOverMonthOrdersPct >= 0 ? "+" : ""}${summary.monthOverMonthOrdersPct}%` : "—"}
                 </p>
               </div>
               <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-[11px] font-medium text-slate-500">Ticket promedio</p>
+                <p className="text-[11px] font-medium text-slate-500">{f.avgTicket}</p>
                 <p className={cn("mt-0.5 text-sm font-bold", (summary.monthOverMonthTicketPct ?? 0) >= 0 ? "text-emerald-600" : "text-red-600")}>
                   {summary.monthOverMonthTicketPct !== null ? `${summary.monthOverMonthTicketPct >= 0 ? "+" : ""}${summary.monthOverMonthTicketPct}%` : "—"}
                 </p>
               </div>
               <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-[11px] font-medium text-slate-500">Insumos bajo</p>
+                <p className="text-[11px] font-medium text-slate-500">{f.lowSupplies}</p>
                 <p className="mt-0.5 text-sm font-bold text-slate-900">{lowStock.length}</p>
               </div>
             </div>
             <div className="mt-3 flex items-center gap-2 rounded-lg bg-gradient-to-r from-brand-900 to-brand-950 p-3 text-white">
               <Sparkles className="h-4 w-4 shrink-0 text-orange-300" />
-              <p className="text-xs font-medium">Cocina inteligente. Negocios más fuertes.</p>
+              <p className="text-xs font-medium">{f.insightsTagline}</p>
             </div>
           </CardContent>
         </Card>
@@ -455,7 +464,7 @@ export default async function FoodOverviewPage() {
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="text-base">Áreas del módulo</CardTitle>
+          <CardTitle className="text-base">{f.moduleAreas}</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {AREAS.map((area) => {
@@ -472,7 +481,7 @@ export default async function FoodOverviewPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-slate-900">{t[area.key]}</p>
-                    {!area.ready && <p className="text-xs text-slate-400">Próximamente</p>}
+                    {!area.ready && <p className="text-xs text-slate-400">{f.comingSoon}</p>}
                   </div>
                 </div>
                 <ArrowRight className="h-4 w-4 text-slate-300" />

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth, isAdmin } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { createOrgUserRecord } from "@/lib/org-users";
 import type { UserRole } from "@prisma/client";
 
 const ORG_USER_ROLES = ["OWNER", "MANAGER", "AGENT", "VIEWER"] as const;
@@ -28,27 +29,14 @@ export async function createOrgUser(orgId: string, data: { name: string; email: 
   const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
   if (!org) throw new Error("Cliente no encontrado");
 
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (existing) throw new Error("Ya existe un usuario con ese email");
-
-  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-  const user = await prisma.user.create({
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      passwordHash,
-      role: parsed.data.role as UserRole,
-      organizationId: orgId,
-    },
-  });
-
-  await logAudit({
+  await createOrgUserRecord({
     organizationId: orgId,
-    userId: session.user.id,
-    action: "admin.user.create",
-    resource: "User",
-    resourceId: user.id,
-    metadata: { email: user.email, role: user.role },
+    name: parsed.data.name,
+    email: parsed.data.email,
+    role: parsed.data.role as UserRole,
+    password: parsed.data.password,
+    actorUserId: session.user.id,
+    auditAction: "admin.user.create",
   });
 
   revalidatePath(`/admin/clients/${orgId}`);

@@ -5,6 +5,7 @@ import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getStripeClient, isStripeConfigured, PLAN_PRICE_ENV } from "@/lib/stripe";
 import type { UserRole } from "@prisma/client";
+import { getAppUrl } from "@/lib/app-url";
 
 async function requireBillingManager() {
   const session = await auth();
@@ -41,14 +42,14 @@ export async function createCheckoutSession(plan: "professional" | "enterprise")
   if (!priceId) throw new Error(`No hay un precio de Stripe configurado para el plan ${plan}`);
 
   const customerId = await getOrCreateStripeCustomer(session.user.organizationId!);
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const baseUrl = getAppUrl();
 
   const checkoutSession = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appUrl}/portal/settings?billing=success`,
-    cancel_url: `${appUrl}/portal/settings?billing=cancelled`,
+    success_url: `${baseUrl}/portal/settings?billing=success`,
+    cancel_url: `${baseUrl}/portal/settings?billing=cancelled`,
     metadata: { organizationId: session.user.organizationId!, plan },
   });
 
@@ -65,10 +66,10 @@ export async function createBillingPortalSession(): Promise<{ url: string }> {
   const org = await prisma.organization.findUniqueOrThrow({ where: { id: session.user.organizationId! } });
   if (!org.stripeCustomerId) throw new Error("Esta organización aún no tiene una suscripción");
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const baseUrl = getAppUrl();
   const portalSession = await stripe.billingPortal.sessions.create({
     customer: org.stripeCustomerId,
-    return_url: `${appUrl}/portal/settings`,
+    return_url: `${baseUrl}/portal/settings`,
   });
 
   return { url: portalSession.url };

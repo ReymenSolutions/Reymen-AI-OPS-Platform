@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { PLAN_PRICES } from "./permissions";
+import { getMxnPerUsd, toUsd } from "./currency";
 
 export interface RoiData {
   hasWonDeals: boolean;
@@ -9,6 +10,10 @@ export interface RoiData {
   last30WonOpportunities: number;
   last30Revenue: number;
   planCost: number;
+  /** Pesos por dólar usados para convertir los montos en MXN, o null si MXN_PER_USD no está configurado. */
+  mxnPerUsd: number | null;
+  /** Oportunidades ganadas que no se pudieron convertir a USD y quedaron fuera de los totales. */
+  unconvertedOpportunities: number;
   /** null when there's no plan cost to divide by (shouldn't happen in practice — every plan has a price). */
   roi: number | null;
 }
@@ -19,6 +24,10 @@ export interface RoiData {
  * on opportunities sitting in a PipelineStage marked isWon — the same data
  * the sales pipeline itself considers a won deal, not a separate estimate.
  *
+ * Amounts are converted to USD (the currency plan prices are in) with the
+ * MXN_PER_USD exchange rate — see currency.ts. Opportunities that can't be
+ * converted are left out of the totals and counted in unconvertedOpportunities.
+ *
  * last30* mirrors the reports page's own 30-day window so the revenue figure
  * is comparable to a monthly subscription cost, rather than mixing an
  * all-time revenue sum against a single month of plan cost.
@@ -27,28 +36,49 @@ export async function getRoiData(organizationId: string, plan: string): Promise<
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const [totals, last30] = await Promise.all([
-    prisma.opportunity.aggregate({
-      where: { organizationId, amount: { not: null }, pipelineStage: { isWon: true } },
+  const mxnPerUsd = getMxnPerUsd();
+
+  // Agrupado por moneda: el plan cuesta USD y las oportunidades pueden estar
+  // en MXN, así que sumar los montos tal cual mezclaría pesos con dólares.
+  const wonWhere = { organizationId, amount: { not: null }, pipelineStage: { isWon: true } };
+  const [totalsByCurrency, last30ByCurrency] = await Promise.all([
+    prisma.opportunity.groupBy({
+      by: ["currency"],
+      where: wonWhere,
       _sum: { amount: true },
       _count: { id: true },
     }),
-    prisma.opportunity.aggregate({
-      where: {
-        organizationId,
-        amount: { not: null },
-        pipelineStage: { isWon: true },
-        closedAt: { gte: thirtyDaysAgo },
-      },
+    prisma.opportunity.groupBy({
+      by: ["currency"],
+      where: { ...wonWhere, closedAt: { gte: thirtyDaysAgo } },
       _sum: { amount: true },
       _count: { id: true },
     }),
   ]);
 
-  const totalWonOpportunities = totals._count.id;
-  const totalRevenue = totals._sum.amount ?? 0;
-  const last30WonOpportunities = last30._count.id;
-  const last30Revenue = last30._sum.amount ?? 0;
+  function sumInUsd(rows: typeof totalsByCurrency) {
+    let revenue = 0;
+    let count = 0;
+    let unconverted = 0;
+    for (const row of rows) {
+      const usd = toUsd(row._sum.amount ?? 0, row.currency, mxnPerUsd);
+      if (usd === null) {
+        unconverted += row._count.id;
+      } else {
+        revenue += usd;
+        count += row._count.id;
+      }
+    }
+    return { revenue: Math.round(revenue * 100) / 100, count, unconverted };
+  }
+
+  const totals = sumInUsd(totalsByCurrency);
+  const last30 = sumInUsd(last30ByCurrency);
+
+  const totalWonOpportunities = totals.count;
+  const totalRevenue = totals.revenue;
+  const last30WonOpportunities = last30.count;
+  const last30Revenue = last30.revenue;
   const planCost = PLAN_PRICES[plan] ?? PLAN_PRICES.starter;
 
   return {
@@ -59,6 +89,8 @@ export async function getRoiData(organizationId: string, plan: string): Promise<
     last30WonOpportunities,
     last30Revenue,
     planCost,
+    mxnPerUsd,
+    unconvertedOpportunities: totals.unconverted,
     roi: planCost > 0 ? Math.round(((last30Revenue - planCost) / planCost) * 100) : null,
   };
 }

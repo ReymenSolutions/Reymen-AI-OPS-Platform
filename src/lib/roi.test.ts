@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createTestOrg, createTestPipelineStages, cleanupOrg } from "@/test/helpers";
 import { getRoiData } from "./roi";
@@ -10,6 +10,7 @@ describe("getRoiData", () => {
   afterEach(async () => {
     if (org) await cleanupOrg(org.id);
     org = undefined;
+    vi.unstubAllEnvs();
   });
 
   it("reports no won deals when the org has none", async () => {
@@ -29,7 +30,7 @@ describe("getRoiData", () => {
     const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "Roi Lead" } });
 
     await prisma.opportunity.create({
-      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Won Deal", amount: 1000, closedAt: new Date() },
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Won Deal", amount: 1000, currency: "USD", closedAt: new Date() },
     });
     await prisma.opportunity.create({
       data: { organizationId: org.id, leadId: lead.id, pipelineStageId: openStage.id, title: "Open Deal", amount: 5000 },
@@ -67,10 +68,10 @@ describe("getRoiData", () => {
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
     await prisma.opportunity.create({
-      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Recent Win", amount: 2000, closedAt: new Date() },
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Recent Win", amount: 2000, currency: "USD", closedAt: new Date() },
     });
     await prisma.opportunity.create({
-      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Old Win", amount: 8000, closedAt: sixtyDaysAgo },
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Old Win", amount: 8000, currency: "USD", closedAt: sixtyDaysAgo },
     });
 
     const data = await getRoiData(org.id, "starter");
@@ -87,7 +88,7 @@ describe("getRoiData", () => {
     const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "Roi Lead" } });
 
     await prisma.opportunity.create({
-      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Win", amount: 1000, closedAt: new Date() },
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Win", amount: 1000, currency: "USD", closedAt: new Date() },
     });
 
     const data = await getRoiData(org.id, "professional");
@@ -99,5 +100,48 @@ describe("getRoiData", () => {
     org = await createTestOrg("Roi Unknown Plan Org");
     const data = await getRoiData(org.id, "not-a-real-plan");
     expect(data.planCost).toBe(299);
+  });
+  it("converts MXN opportunities to USD with MXN_PER_USD before comparing against the plan price", async () => {
+    vi.stubEnv("MXN_PER_USD", "20");
+    org = await createTestOrg("Roi Mxn Org");
+    const stages = await createTestPipelineStages(org.id);
+    const wonStage = stages.find((s) => s.isWon)!;
+    const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "Roi Lead" } });
+
+    await prisma.opportunity.create({
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Pesos", amount: 20000, currency: "MXN", closedAt: new Date() },
+    });
+    await prisma.opportunity.create({
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Dólares", amount: 500, currency: "USD", closedAt: new Date() },
+    });
+
+    const data = await getRoiData(org.id, "starter");
+    // $20,000 MXN / 20 = $1,000 USD, más $500 USD.
+    expect(data.last30Revenue).toBe(1500);
+    expect(data.totalWonOpportunities).toBe(2);
+    expect(data.mxnPerUsd).toBe(20);
+    expect(data.unconvertedOpportunities).toBe(0);
+    expect(data.roi).toBe(Math.round(((1500 - 299) / 299) * 100));
+  });
+
+  it("leaves MXN opportunities out of the totals, and reports them, when MXN_PER_USD is not configured", async () => {
+    vi.stubEnv("MXN_PER_USD", "");
+    org = await createTestOrg("Roi No Rate Org");
+    const stages = await createTestPipelineStages(org.id);
+    const wonStage = stages.find((s) => s.isWon)!;
+    const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "Roi Lead" } });
+
+    await prisma.opportunity.create({
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Pesos", amount: 20000, currency: "MXN", closedAt: new Date() },
+    });
+    await prisma.opportunity.create({
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Dólares", amount: 500, currency: "USD", closedAt: new Date() },
+    });
+
+    const data = await getRoiData(org.id, "starter");
+    expect(data.last30Revenue).toBe(500);
+    expect(data.totalWonOpportunities).toBe(1);
+    expect(data.mxnPerUsd).toBeNull();
+    expect(data.unconvertedOpportunities).toBe(1);
   });
 });

@@ -11,6 +11,7 @@ import { logAudit } from "@/lib/audit";
 import { triggerN8nWorkflow } from "@/lib/n8n";
 import { recordMetric, METRIC_KEYS } from "@/lib/metrics";
 import type { UserRole } from "@prisma/client";
+import { appUrl } from "@/lib/app-url";
 
 async function requireOrgAndWhatsapp() {
   const session = await auth();
@@ -38,7 +39,7 @@ export async function escalateConversation(conversationId: string) {
   });
   await recordMetric(session.user.organizationId, METRIC_KEYS.CONVERSATIONS_ESCALATED);
 
-  const adminUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin/escalations`;
+  const adminUrl = appUrl("/admin/escalations");
   const email = escalationAlertEmail(conv.organization.name, conv.contactName ?? conv.contactPhone ?? "Un contacto", adminUrl);
   await notifyAdmins(email);
 

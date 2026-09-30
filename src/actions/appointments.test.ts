@@ -5,9 +5,14 @@ import { createTestOrg, createTestUser, fakeSession, cleanupOrg } from "@/test/h
 import { toLocalDayAndMinute } from "@/lib/availability";
 import { monthPeriod, METRIC_KEYS } from "@/lib/metrics";
 
-/** Finds the next UTC instant whose America/Mexico_City local time is `localHour`:00 on the given local weekday. */
+/**
+ * Finds the next UTC instant whose America/Mexico_City local time is `localHour`:00 on the given local weekday,
+ * starting 60 days out: the other tests book at "now + N hours" (up to ~25 days ahead), so searching from
+ * tomorrow made the result depend on the time of day the suite ran — some runs landed on the same slot
+ * as another test's appointment and failed with "ocupado".
+ */
 function nextLocalDateTime(dayOfWeek: number, localHour: number): Date {
-  const candidate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const candidate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
   candidate.setUTCHours(localHour + 6, 0, 0, 0); // America/Mexico_City is UTC-6 year-round
   for (let i = 0; i < 8; i++) {
     if (toLocalDayAndMinute(candidate, "America/Mexico_City").dayOfWeek === dayOfWeek) return candidate;
@@ -199,14 +204,17 @@ describe("appointments actions", () => {
       await prisma.availabilityRule.create({ data: { organizationId: org.id, dayOfWeek: 1, startMinute: 9 * 60, endMinute: 12 * 60 } });
 
       // Next local Monday at 20:00 — outside the 09:00-12:00 window.
-      const start = nextLocalDateTime(1, 20);
-      const end = new Date(start.getTime() + 30 * 60 * 1000);
+      try {
+        const start = nextLocalDateTime(1, 20);
+        const end = new Date(start.getTime() + 30 * 60 * 1000);
 
-      await expect(
-        createAppointment({ title: "Fuera de horario", startTime: start.toISOString(), endTime: end.toISOString() })
-      ).rejects.toThrow(/disponibilidad/);
-
-      await prisma.availabilityRule.deleteMany({ where: { organizationId: org.id } });
+        await expect(
+          createAppointment({ title: "Fuera de horario", startTime: start.toISOString(), endTime: end.toISOString() })
+        ).rejects.toThrow(/disponibilidad/);
+      } finally {
+        // Siempre se borra: si la regla sobrevive a una falla, las pruebas siguientes quedan fuera de horario.
+        await prisma.availabilityRule.deleteMany({ where: { organizationId: org.id } });
+      }
     });
 
     it("allows a booking inside the organization's configured hours", async () => {
@@ -214,13 +222,15 @@ describe("appointments actions", () => {
       await prisma.availabilityRule.create({ data: { organizationId: org.id, dayOfWeek: 1, startMinute: 9 * 60, endMinute: 12 * 60 } });
 
       // Next local Monday at 10:00 — inside the 09:00-12:00 window.
-      const start = nextLocalDateTime(1, 10);
-      const end = new Date(start.getTime() + 30 * 60 * 1000);
+      try {
+        const start = nextLocalDateTime(1, 10);
+        const end = new Date(start.getTime() + 30 * 60 * 1000);
 
-      const result = await createAppointment({ title: "Dentro de horario", startTime: start.toISOString(), endTime: end.toISOString() });
-      expect(result.success).toBe(true);
-
-      await prisma.availabilityRule.deleteMany({ where: { organizationId: org.id } });
+        const result = await createAppointment({ title: "Dentro de horario", startTime: start.toISOString(), endTime: end.toISOString() });
+        expect(result.success).toBe(true);
+      } finally {
+        await prisma.availabilityRule.deleteMany({ where: { organizationId: org.id } });
+      }
     });
   });
 

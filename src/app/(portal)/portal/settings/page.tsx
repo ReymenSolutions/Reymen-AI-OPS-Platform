@@ -14,7 +14,7 @@ import { BillingActions } from "@/components/portal/BillingActions";
 import { PipelineStagesPanel } from "@/components/portal/PipelineStagesPanel";
 import { formatDate } from "@/lib/utils";
 import { can } from "@/lib/permissions";
-import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES, isUnlimited } from "@/lib/permissions";
 import { getModuleLabel } from "@/lib/modules";
 import { isStripeConfigured } from "@/lib/stripe";
 import type { UserRole } from "@prisma/client";
@@ -88,9 +88,9 @@ export default async function PortalSettingsPage() {
             </div>
             <div className="space-y-2">
               {[
-                { label: t.includedLeads, value: plan.leads >= 99999 ? t.unlimited : plan.leads.toLocaleString("en-US") },
-                { label: t.users, value: plan.users >= 99 ? t.unlimited : plan.users },
-                { label: t.automations, value: plan.automations >= 99 ? t.unlimitedF : plan.automations },
+                { label: t.includedLeads, value: isUnlimited(plan.leads) ? t.unlimited : plan.leads.toLocaleString("en-US") },
+                { label: t.users, value: isUnlimited(plan.users) ? t.unlimited : plan.users },
+                { label: t.automations, value: isUnlimited(plan.automations) ? t.unlimitedF : plan.automations },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between text-sm">
                   <span className="text-slate-500">{label}</span>

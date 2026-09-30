@@ -115,4 +115,23 @@ describe("assertPlanCapacity", () => {
 
     await expect(assertPlanCapacity(org.id, "leads")).resolves.toBeUndefined();
   });
+
+  // Enterprise antes tenía un tope escondido de 99 usuarios/automatizaciones
+  // (y 99999 leads) aunque la pantalla dijera "Ilimitado".
+  it("never blocks an enterprise org, even past the old hidden cap of 99 users", async () => {
+    org = await createTestOrg("Plan Limits Org");
+    await prisma.organization.update({ where: { id: org.id }, data: { plan: "enterprise" } });
+
+    await prisma.user.createMany({
+      data: Array.from({ length: 100 }, (_, i) => ({
+        organizationId: org.id,
+        email: `ent-${i}-${Date.now()}@test.local`,
+        name: `User ${i}`,
+        role: "AGENT" as const,
+        passwordHash: "unused",
+      })),
+    });
+
+    await expect(assertPlanCapacity(org.id, "users")).resolves.toBeUndefined();
+  });
 });

@@ -7,6 +7,7 @@ import { auth, isAdmin } from "@/lib/auth";
 import { notifyAdmins } from "@/lib/admin-notifications";
 import { newClientRequestEmail } from "@/lib/email-templates";
 import type { RequestStatus } from "@prisma/client";
+import { appUrl } from "@/lib/app-url";
 
 const createRequestSchema = z.object({
   title: z.string().min(1),
@@ -38,7 +39,7 @@ export async function createRequest(formData: FormData) {
     prisma.organization.findUnique({ where: { id: session.user.organizationId }, select: { name: true } }),
   ]);
 
-  const adminUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin/requests`;
+  const adminUrl = appUrl("/admin/requests");
   const email = newClientRequestEmail(org?.name ?? "un cliente", parsed.data.title, adminUrl);
   await notifyAdmins(email);
 

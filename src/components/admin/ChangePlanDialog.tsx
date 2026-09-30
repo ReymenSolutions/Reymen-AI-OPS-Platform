@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { changePlan } from "@/actions/admin/clients";
-import { PLAN_LIMITS, PLAN_MODULES } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES, PLAN_PRICES, isUnlimited } from "@/lib/permissions";
 import { getModuleLabel } from "@/lib/modules";
 import { usePreferences } from "@/context/preferences";
 
@@ -20,19 +20,16 @@ interface ChangePlanDialogProps {
 const PLANS = [
   {
     key: "starter",
-    price: "$299 USD/mo",
     color: "border-slate-200",
     badge: "bg-slate-100 text-slate-700",
   },
   {
     key: "professional",
-    price: "$699 USD/mo",
     color: "border-brand-300",
     badge: "bg-brand-100 text-brand-700",
   },
   {
     key: "enterprise",
-    price: "custom",
     color: "border-amber-300",
     badge: "bg-amber-100 text-amber-700",
   },
@@ -76,7 +73,8 @@ export function ChangePlanDialog({ orgId, currentPlan }: ChangePlanDialogProps) 
           {PLANS.map((plan) => {
             const limits = PLAN_LIMITS[plan.key];
             const isSelected = selected === plan.key;
-            const price = plan.key === "enterprise" ? (lang === "es" ? "Personalizado" : "Custom") : (lang === "es" ? plan.price.replace("/mo", "/mes") : plan.price);
+            // Mismo precio que usa el ROI (PLAN_PRICES), no una copia propia.
+            const price = `$${(PLAN_PRICES[plan.key] ?? 0).toLocaleString("en-US")} USD/${lang === "es" ? "mes" : "mo"}`;
             return (
               <button
                 key={plan.key}
@@ -95,9 +93,9 @@ export function ChangePlanDialog({ orgId, currentPlan }: ChangePlanDialogProps) 
                   {isSelected && <Check className="h-4 w-4 text-brand-600" />}
                 </div>
                 <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-                  <span>{limits?.leads.toLocaleString("en-US")} leads</span>
-                  <span>{limits?.users === 99 ? (lang === "es" ? "Ilimitado" : "Unlimited") : limits?.users} {lang === "es" ? "usuarios" : "users"}</span>
-                  <span>{limits?.automations === 99 ? (lang === "es" ? "Ilimitadas" : "Unlimited") : limits?.automations} {lang === "es" ? "automatizaciones" : "automations"}</span>
+                  <span>{limits && isUnlimited(limits.leads) ? (lang === "es" ? "Ilimitados" : "Unlimited") : limits?.leads.toLocaleString("en-US")} leads</span>
+                  <span>{limits && isUnlimited(limits.users) ? (lang === "es" ? "Ilimitado" : "Unlimited") : limits?.users} {lang === "es" ? "usuarios" : "users"}</span>
+                  <span>{limits && isUnlimited(limits.automations) ? (lang === "es" ? "Ilimitadas" : "Unlimited") : limits?.automations} {lang === "es" ? "automatizaciones" : "automations"}</span>
                 </div>
                 <p className="mt-1.5 text-xs text-slate-400">
                   {lang === "es" ? "Incluye" : "Includes"}: {(PLAN_MODULES[plan.key] ?? []).map((m) => MODULE_LABEL[m]).join(", ")}
