@@ -60,13 +60,10 @@ export const authConfig = {
         try {
           const { cookies } = await import("next/headers");
           const cookieStore = await cookies();
-          const raw = cookieStore.get("reymen-impersonate")?.value;
-          if (raw) {
-            const imp = JSON.parse(raw) as {
-              adminId: string; adminName: string | null; adminEmail: string;
-              targetUserId: string; targetName: string | null; targetEmail: string;
-              targetImage: string | null; targetRole: string; targetOrgId: string;
-            };
+          const { IMPERSONATION_COOKIE, decodeImpersonationCookie } = await import("./impersonation-cookie");
+          // Firmada por el servidor: una cookie editada a mano no se acepta.
+          const imp = await decodeImpersonationCookie(cookieStore.get(IMPERSONATION_COOKIE)?.value);
+          if (imp) {
             if (imp.adminId === (token.id as string)) {
               session.user.id = imp.targetUserId;
               session.user.name = imp.targetName;

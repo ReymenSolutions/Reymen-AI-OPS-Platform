@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/lib/auth.config";
+import { IMPERSONATION_COOKIE, decodeImpersonationCookie } from "@/lib/impersonation-cookie";
 
 // Middleware runs on every request, so it uses the edge-safe config alone
 // (no Credentials provider, no PrismaAdapter) instead of importing the full
@@ -9,7 +10,7 @@ import { authConfig } from "@/lib/auth.config";
 // ever reads the already-issued JWT, it never signs in.
 const { auth } = NextAuth(authConfig);
 
-export default auth((req) => {
+export default auth(async (req) => {
   const { pathname } = req.nextUrl;
   const session = req.auth;
 
@@ -50,14 +51,9 @@ export default auth((req) => {
 
   // Portal routes require an organization (or an active impersonation)
   if (isPortalRoute && !session.user.organizationId) {
-    const impersonateCookie = req.cookies.get("reymen-impersonate");
-    if (impersonateCookie?.value) {
-      try {
-        const imp = JSON.parse(impersonateCookie.value) as { adminId: string; targetOrgId: string };
-        if (imp.adminId === session.user.id && imp.targetOrgId) {
-          return NextResponse.next();
-        }
-      } catch {}
+    const imp = await decodeImpersonationCookie(req.cookies.get(IMPERSONATION_COOKIE)?.value);
+    if (imp && imp.adminId === session.user.id && imp.targetOrgId) {
+      return NextResponse.next();
     }
     return NextResponse.redirect(new URL("/login", req.url));
   }

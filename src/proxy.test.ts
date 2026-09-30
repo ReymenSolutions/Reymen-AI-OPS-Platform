@@ -23,24 +23,24 @@ function makeReq(pathname: string, session: unknown = null) {
 }
 
 describe("middleware", () => {
-  it("CRITICAL: does not redirect /api/v1/* pull routes even with no session (n8n authenticates itself via X-Api-Key)", () => {
-    const res = middleware(makeReq("/api/v1/leads/due-followups"), {} as never) as Response;
+  it("CRITICAL: does not redirect /api/v1/* pull routes even with no session (n8n authenticates itself via X-Api-Key)", async () => {
+    const res = (await middleware(makeReq("/api/v1/leads/due-followups"), {} as never)) as Response;
     expect(res.status).not.toBe(307);
   });
 
-  it("does not redirect /api/webhooks/* even with no session", () => {
-    const res = middleware(makeReq("/api/webhooks/n8n/followup-sent"), {} as never) as Response;
+  it("does not redirect /api/webhooks/* even with no session", async () => {
+    const res = (await middleware(makeReq("/api/webhooks/n8n/followup-sent"), {} as never)) as Response;
     expect(res.status).not.toBe(307);
   });
 
-  it("still redirects /portal/* to /login when there is no session", () => {
-    const res = middleware(makeReq("/portal/leads"), {} as never) as Response;
+  it("still redirects /portal/* to /login when there is no session", async () => {
+    const res = (await middleware(makeReq("/portal/leads"), {} as never)) as Response;
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/login");
   });
 
-  it("still redirects /admin/* to /login when there is no session", () => {
-    const res = middleware(makeReq("/admin/clients"), {} as never) as Response;
+  it("still redirects /admin/* to /login when there is no session", async () => {
+    const res = (await middleware(makeReq("/admin/clients"), {} as never)) as Response;
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/login");
   });

@@ -3,6 +3,9 @@
 import { auth, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
+import {
+  IMPERSONATION_COOKIE, IMPERSONATION_MAX_AGE, encodeImpersonationCookie, decodeImpersonationCookie,
+} from "@/lib/impersonation-cookie";
 import type { UserRole } from "@prisma/client";
 
 export type PortalUser = {
@@ -54,7 +57,7 @@ export async function startImpersonation(targetUserId: string): Promise<void> {
   if (isAdmin(target.role as UserRole)) throw new Error("Cannot impersonate admin users");
 
   const cookieStore = await cookies();
-  cookieStore.set("reymen-impersonate", JSON.stringify({
+  cookieStore.set(IMPERSONATION_COOKIE, await encodeImpersonationCookie({
     adminId: session.user.id,
     adminName: session.user.name ?? null,
     adminEmail: session.user.email ?? "",
@@ -68,7 +71,7 @@ export async function startImpersonation(targetUserId: string): Promise<void> {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 8,
+    maxAge: IMPERSONATION_MAX_AGE,
     sameSite: "lax",
   });
 }
@@ -77,20 +80,22 @@ export async function stopImpersonation(): Promise<void> {
   const session = await auth();
   if (!session?.user) throw new Error("Not authenticated");
   const cookieStore = await cookies();
-  cookieStore.delete("reymen-impersonate");
+  cookieStore.delete(IMPERSONATION_COOKIE);
 }
 
 export async function refreshImpersonationImage(newImage: string | null): Promise<void> {
+  // Solo el admin que está impersonando puede renovar su propia cookie.
+  const session = await auth();
+  if (!session?.user.impersonating) return;
   const cookieStore = await cookies();
-  const raw = cookieStore.get("reymen-impersonate")?.value;
-  if (!raw) return;
-  const imp = JSON.parse(raw);
+  const imp = await decodeImpersonationCookie(cookieStore.get(IMPERSONATION_COOKIE)?.value);
+  if (!imp || imp.adminId !== session.user.impersonating.adminId) return;
   imp.targetImage = newImage;
-  cookieStore.set("reymen-impersonate", JSON.stringify(imp), {
+  cookieStore.set(IMPERSONATION_COOKIE, await encodeImpersonationCookie(imp), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 8,
+    maxAge: IMPERSONATION_MAX_AGE,
     sameSite: "lax",
   });
 }

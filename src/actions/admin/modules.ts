@@ -107,6 +107,11 @@ const ALL_MODULES: PlatformModule[] = ["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC
 
 /** Every module's current state for an org, including ones with no row yet (shown as not-enabled). */
 export async function getOrganizationModules(orgId: string): Promise<ModuleEntitlementView[]> {
+  // Es una acción de servidor (endpoint público): sin esta revisión cualquiera
+  // podía leer los módulos de cualquier organización, notas de admin incluidas.
+  const session = await auth();
+  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+
   const rows = await prisma.organizationModule.findMany({ where: { organizationId: orgId } });
   const byModule = new Map(rows.map((r) => [r.module, r]));
 
