@@ -4,6 +4,7 @@ import { notifyAdmins } from "./admin-notifications";
 import { automationFailureEmail } from "./email-templates";
 import { assertPlanCapacity } from "./plan-limits";
 import { recordMetric, METRIC_KEYS } from "./metrics";
+import { appUrl } from "./app-url";
 
 /**
  * Processing logic for each n8n webhook event type, shared between the
@@ -237,7 +238,7 @@ export async function processAutomationEvent(payload: unknown, orgId: string): P
       include: { organization: { select: { name: true } } },
     });
 
-    const adminUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin/automations`;
+    const adminUrl = appUrl("/admin/automations");
     const email = automationFailureEmail(automation.organization.name, automation.name, adminUrl);
     await notifyAdmins(email);
   }

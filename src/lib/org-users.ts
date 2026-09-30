@@ -5,6 +5,7 @@ import { logAudit } from "./audit";
 import { sendEmail } from "./email";
 import { teamInviteEmail } from "./email-templates";
 import { assertPlanCapacity } from "./plan-limits";
+import { appUrl } from "./app-url";
 
 // ─── Alta de un usuario dentro de una organización ───────────────────
 // Único camino para crear un usuario de cliente, lo use el panel de admin
@@ -52,7 +53,7 @@ export async function createOrgUserRecord(input: {
     metadata: { email: user.email, role: user.role },
   });
 
-  const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/login`;
+  const loginUrl = appUrl("/login");
   const email = teamInviteEmail(org?.name ?? "tu organización", loginUrl);
   sendEmail({ to: user.email, subject: email.subject, html: email.html, text: email.text }).catch(() => {});
 

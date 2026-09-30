@@ -8,6 +8,7 @@ import { sendEmail } from "@/lib/email";
 import { passwordResetEmail } from "@/lib/email-templates";
 import { logAudit } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { appUrl } from "@/lib/app-url";
 
 const RESET_TOKEN_TTL_MINUTES = 30;
 
@@ -46,7 +47,7 @@ export async function requestPasswordReset(email: string): Promise<{ success: tr
       }),
     ]);
 
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
+    const resetUrl = appUrl(`/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`);
     const email = passwordResetEmail(resetUrl, RESET_TOKEN_TTL_MINUTES);
     await sendEmail({ to: user.email, subject: email.subject, html: email.html, text: email.text });
 
