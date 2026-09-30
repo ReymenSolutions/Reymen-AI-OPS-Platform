@@ -260,6 +260,8 @@ export interface FoodDishVariantWithCost {
   // entre cero en vez de mostrar un porcentaje sin sentido.
   marginPct: number | null;
   ingredients: FoodDishIngredientLine[];
+  /** false solo si se pidieron las desactivadas (includeInactiveVariants). */
+  isActive: boolean;
   // "Berry Bloom — Grande", o solo "Café Americano" cuando el platillo
   // tiene una única variante con el label por defecto -- para no mostrar
   // "Café Americano — Único" en ningún lado de la UI.
@@ -278,7 +280,11 @@ export interface FoodDishWithCost {
 
 export async function getFoodDishesWithCost(
   organizationId: string,
-  opts: { activeOnly?: boolean } = {}
+  opts: {
+    activeOnly?: boolean;
+    /** Incluye variantes desactivadas: para costear o nombrar ventas que ya ocurrieron. */
+    includeInactiveVariants?: boolean;
+  } = {}
 ): Promise<FoodDishWithCost[]> {
   const dishes = await prisma.foodDish.findMany({
     where: { organizationId, ...(opts.activeOnly ? { isActive: true } : {}) },
@@ -286,6 +292,7 @@ export async function getFoodDishesWithCost(
       category: { select: { id: true, name: true } },
       modifierGroups: { select: { groupId: true } },
       variants: {
+        where: opts.includeInactiveVariants ? {} : { isActive: true },
         include: {
           ingredients: {
             include: { inventoryItem: { select: { name: true, unit: true, unitCost: true } } },
@@ -298,7 +305,8 @@ export async function getFoodDishesWithCost(
   });
 
   return dishes.map((d) => {
-    const singleDefaultVariant = d.variants.length === 1 && d.variants[0].label === DEFAULT_VARIANT_LABEL;
+    const activeVariants = d.variants.filter((v) => v.isActive);
+    const singleDefaultVariant = activeVariants.length === 1 && activeVariants[0].label === DEFAULT_VARIANT_LABEL;
     const variants: FoodDishVariantWithCost[] = d.variants.map((v) => {
       const ingredients: FoodDishIngredientLine[] = v.ingredients.map((i) => {
         const unitCost = Number(i.inventoryItem.unitCost ?? 0);
@@ -325,6 +333,7 @@ export async function getFoodDishesWithCost(
         marginAmount,
         marginPct,
         ingredients,
+        isActive: v.isActive,
         displayName: singleDefaultVariant ? d.name : `${d.name} — ${v.label}`,
       };
     });
@@ -426,6 +435,7 @@ export async function getFoodMenuForPos(organizationId: string): Promise<FoodMen
       name: true,
       category: { select: { id: true, name: true } },
       variants: {
+        where: { isActive: true },
         select: { id: true, label: true, price: true, externalPosId: true, ingredients: { select: STOCK_LINE_SELECT } },
         orderBy: { label: "asc" },
       },
@@ -439,6 +449,7 @@ export async function getFoodMenuForPos(organizationId: string): Promise<FoodMen
               maxSelect: true,
               sortOrder: true,
               options: {
+                where: { isActive: true },
                 select: { id: true, name: true, priceDelta: true, ingredients: { select: STOCK_LINE_SELECT } },
                 orderBy: { sortOrder: "asc" },
               },
@@ -550,6 +561,7 @@ export async function getFoodModifierGroups(organizationId: string): Promise<Foo
     orderBy: { sortOrder: "asc" },
     include: {
       options: {
+        where: { isActive: true },
         orderBy: { sortOrder: "asc" },
         include: { ingredients: { include: { inventoryItem: { select: { unitCost: true } } } } },
       },
@@ -729,7 +741,7 @@ export async function getFoodNetProfit(organizationId: string, period: FoodProfi
       where: { organizationId, occurredAt: { gte: from } },
       _sum: { quantity: true },
     }),
-    getFoodDishesWithCost(organizationId, { activeOnly: true }),
+    getFoodDishesWithCost(organizationId, { activeOnly: true, includeInactiveVariants: true }),
     getTotalMonthlyFixedCosts(organizationId),
     prisma.foodModifierOptionSale.groupBy({
       by: ["optionId"],
@@ -747,7 +759,7 @@ export async function getFoodNetProfit(organizationId: string, period: FoodProfi
     const variant = variantById.get(row.variantId);
     if (!variant) continue;
     cogs += variant.cost * (row._sum.quantity ?? 0);
-    variantsWithSalesIds.add(row.variantId);
+    if (variant.isActive) variantsWithSalesIds.add(row.variantId);
   }
   // Los extras con receta ("Extra queso") también cuestan; "Sin ..." resta.
   for (const row of optionSales) cogs += (optionCosts.get(row.optionId) ?? 0) * (row._sum.quantity ?? 0);
@@ -762,7 +774,7 @@ export async function getFoodNetProfit(organizationId: string, period: FoodProfi
     cogs: Math.round(cogs * 100) / 100,
     fixedCostsProrated,
     netProfit,
-    coverage: { itemsWithSales: variantsWithSalesIds.size, totalActiveItems: variants.length },
+    coverage: { itemsWithSales: variantsWithSalesIds.size, totalActiveItems: variants.filter((v) => v.isActive).length },
   };
 }
 
@@ -973,7 +985,7 @@ export async function getFoodTopSellingDishes(organizationId: string, days = 30,
   });
   if (salesRows.length === 0) return [];
 
-  const variants = flattenVariants(await getFoodDishesWithCost(organizationId));
+  const variants = flattenVariants(await getFoodDishesWithCost(organizationId, { includeInactiveVariants: true }));
   const variantById = new Map(variants.map((v) => [v.id, v]));
 
   return salesRows

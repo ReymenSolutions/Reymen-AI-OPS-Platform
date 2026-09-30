@@ -377,7 +377,23 @@ export async function updateFoodDish(dishId: string, data: DishInput) {
       parsed.data.variants.map((v) => ({ id: v.variantId, name: v.label })),
       existing.map((v) => ({ id: v.id, name: v.label }))
     );
-    await tx.foodDishVariant.deleteMany({ where: { dishId, id: { notIn: keep } } });
+    // Lo que se quitó del formulario: se borra si nunca se vendió; si ya tiene
+    // ventas o consumo registrado se desactiva, para no perder ese historial.
+    const removed = existing.filter((v) => !keep.includes(v.id));
+    const incomingLabels = new Set(parsed.data.variants.map((v) => v.label.trim().toLowerCase()));
+    for (const v of removed) {
+      const [sales, usages] = await Promise.all([
+        tx.foodDishSale.count({ where: { variantId: v.id } }),
+        tx.foodRecipeUsage.count({ where: { variantId: v.id } }),
+      ]);
+      if (sales === 0 && usages === 0) {
+        await tx.foodDishVariant.delete({ where: { id: v.id } });
+      } else {
+        // Si su nombre lo ocupa ahora otra variante, se le cambia para no chocar con @@unique([dishId, label]).
+        const label = incomingLabels.has(v.label.trim().toLowerCase()) ? `${v.label} (anterior ${v.id.slice(-4)})` : v.label;
+        await tx.foodDishVariant.update({ where: { id: v.id }, data: { isActive: false, label } });
+      }
+    }
     // Nombre temporal para poder intercambiar nombres sin chocar con @@unique([dishId, label]).
     for (const id of keep) await tx.foodDishVariant.update({ where: { id }, data: { label: `__${id}` } });
 
@@ -388,7 +404,8 @@ export async function updateFoodDish(dishId: string, data: DishInput) {
         await tx.foodDishVariantIngredient.deleteMany({ where: { variantId: target } });
         await tx.foodDishVariant.update({
           where: { id: target },
-          data: { label: v.label, price: v.price, ingredients: { create: ingredients } },
+          // Volver a agregar una variante desactivada (mismo nombre) la reactiva.
+          data: { label: v.label, price: v.price, isActive: true, ingredients: { create: ingredients } },
         });
       } else {
         await tx.foodDishVariant.create({
@@ -628,14 +645,22 @@ export async function updateFoodModifierGroup(groupId: string, data: ModifierGro
       parsed.data.options.map((o) => ({ id: o.optionId, name: o.name })),
       existing
     );
-    await tx.foodModifierOption.deleteMany({ where: { groupId, id: { notIn: keep } } });
+    // Igual que con las variantes: con ventas o consumo se desactiva, sin ellos se borra.
+    for (const o of existing.filter((e) => !keep.includes(e.id))) {
+      const [sales, usages] = await Promise.all([
+        tx.foodModifierOptionSale.count({ where: { optionId: o.id } }),
+        tx.foodRecipeUsage.count({ where: { modifierOptionId: o.id } }),
+      ]);
+      if (sales === 0 && usages === 0) await tx.foodModifierOption.delete({ where: { id: o.id } });
+      else await tx.foodModifierOption.update({ where: { id: o.id }, data: { isActive: false } });
+    }
     for (const [idx, o] of parsed.data.options.entries()) {
       const target = targets[idx];
       if (target) {
         await tx.foodModifierOptionIngredient.deleteMany({ where: { optionId: target } });
         await tx.foodModifierOption.update({
           where: { id: target },
-          data: { name: o.name, priceDelta: o.priceDelta, sortOrder: idx, ingredients: { create: optionIngredients(o) } },
+          data: { name: o.name, priceDelta: o.priceDelta, sortOrder: idx, isActive: true, ingredients: { create: optionIngredients(o) } },
         });
       } else {
         await tx.foodModifierOption.create({
