@@ -2,11 +2,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { createTestOrg, cleanupOrg, fakeSession } from "@/test/helpers";
 
-// STRIPE_PRICE_ENTERPRISE is deliberately left unset in this isolated file —
+// STRIPE_PRICE_PROFESSIONAL is deliberately left unset in this isolated file —
 // src/lib/stripe.ts reads its price-id env vars once at module load, so this
 // scenario needs its own module graph rather than sharing billing.test.ts's.
+// (Enterprise ya no se cobra en línea: su precio se pacta por cliente.)
 vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_dummy");
-vi.stubEnv("STRIPE_PRICE_PROFESSIONAL", "price_pro_123");
+vi.stubEnv("STRIPE_PRICE_PROFESSIONAL", "");
 
 const authMock = vi.fn();
 vi.mock("@/lib/auth", () => ({ auth: () => authMock() }));
@@ -24,7 +25,7 @@ describe("createCheckoutSession with an unconfigured plan price", () => {
     const org = await createTestOrg("Missing Price Org");
     authMock.mockResolvedValue(fakeSession({ id: "u1", role: "OWNER", organizationId: org.id }));
 
-    await expect(createCheckoutSession("enterprise")).rejects.toThrow(/precio de stripe/i);
+    await expect(createCheckoutSession("professional")).rejects.toThrow(/precio de stripe/i);
 
     await cleanupOrg(org.id);
   });

@@ -60,11 +60,14 @@ describe("billing actions", () => {
     expect(updated.stripeCustomerId).toBe("cus_new_123");
 
     // Second call must not create a second Stripe customer.
-    await createCheckoutSession("enterprise");
+    await createCheckoutSession("professional");
     expect(customersCreate).toHaveBeenCalledTimes(1);
-    expect(checkoutSessionsCreate).toHaveBeenLastCalledWith(
-      expect.objectContaining({ line_items: [{ price: "price_ent_456", quantity: 1 }] })
-    );
+    expect(checkoutSessionsCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses an online checkout for Enterprise, which is quoted per client", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: "u1", role: "OWNER", organizationId: org.id }));
+    await expect(createCheckoutSession("enterprise" as "professional")).rejects.toThrow(/cotización/);
   });
 
   it("opens the billing portal only once a Stripe customer exists", async () => {

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { auth, isAdmin } from "@/lib/auth";
 import { generateSlug, generateWebhookSecret } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
+import { hasCustomPrice } from "@/lib/permissions";
 
 const createClientSchema = z.object({
   orgName: z.string().min(2),
@@ -80,16 +81,23 @@ export async function createClient(formData: FormData) {
   return { success: true, orgId: org.id };
 }
 
-export async function changePlan(orgId: string, plan: string) {
+export async function changePlan(orgId: string, plan: string, customMonthlyPriceUsd: number | null = null) {
   const session = await auth();
   if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
 
   const validPlans = ["starter", "professional", "enterprise"];
   if (!validPlans.includes(plan)) throw new Error("Plan inválido");
 
+  // El precio pactado solo existe en planes de precio personalizado; al pasar
+  // a un plan de precio fijo se borra para no dejar un precio viejo colgando.
+  const customPrice = hasCustomPrice(plan) ? customMonthlyPriceUsd : null;
+  if (customPrice !== null && !(Number.isFinite(customPrice) && customPrice > 0)) {
+    throw new Error("El precio personalizado debe ser mayor a 0");
+  }
+
   const org = await prisma.organization.update({
     where: { id: orgId },
-    data: { plan },
+    data: { plan, customMonthlyPriceUsd: customPrice },
   });
 
   await logAudit({
@@ -98,7 +106,7 @@ export async function changePlan(orgId: string, plan: string) {
     action: "client.plan_change",
     resource: "Organization",
     resourceId: orgId,
-    metadata: { newPlan: plan },
+    metadata: { newPlan: plan, customMonthlyPriceUsd: customPrice },
   });
 
   revalidatePath(`/admin/clients/${orgId}`);

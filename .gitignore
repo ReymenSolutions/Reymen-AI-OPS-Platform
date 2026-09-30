@@ -39,3 +39,6 @@ next-env.d.ts
 
 # prisma
 /prisma/dev.db
+
+# Respaldos de la base que genera deploy/update.sh antes de migrar
+/backups/

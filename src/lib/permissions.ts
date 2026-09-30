@@ -99,12 +99,23 @@ export const PLAN_LIMITS: Record<string, { leads: number; users: number; automat
 // Monthly subscription cost per plan, in USD. The single source of truth for
 // what a client actually pays — used anywhere real cost needs to be compared
 // against real revenue (e.g. ROI reporting), instead of each caller hardcoding
-// its own price table.
-export const PLAN_PRICES: Record<string, number> = {
+// its own price table. null = precio personalizado por cliente: el monto real
+// vive en Organization.customMonthlyPriceUsd (lo captura un admin).
+export const PLAN_PRICES: Record<string, number | null> = {
   starter: 299,
   professional: 699,
-  enterprise: 1499,
+  enterprise: null,
 };
+
+export function hasCustomPrice(plan: string): boolean {
+  return PLAN_PRICES[plan] === null;
+}
+
+/** Precio mensual en USD de una organización, o null si su plan es personalizado y aún no tiene precio pactado. */
+export function getMonthlyPlanPrice(plan: string, customMonthlyPriceUsd: number | null): number | null {
+  if (!(plan in PLAN_PRICES)) return PLAN_PRICES.starter;
+  return hasCustomPrice(plan) ? customMonthlyPriceUsd : PLAN_PRICES[plan];
+}
 
 // Which PlatformModules each plan tier commercially includes — a catalog
 // reference only. It does NOT drive OrganizationModule automatically: the

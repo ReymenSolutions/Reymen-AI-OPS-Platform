@@ -17,6 +17,10 @@ model Organization {
   logoUrl                  String?
   isActive                 Boolean   @default(true)
   plan                     String    @default("starter")
+  // Precio mensual en USD pactado con este cliente. Solo aplica a planes de
+  // precio personalizado (Enterprise, PLAN_PRICES.enterprise = null); lo
+  // captura un admin al cambiar el plan. Null = aún sin precio pactado.
+  customMonthlyPriceUsd    Decimal?  @db.Decimal(10, 2)
   // IANA timezone name (e.g. "America/Mexico_City") — used to render
   // appointment times and to evaluate AvailabilityRule/reminder windows in
   // the org's local time rather than the server's.

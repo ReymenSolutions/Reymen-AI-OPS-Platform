@@ -33,11 +33,16 @@ async function getOrCreateStripeCustomer(orgId: string): Promise<string> {
 }
 
 /** Starts a Stripe Checkout session to subscribe the org to a paid plan. Returns the URL to redirect to. */
-export async function createCheckoutSession(plan: "professional" | "enterprise"): Promise<{ url: string }> {
+/**
+ * Solo Professional: Enterprise tiene precio pactado por cliente
+ * (Organization.customMonthlyPriceUsd), no un precio fijo de Stripe.
+ */
+export async function createCheckoutSession(plan: "professional"): Promise<{ url: string }> {
   const session = await requireBillingManager();
   const stripe = getStripeClient();
   if (!stripe) throw new Error("La facturación no está configurada");
 
+  if (plan !== "professional") throw new Error("Este plan se contrata con una cotización, no con pago en línea");
   const priceId = PLAN_PRICE_ENV[plan];
   if (!priceId) throw new Error(`No hay un precio de Stripe configurado para el plan ${plan}`);
 

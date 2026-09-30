@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { PLAN_PRICES } from "./permissions";
+import { getMonthlyPlanPrice } from "./permissions";
 import { toUsd } from "./currency";
 import { getMxnPerUsdRate, type ExchangeRateSource } from "./exchange-rate";
 
@@ -10,7 +10,8 @@ export interface RoiData {
   avgDealValue: number;
   last30WonOpportunities: number;
   last30Revenue: number;
-  planCost: number;
+  /** null = plan de precio personalizado todavía sin precio pactado. */
+  planCost: number | null;
   /** Pesos por dólar usados para convertir los montos en MXN, o null si no hubo tipo de cambio disponible. */
   mxnPerUsd: number | null;
   rateSource: ExchangeRateSource | null;
@@ -84,7 +85,12 @@ export async function getRoiData(organizationId: string, plan: string): Promise<
   const totalRevenue = totals.revenue;
   const last30WonOpportunities = last30.count;
   const last30Revenue = last30.revenue;
-  const planCost = PLAN_PRICES[plan] ?? PLAN_PRICES.starter;
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { customMonthlyPriceUsd: true },
+  });
+  const customPrice = org?.customMonthlyPriceUsd != null ? Number(org.customMonthlyPriceUsd) : null;
+  const planCost = getMonthlyPlanPrice(plan, customPrice);
 
   return {
     hasWonDeals: totalWonOpportunities > 0,
@@ -98,6 +104,6 @@ export async function getRoiData(organizationId: string, plan: string): Promise<
     rateSource: rate?.source ?? null,
     rateDate: rate?.date ?? null,
     unconvertedOpportunities: totals.unconverted,
-    roi: planCost > 0 ? Math.round(((last30Revenue - planCost) / planCost) * 100) : null,
+    roi: planCost !== null && planCost > 0 ? Math.round(((last30Revenue - planCost) / planCost) * 100) : null,
   };
 }

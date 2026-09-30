@@ -84,14 +84,14 @@ export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
                 Ingresos últimos 30 días:{" "}
                 <span className="info-box-text text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
                 {" "}vs. tu plan {planLabel}:{" "}
-                <span className="info-box-text text-brand-700">${data.planCost.toLocaleString("en-US")} USD/mes</span>
+                <span className="info-box-text text-brand-700">{data.planCost !== null ? `$${data.planCost.toLocaleString("en-US")} USD/mes` : "precio personalizado aún sin capturar"}</span>
               </>
             ) : (
               <>
                 Revenue last 30 days:{" "}
                 <span className="info-box-text text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
                 {" "}vs. your {planLabel} plan:{" "}
-                <span className="info-box-text text-brand-700">${data.planCost.toLocaleString("en-US")} USD/mo</span>
+                <span className="info-box-text text-brand-700">{data.planCost !== null ? `$${data.planCost.toLocaleString("en-US")} USD/mo` : "custom price not set yet"}</span>
               </>
             )}
           </p>

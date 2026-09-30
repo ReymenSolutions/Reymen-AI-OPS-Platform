@@ -137,7 +137,11 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
               foodPosReadKey={client.foodPosReadKey}
               showFoodPosKey={hasModule("FOOD_OPS")}
             />
-            <ChangePlanDialog orgId={client.id} currentPlan={client.plan} />
+            <ChangePlanDialog
+              orgId={client.id}
+              currentPlan={client.plan}
+              currentCustomPrice={client.customMonthlyPriceUsd !== null ? Number(client.customMonthlyPriceUsd) : null}
+            />
             <ToggleClientStatusButton orgId={client.id} isActive={client.isActive} />
             <Badge variant={client.isActive ? "success" : "destructive"}>
               {client.isActive ? t.statusActive : t.inactive}

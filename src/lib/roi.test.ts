@@ -174,4 +174,23 @@ describe("getRoiData", () => {
     expect(data.rateSource).toBe("frankfurter");
     expect(data.rateDate).toBe("2026-09-29");
   });
+
+  it("uses the org's agreed price for a custom-priced plan, and reports no ROI until one is set", async () => {
+    org = await createTestOrg("Roi Custom Price Org");
+    const stages = await createTestPipelineStages(org.id);
+    const wonStage = stages.find((s) => s.isWon)!;
+    const lead = await prisma.lead.create({ data: { organizationId: org.id, name: "Roi Lead" } });
+    await prisma.opportunity.create({
+      data: { organizationId: org.id, leadId: lead.id, pipelineStageId: wonStage.id, title: "Win", amount: 3000, currency: "USD", closedAt: new Date() },
+    });
+
+    let data = await getRoiData(org.id, "enterprise");
+    expect(data.planCost).toBeNull();
+    expect(data.roi).toBeNull();
+
+    await prisma.organization.update({ where: { id: org.id }, data: { customMonthlyPriceUsd: 1500 } });
+    data = await getRoiData(org.id, "enterprise");
+    expect(data.planCost).toBe(1500);
+    expect(data.roi).toBe(100);
+  });
 });
