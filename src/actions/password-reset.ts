@@ -9,6 +9,7 @@ import { passwordResetEmail } from "@/lib/email-templates";
 import { logAudit } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { appUrl } from "@/lib/app-url";
+import { UserError } from "@/lib/user-error";
 
 const RESET_TOKEN_TTL_MINUTES = 30;
 
@@ -75,7 +76,7 @@ export async function resetPassword(data: {
   password: string;
 }): Promise<{ success: true }> {
   const parsed = resetSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   const tokenHash = hashToken(parsed.data.token);
   const verification = await prisma.verificationToken.findUnique({
@@ -83,11 +84,11 @@ export async function resetPassword(data: {
   });
 
   if (!verification || verification.expires < new Date()) {
-    throw new Error("El enlace de restablecimiento es inválido o ha expirado");
+    throw new UserError("El enlace de restablecimiento es inválido o ha expirado");
   }
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email, isActive: true } });
-  if (!user) throw new Error("El enlace de restablecimiento es inválido o ha expirado");
+  if (!user) throw new UserError("El enlace de restablecimiento es inválido o ha expirado");
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
 

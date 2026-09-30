@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
 import { generateWebhookSecret } from "@/lib/utils";
+import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const automationSchema = z.object({
   organizationId: z.string().min(1),
@@ -22,11 +23,6 @@ const updateSchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "ERROR", "ARCHIVED"]).optional(),
 });
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-  return session;
-}
 
 export async function createAutomation(data: {
   organizationId: string;
@@ -37,7 +33,7 @@ export async function createAutomation(data: {
 }) {
   await requireAdmin();
   const parsed = automationSchema.safeParse(data);
-  if (!parsed.success) throw new Error("Datos inválidos: " + parsed.error.errors[0].message);
+  if (!parsed.success) throw new UserError("Datos inválidos: " + parsed.error.errors[0].message);
 
   const automation = await prisma.automation.create({
     data: {
@@ -60,7 +56,7 @@ export async function updateAutomation(
 ) {
   await requireAdmin();
   const parsed = updateSchema.safeParse(data);
-  if (!parsed.success) throw new Error("Datos inválidos");
+  if (!parsed.success) throw new UserError("Datos inválidos");
 
   await prisma.automation.update({
     where: { id },

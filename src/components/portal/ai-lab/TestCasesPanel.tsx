@@ -19,6 +19,7 @@ import type { PromptTestCase, PromptTestCaseResult, PromptType } from "@prisma/c
 import type { PromptWithVersions } from "./AiLabWorkspace";
 import { versionOptionsForType } from "./version-options";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 type TestCaseWithResults = PromptTestCase & { results: PromptTestCaseResult[] };
 
@@ -68,7 +69,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
         setForm({ promptType: "SYSTEM", name: "", userMessage: "", expectedNotes: "" });
         toast.success(lang === "es" ? "Caso de prueba creado" : "Test case created");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear el caso de prueba" : "Error creating the test case"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear el caso de prueba" : "Error creating the test case")));
       }
     });
   }
@@ -78,7 +79,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
       await deleteTestCase(id);
       setTestCases((prev) => prev.filter((t) => t.id !== id));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al eliminar" : "Error deleting"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al eliminar" : "Error deleting")));
     }
   }
 
@@ -96,7 +97,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
         prev.map((t) => (t.id === testCase.id ? { ...t, results: [outcome.result, ...t.results].slice(0, 5) } : t))
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al ejecutar el caso de prueba" : "Error running the test case"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al ejecutar el caso de prueba" : "Error running the test case")));
     } finally {
       setRunningId(null);
     }
@@ -113,7 +114,7 @@ export function TestCasesPanel({ prompts, initialTestCases }: TestCasesPanelProp
         )
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al calificar" : "Error grading"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al calificar" : "Error grading")));
     }
   }
 

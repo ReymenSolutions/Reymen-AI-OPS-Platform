@@ -16,6 +16,7 @@ import {
 import { createArticle, updateArticle } from "@/actions/knowledge-base";
 import { usePreferences } from "@/context/preferences";
 import type { KnowledgeBase } from "@prisma/client";
+import { translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   title: z.string().min(1, "Título requerido"),
@@ -86,7 +87,7 @@ export function ArticleDialog({ article, mode = "create" }: ArticleDialogProps) 
             <div className="col-span-2 space-y-2">
               <Label>{lang === "es" ? "Título *" : "Title *"}</Label>
               <Input placeholder={lang === "es" ? "¿Cuáles son los horarios de atención?" : "What are your business hours?"} {...register("title")} />
-              {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
+              {errors.title && <p className="text-xs text-red-500">{translateMessage(errors.title.message)}</p>}
             </div>
             <div className="space-y-2">
               <Label>{lang === "es" ? "Categoría" : "Category"}</Label>
@@ -100,7 +101,7 @@ export function ArticleDialog({ article, mode = "create" }: ArticleDialogProps) 
               rows={8}
               {...register("content")}
             />
-            {errors.content && <p className="text-xs text-red-500">{errors.content.message}</p>}
+            {errors.content && <p className="text-xs text-red-500">{translateMessage(errors.content.message)}</p>}
             <p className="text-xs text-slate-400">
               {lang === "es" ? "Este contenido es consultado por el asistente AI para responder preguntas de los clientes." : "This content is consulted by the AI assistant to answer customer questions."}
             </p>

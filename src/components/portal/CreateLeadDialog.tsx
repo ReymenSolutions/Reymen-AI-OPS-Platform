@@ -16,6 +16,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createLead } from "@/actions/leads";
 import { usePreferences } from "@/context/preferences";
+import { translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   name: z.string().min(1, "Nombre requerido"),
@@ -68,7 +69,7 @@ export function CreateLeadDialog() {
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
             <Input placeholder={lang === "es" ? "María López" : "Jane Doe"} {...register("name")} />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">

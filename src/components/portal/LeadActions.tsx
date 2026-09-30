@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { updateLeadStatus, deleteLead } from "@/actions/leads";
 import { usePreferences } from "@/context/preferences";
 import type { LeadStatus } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface LeadActionsProps {
   leadId: string;
@@ -34,7 +35,7 @@ export function LeadActions({ leadId, currentStatus }: LeadActionsProps) {
       setStatus(newStatus);
       toast.success(t.statusUpdated);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.error);
+      toast.error(getErrorMessage(e, t.error));
     } finally {
       setLoading(false);
     }
@@ -47,7 +48,7 @@ export function LeadActions({ leadId, currentStatus }: LeadActionsProps) {
       await deleteLead(leadId);
       toast.success(t.leadDeleted);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.error);
+      toast.error(getErrorMessage(e, t.error));
     } finally {
       setLoading(false);
     }

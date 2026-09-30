@@ -1,8 +1,6 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
-import { secretsMatch } from "@/lib/webhook-validator";
+import { authenticateOrgRequest } from "@/lib/api-key-auth";
 import { hasModule } from "@/lib/modules";
 import { getFoodMenuForPos, getFoodDishCategories } from "@/lib/food";
 
@@ -16,38 +14,9 @@ import { getFoodMenuForPos, getFoodDishCategories } from "@/lib/food";
 // esa firma debe quedarse en el servidor del POS, no en el punto de venta.
 // GET /api/v1/food/menu?orgId=xxx
 export async function GET(req: NextRequest) {
-  const { searchParams } = req.nextUrl;
-  const apiKey = req.headers.get("x-api-key");
-
-  let orgId: string;
-
-  if (apiKey) {
-    const paramOrgId = searchParams.get("orgId");
-    if (!paramOrgId) {
-      return NextResponse.json({ error: "orgId required" }, { status: 400 });
-    }
-
-    const org = await prisma.organization.findUnique({
-      where: { id: paramOrgId },
-      select: { id: true, n8nWebhookSecret: true, foodPosReadKey: true },
-    });
-
-    const authorized =
-      !!org &&
-      (secretsMatch(apiKey, org.n8nWebhookSecret) || (!!org.foodPosReadKey && secretsMatch(apiKey, org.foodPosReadKey)));
-
-    if (!authorized) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    orgId = org.id;
-  } else {
-    const session = await auth();
-    if (!session?.user.organizationId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    orgId = session.user.organizationId;
-  }
+  const authResult = await authenticateOrgRequest(req, { allowFoodPosReadKey: true });
+  if (authResult.response) return authResult.response;
+  const orgId = authResult.orgId;
 
   if (!(await hasModule(orgId, "FOOD_OPS"))) {
     return NextResponse.json({ error: "Food module not enabled for this organization" }, { status: 403 });

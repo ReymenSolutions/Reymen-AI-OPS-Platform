@@ -11,7 +11,16 @@ vi.mock("@/lib/auth", () => ({
   isAdmin: (role: string) => role === "SUPER_ADMIN" || role === "ADMIN",
 }));
 
-const { syncModulesToPlan } = await import("./modules");
+const { syncModulesToPlan, getOrganizationModules } = await import("./modules");
+
+describe("getOrganizationModules", () => {
+  it("CRITICAL: refuses a non-admin caller (it is a public server action)", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: "u1", role: "OWNER", organizationId: "org_x" }));
+    await expect(getOrganizationModules("org_x")).rejects.toThrow(/no autorizado/i);
+    authMock.mockResolvedValue(null);
+    await expect(getOrganizationModules("org_x")).rejects.toThrow(/no autorizado/i);
+  });
+});
 
 describe("syncModulesToPlan", () => {
   let org: { id: string };

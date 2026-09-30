@@ -8,6 +8,7 @@ import { MessageComposer } from "@/components/portal/MessageComposer";
 import { formatDateTime } from "@/lib/utils";
 import { usePreferences } from "@/context/preferences";
 import type { Message, MessageDeliveryStatus } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 type MessageWithSender = Message & { sender: { name: string | null; email: string } | null };
 
@@ -56,7 +57,7 @@ export function MessageThread({ conversationId, contactName, initialMessages, ha
         setMessages((prev) => [...result.messages, ...prev]);
         setHasMore(result.hasMore);
       } catch (e) {
-        setError(e instanceof Error ? e.message : (lang === "es" ? "Error al cargar mensajes anteriores" : "Error loading older messages"));
+        setError(getErrorMessage(e, (lang === "es" ? "Error al cargar mensajes anteriores" : "Error loading older messages")));
       }
     });
   }

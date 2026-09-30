@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { logFoodDishSales } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export interface FoodVariantForSalesEntry {
   variantId: string;
@@ -38,7 +39,7 @@ export function FoodDailyDishSalesForm({ variants }: { variants: FoodVariantForS
       await logFoodDishSales({ date: todayIso(), entries });
       toast.success(lang === "es" ? "Ventas de hoy guardadas" : "Today's sales saved");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar" : "Error saving"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar" : "Error saving")));
     } finally {
       setLoading(false);
     }

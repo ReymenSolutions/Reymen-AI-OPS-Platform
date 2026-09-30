@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { skipOnboarding } from "@/actions/onboarding";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function SkipOnboardingButton({ className }: { className?: string }) {
   const { lang } = usePreferences();
@@ -19,7 +20,7 @@ export function SkipOnboardingButton({ className }: { className?: string }) {
         toast.success(lang === "es" ? "Configuración marcada como completada" : "Setup marked as complete");
         router.refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar" : "Error updating"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar" : "Error updating")));
       }
     });
   }

@@ -12,6 +12,7 @@ import {
 import { setOrganizationModule, syncModulesToPlan, type ModuleEntitlementView } from "@/actions/admin/modules";
 import { usePreferences } from "@/context/preferences";
 import type { ModuleSource, ModuleStatus, PlatformModule } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 const MODULE_LABEL_ES: Record<PlatformModule, string> = {
   CRM: "CRM",
@@ -86,7 +87,7 @@ export function OrganizationModulesPanel({
           toast.success(lang === "es" ? `Activado: ${result.activatedModules.join(", ")}` : `Activated: ${result.activatedModules.join(", ")}`);
         }
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al sincronizar módulos" : "Error syncing modules"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al sincronizar módulos" : "Error syncing modules")));
       } finally {
         setSyncing(false);
       }
@@ -108,7 +109,7 @@ export function OrganizationModulesPanel({
         toast.success(lang === "es" ? `Módulo "${MODULE_LABEL[editing]}" actualizado` : `Module "${MODULE_LABEL[editing]}" updated`);
         setEditing(null);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar el módulo" : "Error updating the module"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar el módulo" : "Error updating the module")));
       }
     });
   }

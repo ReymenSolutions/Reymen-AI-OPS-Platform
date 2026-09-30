@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { upsertWhatsAppAssistant } from "@/actions/whatsapp-assistant";
 import { usePreferences } from "@/context/preferences";
 import type { WhatsAppAssistant } from "@prisma/client";
+import { translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   name: z.string().min(1),
@@ -77,7 +78,7 @@ export function AssistantConfigForm({ assistant }: AssistantConfigFormProps) {
         <div className="space-y-2">
           <Label>{t.assistantName}</Label>
           <Input placeholder={t.assistantNamePlaceholder} {...register("name")} />
-          {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+          {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
         </div>
         <div className="space-y-2">
           <Label>{t.whatsappBusinessNumber}</Label>
@@ -92,7 +93,7 @@ export function AssistantConfigForm({ assistant }: AssistantConfigFormProps) {
           rows={3}
           {...register("greeting")}
         />
-        {errors.greeting && <p className="text-xs text-red-500">{errors.greeting.message}</p>}
+        {errors.greeting && <p className="text-xs text-red-500">{translateMessage(errors.greeting.message)}</p>}
       </div>
 
       <div className="space-y-2">

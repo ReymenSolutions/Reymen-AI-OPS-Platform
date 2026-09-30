@@ -1,5 +1,6 @@
-"use server";
-
+// Solo se llama desde código de servidor. No lleva "use server": eso lo
+// convertía en una acción pública con la que cualquiera podía escribir
+// entradas falsas en la bitácora de auditoría.
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 

@@ -1,58 +1,17 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare,
-  Calendar, FileText, LogOut, Bot,
-  Upload, Loader2, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
+  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, Calendar, FileText, LogOut, Bot, Upload, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/context/preferences";
-import { updateOrgLogo } from "@/actions/profile";
-import { toast } from "sonner";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { LogoPickerDialog } from "@/components/shared/LogoPickerDialog";
 
-const LOGO_PRESETS = [
-  // Shapes
-  "https://api.dicebear.com/9.x/shapes/svg?seed=alpha",
-  "https://api.dicebear.com/9.x/shapes/svg?seed=beta",
-  "https://api.dicebear.com/9.x/shapes/svg?seed=gamma",
-  "https://api.dicebear.com/9.x/shapes/svg?seed=delta",
-  // Identicon
-  "https://api.dicebear.com/9.x/identicon/svg?seed=epsilon",
-  "https://api.dicebear.com/9.x/identicon/svg?seed=zeta",
-  "https://api.dicebear.com/9.x/identicon/svg?seed=eta",
-  "https://api.dicebear.com/9.x/identicon/svg?seed=theta",
-  // Icons
-  "https://api.dicebear.com/9.x/icons/svg?seed=iota",
-  "https://api.dicebear.com/9.x/icons/svg?seed=kappa",
-  "https://api.dicebear.com/9.x/icons/svg?seed=lambda",
-  "https://api.dicebear.com/9.x/icons/svg?seed=mu",
-  // Rings
-  "https://api.dicebear.com/9.x/rings/svg?seed=nu",
-  "https://api.dicebear.com/9.x/rings/svg?seed=xi",
-  "https://api.dicebear.com/9.x/rings/svg?seed=omicron",
-  "https://api.dicebear.com/9.x/rings/svg?seed=pi",
-  // Bottts Neutral
-  "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=rho",
-  "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=sigma",
-  "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=tau",
-  "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=upsilon",
-  // Pixel Art Neutral
-  "https://api.dicebear.com/9.x/pixel-art-neutral/svg?seed=phi",
-  "https://api.dicebear.com/9.x/pixel-art-neutral/svg?seed=chi",
-  "https://api.dicebear.com/9.x/pixel-art-neutral/svg?seed=psi",
-  "https://api.dicebear.com/9.x/pixel-art-neutral/svg?seed=omega",
-];
 
 interface NavItem {
   href: string;
@@ -124,61 +83,9 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.module || enabledModules.includes(item.module));
 
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
-  const [logoUrl, setLogoUrl] = useState(initialLogoUrl ?? "");
   const [currentLogoUrl, setCurrentLogoUrl] = useState(initialLogoUrl);
-  const [isPending, startTransition] = useTransition();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // The raw file is only ever read into a canvas and re-encoded at 200x200
-    // below, so this cap just guards against hanging on a huge decode — the
-    // real size limit is updateOrgLogo()'s check on the compressed result.
-    // Phone camera photos routinely run 8-15MB, so keep this high.
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 20MB)" : "Image too large (max 20MB)");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onerror = () => {
-      toast.error(lang === "es" ? "No se pudo leer la imagen" : "Could not read the image");
-    };
-    reader.onload = (event) => {
-      const img = new window.Image();
-      img.onerror = () => {
-        toast.error(lang === "es" ? "Formato de imagen no compatible" : "Unsupported image format");
-      };
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const size = 200;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d")!;
-        const minDim = Math.min(img.width, img.height);
-        const sx = (img.width - minDim) / 2;
-        const sy = (img.height - minDim) / 2;
-        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-        setLogoUrl(canvas.toDataURL("image/jpeg", 0.85));
-      };
-      img.src = event.target!.result as string;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  }
 
-  function handleSaveLogo() {
-    startTransition(async () => {
-      try {
-        await updateOrgLogo(logoUrl || null);
-        setCurrentLogoUrl(logoUrl || null);
-        setLogoDialogOpen(false);
-        toast.success(t.success);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
-      }
-    });
-  }
 
   return (
     <>
@@ -209,7 +116,7 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
         {/* Logo / Org — clickable to update logo */}
         <div className="sidebar-header flex h-16 items-center border-b border-white/10 px-6 hover:bg-white/5 transition-colors">
           <button
-            onClick={() => { setLogoUrl(currentLogoUrl ?? ""); setLogoDialogOpen(true); }}
+            onClick={() => { setLogoDialogOpen(true); }}
             className="flex min-w-0 flex-1 items-center gap-2 text-left group"
           >
             <div className="relative flex-shrink-0">
@@ -279,103 +186,13 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
         </div>
       </aside>
 
-      {/* ── Org Logo Dialog ──────────────────────────────────────────── */}
-      <Dialog open={logoDialogOpen} onOpenChange={(o) => !o && setLogoDialogOpen(false)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5 text-brand-600" />
-              {t.orgLogoTitle}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {/* Preview */}
-            {logoUrl && (
-              <div className="flex justify-center">
-                <img src={logoUrl} alt="" className="h-20 w-20 rounded-xl object-cover ring-4 ring-brand-100" />
-              </div>
-            )}
-
-            {/* Presets */}
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {lang === "es" ? "Avatares predefinidos" : "Preset avatars"}
-              </p>
-              <div className="max-h-64 overflow-y-auto pr-0.5">
-                <div className="grid grid-cols-4 gap-2">
-                  {LOGO_PRESETS.map((url) => (
-                    <button
-                      key={url}
-                      type="button"
-                      onClick={() => setLogoUrl(url)}
-                      className={cn(
-                        "overflow-hidden rounded-lg border-2 transition-all",
-                        logoUrl === url
-                          ? "border-brand-600 scale-105"
-                          : "border-transparent hover:border-brand-300"
-                      )}
-                    >
-                      <img src={url} alt="" className="h-14 w-14 object-cover" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* File upload */}
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {lang === "es" ? "O sube desde tu dispositivo" : "Or upload from your device"}
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {lang === "es" ? "Elegir imagen" : "Choose image"}
-              </Button>
-            </div>
-
-            {/* Manual URL */}
-            <div className="space-y-1.5">
-              <Label htmlFor="org-logo-url">{t.logoUrl}</Label>
-              <Input
-                id="org-logo-url"
-                type="url"
-                placeholder="https://..."
-                value={logoUrl.startsWith("data:") ? "" : logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLogoDialogOpen(false)}>{t.cancel}</Button>
-            {currentLogoUrl && (
-              <Button
-                variant="outline"
-                className="text-red-600 border-red-200 hover:bg-red-50"
-                disabled={isPending}
-                onClick={() => { setLogoUrl(""); handleSaveLogo(); }}
-              >
-                {t.removeLogo}
-              </Button>
-            )}
-            <Button onClick={handleSaveLogo} disabled={isPending}>
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-              {t.save}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <LogoPickerDialog
+        key={logoDialogOpen ? "open" : "closed"}
+        open={logoDialogOpen}
+        onOpenChange={setLogoDialogOpen}
+        currentLogoUrl={currentLogoUrl ?? null}
+        onSaved={setCurrentLogoUrl}
+      />
     </>
   );
 }

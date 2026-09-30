@@ -21,6 +21,7 @@ import type { PromptExperiment, PromptExperimentSample, PromptVersion, PromptTyp
 import type { PromptWithVersions } from "./AiLabWorkspace";
 import { versionOptionsForType } from "./version-options";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 type ExperimentWithDetail = PromptExperiment & {
   variantA: PromptVersion;
@@ -90,7 +91,7 @@ export function ExperimentsPanel({ prompts, initialExperiments }: ExperimentsPan
         setForm({ promptType: "SYSTEM", name: "" });
         toast.success(lang === "es" ? "Experimento creado" : "Experiment created");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear el experimento" : "Error creating the experiment"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear el experimento" : "Error creating the experiment")));
       }
     });
   }
@@ -110,7 +111,7 @@ export function ExperimentsPanel({ prompts, initialExperiments }: ExperimentsPan
       );
       setSampleInput((prev) => ({ ...prev, [experimentId]: "" }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al ejecutar la muestra" : "Error running the sample"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al ejecutar la muestra" : "Error running the sample")));
     } finally {
       setRunningId(null);
     }
@@ -127,7 +128,7 @@ export function ExperimentsPanel({ prompts, initialExperiments }: ExperimentsPan
         )
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al calificar la muestra" : "Error rating the sample"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al calificar la muestra" : "Error rating the sample")));
     }
   }
 
@@ -142,7 +143,7 @@ export function ExperimentsPanel({ prompts, initialExperiments }: ExperimentsPan
         )
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al cerrar el experimento" : "Error closing the experiment"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al cerrar el experimento" : "Error closing the experiment")));
     }
   }
 

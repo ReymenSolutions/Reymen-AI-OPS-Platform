@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { generateWebhookSecret } from "./utils";
 import { logAudit } from "./audit";
 import type { Prisma } from "@prisma/client";
+import { UserError } from "./user-error";
 
 interface ApplyTemplateInstallParams {
   orgId: string;
@@ -34,7 +35,7 @@ export async function applyTemplateInstall({
     where: { organizationId_templateId: { organizationId: orgId, templateId } },
   });
   if (existing?.status === "ACTIVE") {
-    throw new Error("Este template ya está instalado");
+    throw new UserError("Este template ya está instalado");
   }
 
   const automation = await prisma.automation.create({

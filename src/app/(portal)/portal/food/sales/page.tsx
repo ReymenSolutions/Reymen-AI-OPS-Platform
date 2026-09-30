@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
-import { getFoodSalesSummary } from "@/lib/food";
+import { getFoodSalesSummary, getFoodSalesByChannel } from "@/lib/food";
 import { createFoodSale } from "@/actions/food";
 import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
@@ -11,10 +11,17 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { formatDateTime } from "@/lib/utils";
-import { DollarSign } from "lucide-react";
+import { formatDateTime, formatMoney } from "@/lib/utils";
+import { BarChart3, DollarSign } from "lucide-react";
 
-const money = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`;
+// Valor para <input type="datetime-local"> en la hora local del servidor
+// (TZ del contenedor), que es la misma con la que createFoodSale interpreta
+// lo que se envía. Antes se usaba toISOString(), que está en UTC: la fecha
+// venía adelantada 6 horas y, si no se corregía, la venta quedaba mal.
+function toLocalDateTimeInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default async function FoodSalesPage() {
   const session = await auth();
@@ -23,10 +30,11 @@ export default async function FoodSalesPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, lang, summary, recentSales] = await Promise.all([
+  const [t, lang, summary, byChannel, recentSales] = await Promise.all([
     getServerT(),
     getServerLang(),
     getFoodSalesSummary(orgId),
+    getFoodSalesByChannel(orgId),
     prisma.foodSale.findMany({
       where: { organizationId: orgId },
       orderBy: { occurredAt: "desc" },
@@ -35,22 +43,55 @@ export default async function FoodSalesPage() {
   ]);
 
   const f = pickDict(foodStrings, lang);
+  const totalChannelGross = byChannel.reduce((sum, c) => sum + c.gross, 0);
 
   return (
     <div>
-      <PageHeader title={t.foodSales} description={f.salesPageDesc} />
+      <PageHeader title={t.foodSales} description={f.salesAnalyticsDesc} />
 
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <MetricCard title={f.today} value={money(summary.today.gross)} description={f.salesCountGross(summary.today.count)} icon={DollarSign} />
-        <MetricCard title={f.last7Days} value={money(summary.last7Days.gross)} description={f.salesCountGross(summary.last7Days.count)} icon={DollarSign} />
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard title={f.today} value={formatMoney(summary.today.gross)} description={f.salesCountGross(summary.today.count)} icon={DollarSign} />
+        <MetricCard title={f.last7Days} value={formatMoney(summary.last7Days.gross)} description={f.salesCountGross(summary.last7Days.count)} icon={DollarSign} />
         <MetricCard
           title={f.last30Days}
-          value={money(summary.last30Days.gross)}
-          description={f.netLabel(money(summary.last30Days.net))}
+          value={formatMoney(summary.last30Days.gross)}
+          description={f.netLabel(formatMoney(summary.last30Days.net))}
           icon={DollarSign}
           trend={summary.monthOverMonthGrossPct !== null ? { value: summary.monthOverMonthGrossPct, label: f.vsPrev30Days } : undefined}
         />
+        <MetricCard title={f.salesCount30} value={summary.last30Days.count} icon={BarChart3} />
       </div>
+
+      {/* Antes en /portal/food/analytics: desglose por canal de los últimos 30 días. */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">{f.salesByChannel30}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {byChannel.length === 0 ? (
+            <div className="p-6">
+              <EmptyState icon={BarChart3} title={f.noDataYet} description={f.noChannelDataDesc} />
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {byChannel.map((c) => {
+                const pct = totalChannelGross > 0 ? Math.round((c.gross / totalChannelGross) * 100) : 0;
+                return (
+                  <li key={c.channel ?? ""} className="px-6 py-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-900">{c.channel ?? f.noChannel}</span>
+                      <span className="text-slate-500">{formatMoney(c.gross)} · {f.salesCount(c.count)} · {pct}%</span>
+                    </div>
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -72,8 +113,8 @@ export default async function FoodSalesPage() {
                         <p className="text-xs text-slate-500">{sale.channel ?? f.noChannel}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-900">{money(Number(sale.grossAmount))}</p>
-                        <p className="text-xs text-slate-500">{f.netLabel(money(Number(sale.netAmount)))}</p>
+                        <p className="text-sm font-semibold text-slate-900">{formatMoney(Number(sale.grossAmount))}</p>
+                        <p className="text-xs text-slate-500">{f.netLabel(formatMoney(Number(sale.netAmount)))}</p>
                       </div>
                     </li>
                   ))}
@@ -93,7 +134,7 @@ export default async function FoodSalesPage() {
                 <label htmlFor="occurredAt" className="text-xs font-medium text-slate-600">{f.date}</label>
                 <input
                   id="occurredAt" name="occurredAt" type="datetime-local" required
-                  defaultValue={new Date().toISOString().slice(0, 16)}
+                  defaultValue={toLocalDateTimeInput(new Date())}
                   className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
                 />
               </div>
@@ -102,13 +143,13 @@ export default async function FoodSalesPage() {
                 <input id="channel" name="channel" type="text" placeholder={f.channelPlaceholder} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
               </div>
               <div className="flex gap-3">
-                <div className="flex flex-1 flex-col gap-1">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <label htmlFor="grossAmount" className="text-xs font-medium text-slate-600">{f.gross}</label>
-                  <input id="grossAmount" name="grossAmount" type="number" step="0.01" min="0" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                  <input id="grossAmount" name="grossAmount" type="number" step="0.01" min="0" required className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
-                <div className="flex flex-1 flex-col gap-1">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <label htmlFor="netAmount" className="text-xs font-medium text-slate-600">{f.netNoTax}</label>
-                  <input id="netAmount" name="netAmount" type="number" step="0.01" min="0" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                  <input id="netAmount" name="netAmount" type="number" step="0.01" min="0" required className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
               </div>
               <div className="flex flex-col gap-1">

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { usePreferences } from "@/context/preferences";
 import { rescheduleAppointment } from "@/actions/appointments";
+import { getErrorMessage } from "@/lib/user-error";
 
 function toLocalDatetimeValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -44,7 +45,7 @@ export function RescheduleAppointmentDialog({
       setOpen(false);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al reprogramar" : "Error rescheduling"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al reprogramar" : "Error rescheduling")));
     } finally {
       setLoading(false);
     }

@@ -11,7 +11,7 @@ vi.mock("@/lib/auth", () => ({
   isAdmin: (role: string) => role === "SUPER_ADMIN" || role === "ADMIN",
 }));
 
-const { createClient, updateClientStatus } = await import("./clients");
+const { createClient, updateClientStatus, changePlan } = await import("./clients");
 
 describe("admin/clients actions", () => {
   const createdOrgIds: string[] = [];
@@ -85,5 +85,28 @@ describe("admin/clients actions", () => {
       orderBy: { createdAt: "desc" },
     });
     expect(audit).not.toBeNull();
+  });
+
+  it("stores the agreed price for a custom-priced plan and clears it when moving to a fixed-price plan", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: "admin1", role: "SUPER_ADMIN", organizationId: null }));
+    const org = await createTestOrg("Custom Price Org");
+    createdOrgIds.push(org.id);
+
+    await changePlan(org.id, "enterprise", 1850);
+    let updated = await prisma.organization.findUniqueOrThrow({ where: { id: org.id } });
+    expect(updated.plan).toBe("enterprise");
+    expect(Number(updated.customMonthlyPriceUsd)).toBe(1850);
+
+    await changePlan(org.id, "professional", 1850);
+    updated = await prisma.organization.findUniqueOrThrow({ where: { id: org.id } });
+    expect(updated.plan).toBe("professional");
+    expect(updated.customMonthlyPriceUsd).toBeNull();
+  });
+
+  it("rejects a non-positive custom price", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: "admin1", role: "SUPER_ADMIN", organizationId: null }));
+    const org = await createTestOrg("Bad Custom Price Org");
+    createdOrgIds.push(org.id);
+    await expect(changePlan(org.id, "enterprise", 0)).rejects.toThrow(/mayor a 0/);
   });
 });

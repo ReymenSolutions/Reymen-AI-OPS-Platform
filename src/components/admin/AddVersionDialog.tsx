@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { addTemplateVersion } from "@/actions/admin/templates";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/, "Formato: 1.0.0"),
@@ -110,7 +111,7 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
       reset();
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al añadir versión" : "Error adding version"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al añadir versión" : "Error adding version")));
     } finally {
       setLoading(false);
     }
@@ -145,7 +146,7 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
                 defaultValue={suggestNext()}
                 {...register("version")}
               />
-              {errors.version && <p className="text-xs text-red-500">{errors.version.message}</p>}
+              {errors.version && <p className="text-xs text-red-500">{translateMessage(errors.version.message)}</p>}
               {currentVersion && (
                 <p className="text-xs text-slate-400">{lang === "es" ? "Versión actual" : "Current version"}: {currentVersion}</p>
               )}
@@ -164,7 +165,7 @@ export function AddVersionDialog({ templateId, templateName, currentVersion }: A
               {...register("n8nWorkflowJsonRaw")}
             />
             {errors.n8nWorkflowJsonRaw && (
-              <p className="text-xs text-red-500">{errors.n8nWorkflowJsonRaw.message}</p>
+              <p className="text-xs text-red-500">{translateMessage(errors.n8nWorkflowJsonRaw.message)}</p>
             )}
             <p className="text-xs text-slate-400">
               {lang === "es" ? "Exporta el workflow desde n8n (menú ··· → Exportar) y pega el JSON aquí." : "Export the workflow from n8n (··· menu → Export) and paste the JSON here."}

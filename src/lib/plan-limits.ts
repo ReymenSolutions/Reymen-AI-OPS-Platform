@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { PLAN_LIMITS } from "./permissions";
+import { UserError } from "./user-error";
 
 type PlanResource = "leads" | "users" | "automations";
 
@@ -30,7 +31,7 @@ export async function assertPlanCapacity(organizationId: string, resource: PlanR
   const currentCount = await countResource(organizationId, resource);
 
   if (currentCount >= limit) {
-    throw new Error(
+    throw new UserError(
       `Alcanzaste el límite de ${RESOURCE_LABEL[resource]} de tu plan (${limit}). Solicita más capacidad en Configuración.`
     );
   }

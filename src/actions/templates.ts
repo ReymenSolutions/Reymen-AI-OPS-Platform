@@ -8,6 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { assertPlanCapacity } from "@/lib/plan-limits";
 import { assertModuleEnabled } from "@/lib/modules";
 import { applyTemplateInstall } from "@/lib/template-install";
+import { UserError } from "@/lib/user-error";
 
 /**
  * Resolves the latest published version of a template and applies the
@@ -33,8 +34,8 @@ async function installTemplateCore(
     },
   });
 
-  if (!template) throw new Error("Template no encontrado");
-  if (template.versions.length === 0) throw new Error("Template sin versiones disponibles");
+  if (!template) throw new UserError("Template no encontrado");
+  if (template.versions.length === 0) throw new UserError("Template sin versiones disponibles");
 
   const latestVersion = template.versions[0];
 
@@ -46,7 +47,7 @@ async function installTemplateCore(
     where: { organizationId_templateId: { organizationId: orgId, templateId } },
   });
   if (existing?.status === "ACTIVE") {
-    throw new Error("Este template ya está instalado");
+    throw new UserError("Este template ya está instalado");
   }
 
   await assertPlanCapacity(orgId, "automations");
@@ -68,7 +69,7 @@ const installSchema = z.object({
 
 export async function installTemplate(data: z.infer<typeof installSchema>) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const { templateId, config } = installSchema.parse(data);
   const orgId = session.user.organizationId;
@@ -95,7 +96,7 @@ export async function installTemplate(data: z.infer<typeof installSchema>) {
  */
 export async function installTemplatePackage(packageId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   const orgId = session.user.organizationId;
 
   await assertModuleEnabled(orgId, "AUTOMATIONS");
@@ -109,7 +110,7 @@ export async function installTemplatePackage(packageId: string) {
       },
     },
   });
-  if (!pkg) throw new Error("Paquete no encontrado");
+  if (!pkg) throw new UserError("Paquete no encontrado");
 
   let installedCount = 0;
   let skippedCount = 0;
@@ -154,7 +155,7 @@ export async function installTemplatePackage(packageId: string) {
 
 export async function uninstallTemplate(templateId: string) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const orgId = session.user.organizationId;
 
@@ -163,7 +164,7 @@ export async function uninstallTemplate(templateId: string) {
   });
 
   if (!installation || installation.status !== "ACTIVE") {
-    throw new Error("Template no está instalado");
+    throw new UserError("Template no está instalado");
   }
 
   await prisma.$transaction([

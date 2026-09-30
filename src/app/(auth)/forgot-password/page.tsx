@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { requestPasswordReset } from "@/actions/password-reset";
+import { translateMessage } from "@/lib/user-error";
 
 const schema = z.object({ email: z.string().email("Email inválido") });
 type FormData = z.infer<typeof schema>;
@@ -60,7 +61,7 @@ export default function ForgotPasswordPage() {
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="tu@empresa.com" {...register("email")} autoFocus />
-              {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+              {errors.email && <p className="text-xs text-red-500">{translateMessage(errors.email.message)}</p>}
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}

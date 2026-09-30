@@ -18,10 +18,8 @@ import { FoodOperatingCostFormDialog } from "@/components/portal/FoodOperatingCo
 import { FoodOperatingCostToggle } from "@/components/portal/FoodOperatingCostToggle";
 import { FoodNetProfitPanel } from "@/components/portal/FoodNetProfitPanel";
 import { FoodPriceCalculator } from "@/components/portal/FoodPriceCalculator";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import { Wallet, Target, TrendingDown, TrendingUp, Megaphone } from "lucide-react";
-
-const money = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function marginColor(marginPct: number | null): string {
   if (marginPct === null) return "text-slate-400";
@@ -69,7 +67,7 @@ export default async function FoodProfitabilityPage() {
     promote: f.recPromote,
   };
   function recReason(rec: (typeof recommendations)[number]): string {
-    if (rec.type === "review_urgent") return f.recReasonUrgent(money(rec.cost), money(rec.price));
+    if (rec.type === "review_urgent") return f.recReasonUrgent(formatMoney(rec.cost), formatMoney(rec.price));
     if (rec.type === "raise_price_or_cut_cost") return f.recReasonRaise(rec.unitsSold, rec.marginPct ?? 0);
     return f.recReasonPromote(rec.unitsSold, rec.marginPct ?? 0);
   }
@@ -104,7 +102,7 @@ export default async function FoodProfitabilityPage() {
                           {!cost.isActive && <Badge variant="secondary" className="text-[10px]">{f.inactive}</Badge>}
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-slate-900">{money(cost.amountMonthly)}</p>
+                          <p className="text-sm font-semibold text-slate-900">{formatMoney(cost.amountMonthly)}</p>
                           <FoodOperatingCostFormDialog cost={cost} />
                           <FoodOperatingCostToggle costId={cost.id} isActive={cost.isActive} />
                         </div>
@@ -113,7 +111,7 @@ export default async function FoodProfitabilityPage() {
                   </ul>
                   <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-3">
                     <p className="text-sm font-medium text-slate-700">{f.monthlyTotalActive}</p>
-                    <p className="text-base font-bold text-slate-900">{money(fixedCostsMonthly)}</p>
+                    <p className="text-base font-bold text-slate-900">{formatMoney(fixedCostsMonthly)}</p>
                   </div>
                 </>
               )}
@@ -135,7 +133,7 @@ export default async function FoodProfitabilityPage() {
                     {f.blendedBreakEven(breakEven.blended.basedOnDays)}
                   </p>
                   <p className="mt-1 text-lg font-bold text-brand-900">
-                    {f.unitsAndRevenue(breakEven.blended.breakEvenUnits.toLocaleString(f.dateLocale), money(breakEven.blended.breakEvenRevenue))}
+                    {f.unitsAndRevenue(breakEven.blended.breakEvenUnits.toLocaleString(f.dateLocale), formatMoney(breakEven.blended.breakEvenRevenue))}
                   </p>
                 </div>
               )}
@@ -155,7 +153,7 @@ export default async function FoodProfitabilityPage() {
                       {breakEven.perVariant.map((row) => (
                         <tr key={row.variantId}>
                           <td className="py-2 pr-3 font-medium text-slate-900">{row.name}</td>
-                          <td className="py-2 pr-3">{money(row.contributionMargin)}</td>
+                          <td className="py-2 pr-3">{formatMoney(row.contributionMargin)}</td>
                           <td className="py-2">
                             {row.breakEvenUnits !== null ? (
                               f.unitsCount(row.breakEvenUnits.toLocaleString(f.dateLocale))
@@ -205,7 +203,7 @@ export default async function FoodProfitabilityPage() {
                       {costInsights.topCostIngredients.map((i) => (
                         <li key={i.inventoryItemId} className="flex items-center justify-between text-sm">
                           <span className="text-slate-700">{i.name}</span>
-                          <span className="font-medium text-slate-900">{f.usedInDishes(money(i.totalRecipeCost), i.usedInDishes)}</span>
+                          <span className="font-medium text-slate-900">{f.usedInDishes(formatMoney(i.totalRecipeCost), i.usedInDishes)}</span>
                         </li>
                       ))}
                     </ul>

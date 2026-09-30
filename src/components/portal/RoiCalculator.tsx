@@ -4,6 +4,11 @@ import { TrendingUp } from "lucide-react";
 import type { RoiData } from "@/lib/roi";
 import type { Lang } from "@/lib/i18n";
 
+const RATE_SOURCE_LABEL = {
+  es: { banxico: "tipo de cambio FIX de Banxico", frankfurter: "Banco Central Europeo", env: "tipo de cambio configurado manualmente" },
+  en: { banxico: "Banxico FIX rate", frankfurter: "European Central Bank", env: "manually configured rate" },
+} as const;
+
 interface RoiCalculatorProps {
   data: RoiData;
   planLabel: string;
@@ -79,14 +84,14 @@ export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
                 Ingresos últimos 30 días:{" "}
                 <span className="info-box-text text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
                 {" "}vs. tu plan {planLabel}:{" "}
-                <span className="info-box-text text-brand-700">${data.planCost.toLocaleString("en-US")} USD/mes</span>
+                <span className="info-box-text text-brand-700">{data.planCost !== null ? `$${data.planCost.toLocaleString("en-US")} USD/mes` : "precio personalizado aún sin capturar"}</span>
               </>
             ) : (
               <>
                 Revenue last 30 days:{" "}
                 <span className="info-box-text text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
                 {" "}vs. your {planLabel} plan:{" "}
-                <span className="info-box-text text-brand-700">${data.planCost.toLocaleString("en-US")} USD/mo</span>
+                <span className="info-box-text text-brand-700">{data.planCost !== null ? `$${data.planCost.toLocaleString("en-US")} USD/mo` : "custom price not set yet"}</span>
               </>
             )}
           </p>
@@ -108,8 +113,8 @@ export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
           {data.mxnPerUsd !== null && (
             <p className="info-box-text text-xs text-brand-700 mt-1">
               {lang === "es"
-                ? `Montos en MXN convertidos a USD con 1 USD = ${data.mxnPerUsd} MXN.`
-                : `MXN amounts converted to USD at 1 USD = ${data.mxnPerUsd} MXN.`}
+                ? `Montos en MXN convertidos a USD con 1 USD = ${data.mxnPerUsd.toFixed(4)} MXN (${RATE_SOURCE_LABEL.es[data.rateSource ?? "env"]}${data.rateDate ? `, ${data.rateDate}` : ""}).`
+                : `MXN amounts converted to USD at 1 USD = ${data.mxnPerUsd.toFixed(4)} MXN (${RATE_SOURCE_LABEL.en[data.rateSource ?? "env"]}${data.rateDate ? `, ${data.rateDate}` : ""}).`}
             </p>
           )}
         </div>
@@ -117,8 +122,8 @@ export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
         {data.unconvertedOpportunities > 0 && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             {lang === "es"
-              ? `${data.unconvertedOpportunities} oportunidad(es) ganada(s) en MXN no se incluyen porque no hay un tipo de cambio configurado (MXN_PER_USD). Pide a tu administrador que lo configure.`
-              : `${data.unconvertedOpportunities} won opportunit(ies) in MXN are not included because no exchange rate is configured (MXN_PER_USD). Ask your administrator to set it.`}
+              ? `${data.unconvertedOpportunities} oportunidad(es) ganada(s) en MXN no se incluyen porque no se pudo obtener el tipo de cambio. Intenta más tarde o pide a tu administrador que configure MXN_PER_USD como respaldo.`
+              : `${data.unconvertedOpportunities} won opportunit(ies) in MXN are not included because the exchange rate couldn't be retrieved. Try again later or ask your administrator to set MXN_PER_USD as a fallback.`}
           </div>
         )}
       </CardContent>

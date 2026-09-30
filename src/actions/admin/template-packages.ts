@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const createSchema = z.object({
   name: z.string().min(2),
@@ -14,8 +15,7 @@ const createSchema = z.object({
 });
 
 export async function createTemplatePackage(data: z.infer<typeof createSchema>) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = createSchema.parse(data);
 
@@ -24,7 +24,7 @@ export async function createTemplatePackage(data: z.infer<typeof createSchema>) 
     select: { id: true },
   });
   if (templates.length !== parsed.templateIds.length) {
-    throw new Error("Uno o más templates seleccionados no existen");
+    throw new UserError("Uno o más templates seleccionados no existen");
   }
 
   const pkg = await prisma.templatePackage.create({
@@ -52,8 +52,7 @@ export async function updateTemplatePackageItems(
   packageId: string,
   data: z.infer<typeof updateItemsSchema>
 ) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const parsed = updateItemsSchema.parse(data);
 
@@ -64,9 +63,9 @@ export async function updateTemplatePackageItems(
       select: { id: true },
     }),
   ]);
-  if (!pkg) throw new Error("Paquete no encontrado");
+  if (!pkg) throw new UserError("Paquete no encontrado");
   if (templates.length !== parsed.templateIds.length) {
-    throw new Error("Uno o más templates seleccionados no existen");
+    throw new UserError("Uno o más templates seleccionados no existen");
   }
 
   // Replace the full item set — simplest correct approach for admin
@@ -84,16 +83,15 @@ export async function updateTemplatePackageItems(
 }
 
 export async function publishTemplatePackage(packageId: string, isPublished: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const pkg = await prisma.templatePackage.findUnique({
     where: { id: packageId },
     include: { items: { include: { template: { select: { isPublished: true } } } } },
   });
-  if (!pkg) throw new Error("Paquete no encontrado");
+  if (!pkg) throw new UserError("Paquete no encontrado");
   if (isPublished && !pkg.items.some((i) => i.template.isPublished)) {
-    throw new Error("El paquete necesita al menos un template publicado antes de publicarse");
+    throw new UserError("El paquete necesita al menos un template publicado antes de publicarse");
   }
 
   await prisma.templatePackage.update({

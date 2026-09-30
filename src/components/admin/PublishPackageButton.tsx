@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { publishTemplatePackage } from "@/actions/admin/template-packages";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface PublishPackageButtonProps {
   packageId: string;
@@ -28,7 +29,7 @@ export function PublishPackageButton({ packageId, isPublished }: PublishPackageB
           : (lang === "es" ? "Paquete publicado — visible para clientes" : "Package published — visible to clients")
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+      toast.error(getErrorMessage(e, "Error"));
     } finally {
       setLoading(false);
     }

@@ -6,17 +6,18 @@ import { prisma } from "@/lib/prisma";
 import { getStripeClient, isStripeConfigured, PLAN_PRICE_ENV } from "@/lib/stripe";
 import type { UserRole } from "@prisma/client";
 import { getAppUrl } from "@/lib/app-url";
+import { UserError } from "@/lib/user-error";
 
 async function requireBillingManager() {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "settings:manage")) throw new Error("Sin permisos");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
+  if (!can(session.user.role as UserRole, "settings:manage")) throw new UserError("Sin permisos");
   return session;
 }
 
 async function getOrCreateStripeCustomer(orgId: string): Promise<string> {
   const stripe = getStripeClient();
-  if (!stripe) throw new Error("La facturación no está configurada");
+  if (!stripe) throw new UserError("La facturación no está configurada");
 
   const org = await prisma.organization.findUniqueOrThrow({ where: { id: orgId } });
   if (org.stripeCustomerId) return org.stripeCustomerId;
@@ -33,13 +34,18 @@ async function getOrCreateStripeCustomer(orgId: string): Promise<string> {
 }
 
 /** Starts a Stripe Checkout session to subscribe the org to a paid plan. Returns the URL to redirect to. */
-export async function createCheckoutSession(plan: "professional" | "enterprise"): Promise<{ url: string }> {
+/**
+ * Solo Professional: Enterprise tiene precio pactado por cliente
+ * (Organization.customMonthlyPriceUsd), no un precio fijo de Stripe.
+ */
+export async function createCheckoutSession(plan: "professional"): Promise<{ url: string }> {
   const session = await requireBillingManager();
   const stripe = getStripeClient();
-  if (!stripe) throw new Error("La facturación no está configurada");
+  if (!stripe) throw new UserError("La facturación no está configurada");
 
+  if (plan !== "professional") throw new UserError("Este plan se contrata con una cotización, no con pago en línea");
   const priceId = PLAN_PRICE_ENV[plan];
-  if (!priceId) throw new Error(`No hay un precio de Stripe configurado para el plan ${plan}`);
+  if (!priceId) throw new UserError(`No hay un precio de Stripe configurado para el plan ${plan}`);
 
   const customerId = await getOrCreateStripeCustomer(session.user.organizationId!);
   const baseUrl = getAppUrl();
@@ -53,7 +59,7 @@ export async function createCheckoutSession(plan: "professional" | "enterprise")
     metadata: { organizationId: session.user.organizationId!, plan },
   });
 
-  if (!checkoutSession.url) throw new Error("No se pudo crear la sesión de pago");
+  if (!checkoutSession.url) throw new UserError("No se pudo crear la sesión de pago");
   return { url: checkoutSession.url };
 }
 
@@ -61,10 +67,10 @@ export async function createCheckoutSession(plan: "professional" | "enterprise")
 export async function createBillingPortalSession(): Promise<{ url: string }> {
   const session = await requireBillingManager();
   const stripe = getStripeClient();
-  if (!stripe) throw new Error("La facturación no está configurada");
+  if (!stripe) throw new UserError("La facturación no está configurada");
 
   const org = await prisma.organization.findUniqueOrThrow({ where: { id: session.user.organizationId! } });
-  if (!org.stripeCustomerId) throw new Error("Esta organización aún no tiene una suscripción");
+  if (!org.stripeCustomerId) throw new UserError("Esta organización aún no tiene una suscripción");
 
   const baseUrl = getAppUrl();
   const portalSession = await stripe.billingPortal.sessions.create({
@@ -81,7 +87,7 @@ export async function getBillingInfo(): Promise<{
   hasActiveSubscription: boolean;
 }> {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const org = await prisma.organization.findUniqueOrThrow({ where: { id: session.user.organizationId } });
   return {

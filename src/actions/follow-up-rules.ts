@@ -3,15 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
-import { can } from "@/lib/permissions";
 import { assertModuleEnabled } from "@/lib/modules";
-import type { UserRole } from "@prisma/client";
+import { requireOrgPermission } from "@/lib/guards";
 
 async function requireSettingsManage() {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "settings:manage")) throw new Error("No autorizado");
+  const session = await requireOrgPermission("settings:manage");
   await assertModuleEnabled(session.user.organizationId, "CRM");
   return session;
 }

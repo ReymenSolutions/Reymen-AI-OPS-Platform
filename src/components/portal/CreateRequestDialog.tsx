@@ -16,6 +16,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createRequest } from "@/actions/requests";
 import { usePreferences } from "@/context/preferences";
+import { translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   title: z.string().min(1, "Título requerido"),
@@ -68,7 +69,7 @@ export function CreateRequestDialog() {
           <div className="space-y-2">
             <Label>{t.reqTitleLabel} *</Label>
             <Input placeholder={t.reqTitleLabel} {...register("title")} />
-            {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
+            {errors.title && <p className="text-xs text-red-500">{translateMessage(errors.title.message)}</p>}
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -83,7 +84,7 @@ export function CreateRequestDialog() {
                   <SelectItem value="question">{t.typeQuestion}</SelectItem>
                 </SelectContent>
               </Select>
-              {errors.type && <p className="text-xs text-red-500">{errors.type.message}</p>}
+              {errors.type && <p className="text-xs text-red-500">{translateMessage(errors.type.message)}</p>}
             </div>
             <div className="space-y-2">
               <Label>{t.adminColPriority}</Label>
@@ -105,7 +106,7 @@ export function CreateRequestDialog() {
               rows={4}
               {...register("description")}
             />
-            {errors.description && <p className="text-xs text-red-500">{errors.description.message}</p>}
+            {errors.description && <p className="text-xs text-red-500">{translateMessage(errors.description.message)}</p>}
           </div>
 
           <DialogFooter>

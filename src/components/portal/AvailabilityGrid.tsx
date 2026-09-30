@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/context/preferences";
 import { setAvailabilityRules } from "@/actions/availability";
+import { getErrorMessage } from "@/lib/user-error";
 
 const DAY_LABELS_ES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const DAY_LABELS_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -60,7 +61,7 @@ export function AvailabilityGrid({ initialRules }: { initialRules: { dayOfWeek: 
         await setAvailabilityRules(rules);
         toast.success(lang === "es" ? "Disponibilidad guardada" : "Availability saved");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar" : "Error saving"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar" : "Error saving")));
       }
     });
   }

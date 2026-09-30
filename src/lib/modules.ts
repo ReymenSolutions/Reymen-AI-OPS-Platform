@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
 import type { PlatformModule } from "@prisma/client";
+import { UserError } from "./user-error";
 
 /**
  * Commercial module entitlements — distinct from RBAC (permissions.ts,
@@ -45,7 +46,7 @@ export async function hasModule(organizationId: string, module: PlatformModule):
 /** For Server Actions: throws a clear, user-facing error if the module isn't enabled. */
 export async function assertModuleEnabled(organizationId: string, module: PlatformModule): Promise<void> {
   if (!(await hasModule(organizationId, module))) {
-    throw new Error(`Tu organización no tiene el módulo "${MODULE_LABEL[module]}" habilitado.`);
+    throw new UserError(`Tu organización no tiene el módulo "${MODULE_LABEL[module]}" habilitado.`);
   }
 }
 

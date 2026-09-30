@@ -4,10 +4,12 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { createOrgUserRecord } from "@/lib/org-users";
 import type { UserRole } from "@prisma/client";
+import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const ORG_USER_ROLES = ["OWNER", "MANAGER", "AGENT", "VIEWER"] as const;
 const STANDALONE_USER_ROLES = ["SUPER_ADMIN", "ADMIN"] as const;
@@ -20,14 +22,13 @@ const createOrgUserSchema = z.object({
 });
 
 export async function createOrgUser(orgId: string, data: { name: string; email: string; role: string; password: string }) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = createOrgUserSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
-  if (!org) throw new Error("Cliente no encontrado");
+  if (!org) throw new UserError("Cliente no encontrado");
 
   await createOrgUserRecord({
     organizationId: orgId,
@@ -49,14 +50,13 @@ const updateOrgUserSchema = z.object({
 });
 
 export async function updateOrgUser(userId: string, data: { name: string; role: string }) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = updateOrgUserSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user || !user.organizationId) throw new Error("Usuario no encontrado");
+  if (!user || !user.organizationId) throw new UserError("Usuario no encontrado");
 
   const updated = await prisma.user.update({
     where: { id: userId },
@@ -77,15 +77,14 @@ export async function updateOrgUser(userId: string, data: { name: string; role: 
 }
 
 export async function setUserActive(userId: string, isActive: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-  if (userId === session.user.id) throw new Error("No puedes desactivarte a ti mismo");
+  const session = await requireAdmin();
+  if (userId === session.user.id) throw new UserError("No puedes desactivarte a ti mismo");
 
   const target = await prisma.user.findUnique({ where: { id: userId } });
-  if (!target) throw new Error("Usuario no encontrado");
+  if (!target) throw new UserError("Usuario no encontrado");
   // Only a SUPER_ADMIN can deactivate another platform admin.
   if (target.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
-    throw new Error("Sin permisos para modificar a un super administrador");
+    throw new UserError("Sin permisos para modificar a un super administrador");
   }
 
   const user = await prisma.user.update({
@@ -118,13 +117,13 @@ const createStandaloneUserSchema = z.object({
 // Restricted to SUPER_ADMIN so a regular admin can't mint new admin accounts.
 export async function createStandaloneUser(data: { name: string; email: string; role: string; password: string }) {
   const session = await auth();
-  if (!session || session.user.role !== "SUPER_ADMIN") throw new Error("No autorizado");
+  if (!session || session.user.role !== "SUPER_ADMIN") throw new UserError("No autorizado");
 
   const parsed = createStandaloneUserSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (existing) throw new Error("Ya existe un usuario con ese email");
+  if (existing) throw new UserError("Ya existe un usuario con ese email");
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
   const user = await prisma.user.create({
@@ -150,8 +149,7 @@ export async function createStandaloneUser(data: { name: string; email: string; 
 }
 
 export async function getAllUsers() {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   return prisma.user.findMany({
     orderBy: { createdAt: "desc" },

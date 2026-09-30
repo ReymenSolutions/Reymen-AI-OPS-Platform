@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
 import { applyTemplateInstall } from "@/lib/template-install";
 import type { Prisma } from "@prisma/client";
+import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const templateSchema = z.object({
   name: z.string().min(2),
@@ -25,8 +26,7 @@ const versionSchema = z.object({
 });
 
 export async function createTemplate(data: z.infer<typeof templateSchema>) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = templateSchema.parse(data);
 
@@ -43,36 +43,16 @@ export async function createTemplate(data: z.infer<typeof templateSchema>) {
   return { success: true, templateId: template.id };
 }
 
-export async function updateTemplate(
-  templateId: string,
-  data: Partial<z.infer<typeof templateSchema>>
-) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-
-  const parsed = templateSchema.partial().parse(data);
-
-  await prisma.automationTemplate.update({
-    where: { id: templateId },
-    data: { ...parsed, tags: parsed.tags ?? undefined },
-  });
-
-  revalidatePath("/admin/templates");
-  revalidatePath(`/admin/templates/${templateId}`);
-  return { success: true };
-}
-
 export async function publishTemplate(templateId: string, isPublished: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const template = await prisma.automationTemplate.findUnique({
     where: { id: templateId },
     include: { versions: { where: { isLatest: true } } },
   });
-  if (!template) throw new Error("Template no encontrado");
+  if (!template) throw new UserError("Template no encontrado");
   if (isPublished && template.versions.length === 0) {
-    throw new Error("No puedes publicar un template sin versiones");
+    throw new UserError("No puedes publicar un template sin versiones");
   }
 
   await prisma.automationTemplate.update({
@@ -89,21 +69,20 @@ export async function addTemplateVersion(
   templateId: string,
   data: z.infer<typeof versionSchema>
 ) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  await requireAdmin();
 
   const parsed = versionSchema.parse(data);
 
   const template = await prisma.automationTemplate.findUnique({
     where: { id: templateId },
   });
-  if (!template) throw new Error("Template no encontrado");
+  if (!template) throw new UserError("Template no encontrado");
 
   // Check version doesn't exist
   const existing = await prisma.templateVersion.findUnique({
     where: { templateId_version: { templateId, version: parsed.version } },
   });
-  if (existing) throw new Error(`La versión ${parsed.version} ya existe`);
+  if (existing) throw new UserError(`La versión ${parsed.version} ya existe`);
 
   await prisma.$transaction([
     // Mark all existing versions as not latest
@@ -150,8 +129,7 @@ export async function installTemplateForClient(
   versionId: string,
   config?: Record<string, unknown>
 ) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const [org, version] = await Promise.all([
     prisma.organization.findUnique({ where: { id: orgId } }),
@@ -160,8 +138,8 @@ export async function installTemplateForClient(
       include: { template: true },
     }),
   ]);
-  if (!org) throw new Error("Cliente no encontrado");
-  if (!version) throw new Error("Versión no encontrada");
+  if (!org) throw new UserError("Cliente no encontrado");
+  if (!version) throw new UserError("Versión no encontrada");
 
   const { automationId } = await applyTemplateInstall({
     orgId,

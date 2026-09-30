@@ -5,6 +5,7 @@ import { BellOff, Bell, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePreferences } from "@/context/preferences";
 import { setLeadDoNotContact } from "@/actions/leads";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function LeadDoNotContactToggle({ leadId, initialDoNotContact }: { leadId: string; initialDoNotContact: boolean }) {
   const { lang } = usePreferences();
@@ -23,7 +24,7 @@ export function LeadDoNotContactToggle({ leadId, initialDoNotContact }: { leadId
             : (lang === "es" ? "Seguimientos automáticos reactivados" : "Automated follow-ups re-enabled")
         );
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar" : "Error updating"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar" : "Error updating")));
       }
     });
   }

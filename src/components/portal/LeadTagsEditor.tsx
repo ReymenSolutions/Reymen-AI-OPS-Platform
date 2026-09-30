@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { usePreferences } from "@/context/preferences";
 import { updateLeadTags } from "@/actions/leads";
+import { getErrorMessage } from "@/lib/user-error";
 
 export function LeadTagsEditor({ leadId, initialTags }: { leadId: string; initialTags: string[] }) {
   const { lang } = usePreferences();
@@ -20,7 +21,7 @@ export function LeadTagsEditor({ leadId, initialTags }: { leadId: string; initia
       try {
         await updateLeadTags(leadId, next);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al actualizar etiquetas" : "Error updating tags"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al actualizar etiquetas" : "Error updating tags")));
       }
     });
   }

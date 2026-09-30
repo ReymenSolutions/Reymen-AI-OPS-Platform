@@ -21,6 +21,7 @@ import type { AiSandboxMessage, AiSandboxSession } from "@prisma/client";
 import type { PromptWithVersions } from "./AiLabWorkspace";
 import { versionOptions } from "./version-options";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 type SandboxSessionListItem = AiSandboxSession & { _count: { messages: number } };
 
@@ -50,7 +51,7 @@ export function SandboxPanel({ prompts, initialSessions }: SandboxPanelProps) {
     setLoadingMessages(true);
     getSandboxSession(selectedId)
       .then((s) => setMessages(s.messages))
-      .catch((e) => toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al cargar la sesión" : "Error loading the session")))
+      .catch((e) => toast.error(getErrorMessage(e, (lang === "es" ? "Error al cargar la sesión" : "Error loading the session"))))
       .finally(() => setLoadingMessages(false));
   }, [selectedId]);
 
@@ -82,7 +83,7 @@ export function SandboxPanel({ prompts, initialSessions }: SandboxPanelProps) {
         setNewVersionId(undefined);
         toast.success(lang === "es" ? "Sesión creada" : "Session created");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear la sesión" : "Error creating the session"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear la sesión" : "Error creating the session")));
       }
     });
   }
@@ -95,7 +96,7 @@ export function SandboxPanel({ prompts, initialSessions }: SandboxPanelProps) {
         if (selectedId === id) setSelectedId(null);
         toast.success(lang === "es" ? "Sesión eliminada" : "Session deleted");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al eliminar la sesión" : "Error deleting the session"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al eliminar la sesión" : "Error deleting the session")));
       }
     });
   }
@@ -138,7 +139,7 @@ export function SandboxPanel({ prompts, initialSessions }: SandboxPanelProps) {
           prev.map((s) => (s.id === selectedId ? { ...s, _count: { messages: s._count.messages + 2 } } : s))
         );
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al generar la respuesta" : "Error generating the reply"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al generar la respuesta" : "Error generating the reply")));
       }
     });
   }

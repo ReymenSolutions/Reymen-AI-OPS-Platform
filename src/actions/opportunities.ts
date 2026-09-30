@@ -8,10 +8,11 @@ import { can } from "@/lib/permissions";
 import { assertModuleEnabled } from "@/lib/modules";
 import { logAudit } from "@/lib/audit";
 import type { UserRole } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 async function requireOrgAndCrm() {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "CRM");
   return session;
 }
@@ -28,19 +29,19 @@ const createSchema = z.object({
 
 export async function createOpportunity(data: z.infer<typeof createSchema>) {
   const session = await requireOrgAndCrm();
-  if (!can(session.user.role as UserRole, "opportunities:create")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "opportunities:create")) throw new UserError("No autorizado");
 
   const parsed = createSchema.parse(data);
   const orgId = session.user.organizationId!;
 
   const lead = await prisma.lead.findFirst({ where: { id: parsed.leadId, organizationId: orgId } });
-  if (!lead) throw new Error("Lead no encontrado");
+  if (!lead) throw new UserError("Lead no encontrado");
 
   const pipelineStageId = parsed.pipelineStageId
     ? (await prisma.pipelineStage.findFirst({ where: { id: parsed.pipelineStageId, organizationId: orgId } }))?.id
     : (await prisma.pipelineStage.findFirst({ where: { organizationId: orgId }, orderBy: { order: "asc" } }))?.id;
 
-  if (!pipelineStageId) throw new Error("No hay etapas de pipeline configuradas");
+  if (!pipelineStageId) throw new UserError("No hay etapas de pipeline configuradas");
 
   const opportunity = await prisma.opportunity.create({
     data: {
@@ -71,20 +72,20 @@ export async function createOpportunity(data: z.infer<typeof createSchema>) {
 
 async function assertOpportunityAccess(orgId: string, opportunityId: string) {
   const opportunity = await prisma.opportunity.findFirst({ where: { id: opportunityId, organizationId: orgId } });
-  if (!opportunity) throw new Error("Oportunidad no encontrada");
+  if (!opportunity) throw new UserError("Oportunidad no encontrada");
   return opportunity;
 }
 
 export async function moveOpportunityStage(opportunityId: string, pipelineStageId: string) {
   const session = await requireOrgAndCrm();
-  if (!can(session.user.role as UserRole, "opportunities:manage")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "opportunities:manage")) throw new UserError("No autorizado");
   const orgId = session.user.organizationId!;
 
   const [opportunity, stage] = await Promise.all([
     assertOpportunityAccess(orgId, opportunityId),
     prisma.pipelineStage.findFirst({ where: { id: pipelineStageId, organizationId: orgId } }),
   ]);
-  if (!stage) throw new Error("Etapa no encontrada");
+  if (!stage) throw new UserError("Etapa no encontrada");
 
   await prisma.opportunity.update({
     where: { id: opportunityId },
@@ -112,12 +113,12 @@ export async function moveOpportunityStage(opportunityId: string, pipelineStageI
 /** Moves an opportunity into a stage marked isLost, recording why. */
 export async function markOpportunityLost(opportunityId: string, lossReason: string) {
   const session = await requireOrgAndCrm();
-  if (!can(session.user.role as UserRole, "opportunities:manage")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "opportunities:manage")) throw new UserError("No autorizado");
   const orgId = session.user.organizationId!;
 
   const opportunity = await assertOpportunityAccess(orgId, opportunityId);
   const lostStage = await prisma.pipelineStage.findFirst({ where: { organizationId: orgId, isLost: true } });
-  if (!lostStage) throw new Error("No hay una etapa marcada como 'perdida' configurada");
+  if (!lostStage) throw new UserError("No hay una etapa marcada como 'perdida' configurada");
 
   await prisma.opportunity.update({
     where: { id: opportunityId },
@@ -152,7 +153,7 @@ const updateSchema = z.object({
 
 export async function updateOpportunity(data: z.infer<typeof updateSchema>) {
   const session = await requireOrgAndCrm();
-  if (!can(session.user.role as UserRole, "opportunities:manage")) throw new Error("No autorizado");
+  if (!can(session.user.role as UserRole, "opportunities:manage")) throw new UserError("No autorizado");
   const orgId = session.user.organizationId!;
 
   const { opportunityId, estimatedCloseDate, nextActivityAt, ...rest } = updateSchema.parse(data);

@@ -20,6 +20,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createClient } from "@/actions/admin/clients";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const schema = z.object({
   orgName: z.string().min(2, "Mínimo 2 caracteres"),
@@ -71,7 +72,7 @@ export function CreateClientDialog() {
       reset();
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear cliente" : "Error creating client"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear cliente" : "Error creating client")));
     } finally {
       setLoading(false);
     }
@@ -93,7 +94,7 @@ export function CreateClientDialog() {
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre de empresa" : "Company name"}</Label>
             <Input placeholder={lang === "es" ? "Clínica San Rafael" : "San Rafael Clinic"} {...register("orgName")} />
-            {errors.orgName && <p className="text-xs text-red-500">{errors.orgName.message}</p>}
+            {errors.orgName && <p className="text-xs text-red-500">{translateMessage(errors.orgName.message)}</p>}
           </div>
 
           <div className="space-y-2">
@@ -115,19 +116,19 @@ export function CreateClientDialog() {
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre del administrador" : "Administrator name"}</Label>
             <Input placeholder={lang === "es" ? "Juan García" : "John Smith"} {...register("userName")} />
-            {errors.userName && <p className="text-xs text-red-500">{errors.userName.message}</p>}
+            {errors.userName && <p className="text-xs text-red-500">{translateMessage(errors.userName.message)}</p>}
           </div>
 
           <div className="space-y-2">
             <Label>{lang === "es" ? "Email de acceso" : "Login email"}</Label>
             <Input type="email" placeholder="juan@empresa.com" {...register("userEmail")} />
-            {errors.userEmail && <p className="text-xs text-red-500">{errors.userEmail.message}</p>}
+            {errors.userEmail && <p className="text-xs text-red-500">{translateMessage(errors.userEmail.message)}</p>}
           </div>
 
           <div className="space-y-2">
             <Label>{lang === "es" ? "Contraseña inicial" : "Initial password"}</Label>
             <Input type="password" placeholder={lang === "es" ? "Mínimo 8 caracteres" : "At least 8 characters"} {...register("password")} />
-            {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+            {errors.password && <p className="text-xs text-red-500">{translateMessage(errors.password.message)}</p>}
           </div>
 
           <DialogFooter>

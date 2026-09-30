@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
+import { translateMessage } from "@/lib/user-error";
 
 const loginSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -155,7 +156,7 @@ export default function LoginPage() {
               {...register("email")}
             />
             {errors.email && (
-              <p className="text-xs text-red-500">{errors.email.message}</p>
+              <p className="text-xs text-red-500">{translateMessage(errors.email.message)}</p>
             )}
           </div>
 
@@ -173,7 +174,7 @@ export default function LoginPage() {
               {...register("password")}
             />
             {errors.password && (
-              <p className="text-xs text-red-500">{errors.password.message}</p>
+              <p className="text-xs text-red-500">{translateMessage(errors.password.message)}</p>
             )}
           </div>
 

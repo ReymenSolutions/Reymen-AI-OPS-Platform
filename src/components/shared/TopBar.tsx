@@ -18,6 +18,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { readImageFileAsSquareDataUrl, squareImageErrorMessage } from "@/lib/square-image";
+import { getErrorMessage } from "@/lib/user-error";
 
 const AVATAR_PRESETS = [
   // Adventurer
@@ -180,42 +182,15 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
     setActiveDialog("avatar");
   }
 
-  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
-    // The raw file is only ever read into a canvas and re-encoded at 200x200
-    // below, so this cap just guards against hanging on a huge decode — the
-    // real size limit is updateAvatar()'s 300KB check on the compressed
-    // result. Phone camera photos routinely run 8-15MB, so keep this high.
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error(lang === "es" ? "Imagen demasiado grande (máx. 20MB)" : "Image too large (max 20MB)");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onerror = () => {
-      toast.error(lang === "es" ? "No se pudo leer la imagen" : "Could not read the image");
-    };
-    reader.onload = (event) => {
-      const img = new window.Image();
-      img.onerror = () => {
-        toast.error(lang === "es" ? "Formato de imagen no compatible" : "Unsupported image format");
-      };
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const size = 200;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d")!;
-        const minDim = Math.min(img.width, img.height);
-        const sx = (img.width - minDim) / 2;
-        const sy = (img.height - minDim) / 2;
-        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-        setAvatarPreview(canvas.toDataURL("image/jpeg", 0.85));
-      };
-      img.src = event.target!.result as string;
-    };
-    reader.readAsDataURL(file);
     e.target.value = "";
+    if (!file) return;
+    try {
+      setAvatarPreview(await readImageFileAsSquareDataUrl(file));
+    } catch (error) {
+      toast.error(squareImageErrorMessage(error, lang));
+    }
   }
 
   function handleSaveAvatar() {
@@ -232,7 +207,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
         setActiveDialog(null);
         toast.success(lang === "es" ? "Avatar actualizado" : "Avatar updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
+        toast.error(getErrorMessage(e, t.error));
       }
     });
   }
@@ -251,7 +226,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
         setActiveDialog(null);
         toast.success(lang === "es" ? "Avatar eliminado" : "Avatar removed");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
+        toast.error(getErrorMessage(e, t.error));
       }
     });
   }
@@ -272,7 +247,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
         setPwdForm({ current: "", next: "", confirm: "" });
         toast.success(lang === "es" ? "Contraseña actualizada" : "Password updated");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t.error);
+        toast.error(getErrorMessage(e, t.error));
       }
     });
   }
@@ -320,7 +295,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
       await startImpersonation(userId);
       window.location.href = "/portal/dashboard";
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.impersonateError);
+      toast.error(getErrorMessage(e, t.impersonateError));
       setImpersonateLoadingId(null);
     }
   }

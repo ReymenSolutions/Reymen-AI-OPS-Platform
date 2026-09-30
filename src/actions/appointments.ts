@@ -9,6 +9,7 @@ import { isWithinAvailability } from "@/lib/availability";
 import { logAudit } from "@/lib/audit";
 import { recordMetric, METRIC_KEYS } from "@/lib/metrics";
 import type { AppointmentStatus } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 // Only these statuses represent a live, upcoming commitment that occupies a
 // slot. A CANCELLED or NO_SHOW appointment frees the slot back up; COMPLETED
@@ -20,7 +21,7 @@ const BLOCKING_STATUSES: AppointmentStatus[] = ["SCHEDULED", "CONFIRMED"];
 async function resolveService(organizationId: string, serviceId: string | undefined) {
   if (!serviceId) return null;
   const service = await prisma.service.findFirst({ where: { id: serviceId, organizationId, isActive: true } });
-  if (!service) throw new Error("Servicio no encontrado");
+  if (!service) throw new UserError("Servicio no encontrado");
   return service;
 }
 
@@ -42,7 +43,7 @@ async function bookSlot(
     excludeAppointmentId?: string;
   }
 ) {
-  if (data.end <= data.start) throw new Error("La hora de fin debe ser posterior a la de inicio");
+  if (data.end <= data.start) throw new UserError("La hora de fin debe ser posterior a la de inicio");
 
   const [org, service] = await Promise.all([
     prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { timezone: true } }),
@@ -53,7 +54,7 @@ async function bookSlot(
   const bufferedEnd = new Date(data.end.getTime() + bufferMs);
 
   const available = await isWithinAvailability(organizationId, org.timezone, data.start, data.end);
-  if (!available) throw new Error("Ese horario está fuera del horario de disponibilidad configurado.");
+  if (!available) throw new UserError("Ese horario está fuera del horario de disponibilidad configurado.");
 
   // The buffer must also block against an EXISTING appointment's own
   // service buffer (e.g. a haircut with a 15-min cleanup buffer must still
@@ -85,7 +86,7 @@ async function bookSlot(
           );
           return existing.startTime < bufferedEnd && existingBufferedEnd > data.start;
         });
-        if (overlapping) throw new Error("Ese horario ya está ocupado por otra cita.");
+        if (overlapping) throw new UserError("Ese horario ya está ocupado por otra cita.");
 
         if (data.excludeAppointmentId) {
           await tx.appointment.update({
@@ -116,7 +117,7 @@ async function bookSlot(
     );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
-      throw new Error("Ese horario ya está ocupado por otra cita.");
+      throw new UserError("Ese horario ya está ocupado por otra cita.");
     }
     throw err;
   }
@@ -133,10 +134,10 @@ const createSchema = z.object({
 
 export async function createAppointment(data: z.infer<typeof createSchema>) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const parsed = createSchema.safeParse(data);
-  if (!parsed.success) throw new Error(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
 
   const organizationId = session.user.organizationId;
   const start = new Date(parsed.data.startTime);
@@ -148,10 +149,10 @@ export async function createAppointment(data: z.infer<typeof createSchema>) {
     const service = await prisma.service.findFirst({
       where: { id: parsed.data.serviceId, organizationId, isActive: true },
     });
-    if (!service) throw new Error("Servicio no encontrado");
+    if (!service) throw new UserError("Servicio no encontrado");
     end = new Date(start.getTime() + service.durationMinutes * 60 * 1000);
   } else {
-    throw new Error("Indica una hora de fin o selecciona un servicio");
+    throw new UserError("Indica una hora de fin o selecciona un servicio");
   }
 
   await bookSlot(organizationId, {
@@ -176,16 +177,16 @@ const rescheduleSchema = z.object({
 
 export async function rescheduleAppointment(data: z.infer<typeof rescheduleSchema>) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
   const organizationId = session.user.organizationId;
 
   const parsed = rescheduleSchema.parse(data);
   const existing = await prisma.appointment.findFirst({
     where: { id: parsed.appointmentId, organizationId },
   });
-  if (!existing) throw new Error("Cita no encontrada");
+  if (!existing) throw new UserError("Cita no encontrada");
   if (!BLOCKING_STATUSES.includes(existing.status)) {
-    throw new Error("Solo se pueden reprogramar citas agendadas o confirmadas");
+    throw new UserError("Solo se pueden reprogramar citas agendadas o confirmadas");
   }
 
   const start = new Date(parsed.startTime);
@@ -215,12 +216,12 @@ export async function rescheduleAppointment(data: z.infer<typeof rescheduleSchem
 
 export async function updateAppointmentStatus(appointmentId: string, status: AppointmentStatus) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const apt = await prisma.appointment.findFirst({
     where: { id: appointmentId, organizationId: session.user.organizationId },
   });
-  if (!apt) throw new Error("Cita no encontrada");
+  if (!apt) throw new UserError("Cita no encontrada");
 
   await prisma.appointment.update({
     where: { id: appointmentId },

@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatMoney } from "@/lib/utils";
 import type { PlatformModule } from "@prisma/client";
 
 async function getPortalMetrics(orgId: string) {
@@ -174,7 +174,7 @@ export default async function PortalDashboardPage() {
                     {lang === "es" ? "Food — ventas de hoy" : "Food — today's sales"}
                   </p>
                   <p className="text-xs text-slate-400">
-                    ${foodSummary.today.gross.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                    {formatMoney(foodSummary.today.gross)}
                     {" · "}
                     {foodSummary.today.count} {lang === "es" ? "venta(s)" : "sale(s)"}
                   </p>

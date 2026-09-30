@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { auth, isAdmin } from "@/lib/auth";
 import { generateSlug, generateWebhookSecret } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
+import { hasCustomPrice } from "@/lib/permissions";
+import { requireAdmin } from "@/lib/guards";
+import { UserError } from "@/lib/user-error";
 
 const createClientSchema = z.object({
   orgName: z.string().min(2),
@@ -17,8 +19,7 @@ const createClientSchema = z.object({
 });
 
 export async function createClient(formData: FormData) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const parsed = createClientSchema.safeParse({
     orgName: formData.get("orgName"),
@@ -28,7 +29,7 @@ export async function createClient(formData: FormData) {
     password: formData.get("password"),
   });
 
-  if (!parsed.success) throw new Error("Datos inválidos");
+  if (!parsed.success) throw new UserError("Datos inválidos");
 
   const { orgName, orgIndustry, userName, userEmail, password } = parsed.data;
   const slug = generateSlug(orgName);
@@ -80,16 +81,22 @@ export async function createClient(formData: FormData) {
   return { success: true, orgId: org.id };
 }
 
-export async function changePlan(orgId: string, plan: string) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+export async function changePlan(orgId: string, plan: string, customMonthlyPriceUsd: number | null = null) {
+  const session = await requireAdmin();
 
   const validPlans = ["starter", "professional", "enterprise"];
-  if (!validPlans.includes(plan)) throw new Error("Plan inválido");
+  if (!validPlans.includes(plan)) throw new UserError("Plan inválido");
+
+  // El precio pactado solo existe en planes de precio personalizado; al pasar
+  // a un plan de precio fijo se borra para no dejar un precio viejo colgando.
+  const customPrice = hasCustomPrice(plan) ? customMonthlyPriceUsd : null;
+  if (customPrice !== null && !(Number.isFinite(customPrice) && customPrice > 0)) {
+    throw new UserError("El precio personalizado debe ser mayor a 0");
+  }
 
   const org = await prisma.organization.update({
     where: { id: orgId },
-    data: { plan },
+    data: { plan, customMonthlyPriceUsd: customPrice },
   });
 
   await logAudit({
@@ -98,7 +105,7 @@ export async function changePlan(orgId: string, plan: string) {
     action: "client.plan_change",
     resource: "Organization",
     resourceId: orgId,
-    metadata: { newPlan: plan },
+    metadata: { newPlan: plan, customMonthlyPriceUsd: customPrice },
   });
 
   revalidatePath(`/admin/clients/${orgId}`);
@@ -106,8 +113,7 @@ export async function changePlan(orgId: string, plan: string) {
 }
 
 export async function updateClientStatus(orgId: string, isActive: boolean) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   await prisma.organization.update({
     where: { id: orgId },
@@ -129,8 +135,7 @@ export async function updateClientStatus(orgId: string, isActive: boolean) {
 }
 
 export async function rotateOrgWebhookSecret(orgId: string) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const newSecret = generateWebhookSecret();
   await prisma.organization.update({ where: { id: orgId }, data: { n8nWebhookSecret: newSecret } });
@@ -151,8 +156,7 @@ export async function rotateOrgWebhookSecret(orgId: string) {
 // GET /api/v1/food/menu (Fase 17) -- ver el comentario en el schema sobre
 // por qué esto vive aparte de la llave que firma el webhook de órdenes.
 export async function rotateFoodPosReadKey(orgId: string) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
+  const session = await requireAdmin();
 
   const newKey = generateWebhookSecret();
   await prisma.organization.update({ where: { id: orgId }, data: { foodPosReadKey: newKey } });
@@ -169,25 +173,3 @@ export async function rotateFoodPosReadKey(orgId: string) {
   return { success: true, secret: newKey };
 }
 
-export async function assignAutomation(
-  orgId: string,
-  data: { name: string; type: string; description?: string; n8nWorkflowId?: string }
-) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-
-  const automation = await prisma.automation.create({
-    data: {
-      organizationId: orgId,
-      name: data.name,
-      type: data.type,
-      description: data.description,
-      n8nWorkflowId: data.n8nWorkflowId,
-      webhookSecret: generateWebhookSecret(),
-    },
-  });
-
-  revalidatePath(`/admin/clients/${orgId}`);
-  revalidatePath("/admin/automations");
-  return { success: true, automationId: automation.id };
-}

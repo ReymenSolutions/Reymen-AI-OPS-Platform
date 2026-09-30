@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { usePreferences } from "@/context/preferences";
 import { createOpportunity } from "@/actions/opportunities";
 import { searchLeads } from "@/actions/leads";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface LeadOption { id: string; name: string; email: string | null; phone: string | null }
 interface StageOption { id: string; name: string }
@@ -81,7 +82,7 @@ export function CreateOpportunityDialog({
         setTitle(""); setAmount(""); setCloseDate(""); setLeadQuery(""); setLeadResults([]);
         if (!fixedLead) setSelectedLead(null);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al crear la oportunidad" : "Error creating opportunity"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al crear la oportunidad" : "Error creating opportunity")));
       }
     });
   }

@@ -8,11 +8,12 @@ import { assertModuleEnabled } from "@/lib/modules";
 import { can } from "@/lib/permissions";
 import { runAiLabInference } from "@/lib/ai-lab";
 import type { PromptType, UserRole } from "@prisma/client";
+import { UserError } from "@/lib/user-error";
 
 async function requireAiLabAccess() {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-  if (!can(session.user.role as UserRole, "prompts:manage")) throw new Error("Sin permisos");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
+  if (!can(session.user.role as UserRole, "prompts:manage")) throw new UserError("Sin permisos");
   await assertModuleEnabled(session.user.organizationId, "AI_WHATSAPP");
   return session;
 }
@@ -44,7 +45,7 @@ export async function createSandboxSession(data: z.infer<typeof createSessionSch
     const version = await prisma.promptVersion.findFirst({
       where: { id: parsed.promptVersionId, prompt: { organizationId: session.user.organizationId! } },
     });
-    if (!version) throw new Error("Versión de prompt no encontrada");
+    if (!version) throw new UserError("Versión de prompt no encontrada");
   }
 
   const created = await prisma.aiSandboxSession.create({
@@ -75,7 +76,7 @@ export async function getSandboxSession(sessionId: string) {
     where: { id: sessionId, organizationId: session.user.organizationId! },
     include: { messages: { orderBy: { createdAt: "asc" } } },
   });
-  if (!sandboxSession) throw new Error("Sesión no encontrada");
+  if (!sandboxSession) throw new UserError("Sesión no encontrada");
   return sandboxSession;
 }
 
@@ -84,7 +85,7 @@ export async function deleteSandboxSession(sessionId: string) {
   const sandboxSession = await prisma.aiSandboxSession.findFirst({
     where: { id: sessionId, organizationId: session.user.organizationId! },
   });
-  if (!sandboxSession) throw new Error("Sesión no encontrada");
+  if (!sandboxSession) throw new UserError("Sesión no encontrada");
 
   await prisma.aiSandboxSession.delete({ where: { id: sessionId } });
   revalidatePath("/portal/ai-lab");
@@ -95,13 +96,13 @@ export async function sendSandboxMessage(sessionId: string, content: string) {
   const session = await requireAiLabAccess();
   const orgId = session.user.organizationId!;
 
-  if (!content.trim()) throw new Error("El mensaje no puede estar vacío");
+  if (!content.trim()) throw new UserError("El mensaje no puede estar vacío");
 
   const sandboxSession = await prisma.aiSandboxSession.findFirst({
     where: { id: sessionId, organizationId: orgId },
     include: { messages: { orderBy: { createdAt: "asc" } } },
   });
-  if (!sandboxSession) throw new Error("Sesión no encontrada");
+  if (!sandboxSession) throw new UserError("Sesión no encontrada");
 
   let promptType: PromptType = "SYSTEM";
   let promptContent: string | undefined;
@@ -200,7 +201,7 @@ export async function deleteTestCase(testCaseId: string) {
   const testCase = await prisma.promptTestCase.findFirst({
     where: { id: testCaseId, organizationId: session.user.organizationId! },
   });
-  if (!testCase) throw new Error("Caso de prueba no encontrado");
+  if (!testCase) throw new UserError("Caso de prueba no encontrado");
 
   await prisma.promptTestCase.delete({ where: { id: testCaseId } });
   revalidatePath("/portal/ai-lab");
@@ -214,13 +215,13 @@ export async function runTestCase(testCaseId: string, promptVersionId: string) {
   const testCase = await prisma.promptTestCase.findFirst({
     where: { id: testCaseId, organizationId: orgId },
   });
-  if (!testCase) throw new Error("Caso de prueba no encontrado");
+  if (!testCase) throw new UserError("Caso de prueba no encontrado");
 
   const version = await prisma.promptVersion.findFirst({
     where: { id: promptVersionId, prompt: { organizationId: orgId, type: testCase.promptType } },
     include: { prompt: true },
   });
-  if (!version) throw new Error("Versión de prompt no encontrada para este tipo de caso de prueba");
+  if (!version) throw new UserError("Versión de prompt no encontrada para este tipo de caso de prueba");
 
   const systemContent = await getActiveSystemContent(orgId);
 
@@ -257,7 +258,7 @@ export async function gradeTestCaseResult(resultId: string, passed: boolean) {
   const result = await prisma.promptTestCaseResult.findFirst({
     where: { id: resultId, testCase: { organizationId: session.user.organizationId! } },
   });
-  if (!result) throw new Error("Resultado no encontrado");
+  if (!result) throw new UserError("Resultado no encontrado");
 
   await prisma.promptTestCaseResult.update({
     where: { id: resultId },
@@ -283,7 +284,7 @@ export async function createExperiment(data: z.infer<typeof experimentSchema>) {
   const parsed = experimentSchema.parse(data);
 
   if (parsed.variantAId === parsed.variantBId) {
-    throw new Error("Elige dos versiones distintas para comparar");
+    throw new UserError("Elige dos versiones distintas para comparar");
   }
 
   const [variantA, variantB] = await Promise.all([
@@ -294,7 +295,7 @@ export async function createExperiment(data: z.infer<typeof experimentSchema>) {
       where: { id: parsed.variantBId, prompt: { organizationId: orgId, type: parsed.promptType } },
     }),
   ]);
-  if (!variantA || !variantB) throw new Error("Una de las versiones no existe para este tipo de prompt");
+  if (!variantA || !variantB) throw new UserError("Una de las versiones no existe para este tipo de prompt");
 
   const experiment = await prisma.promptExperiment.create({
     data: { ...parsed, organizationId: orgId },
@@ -321,8 +322,8 @@ export async function runExperimentSample(experimentId: string, userMessage: str
     where: { id: experimentId, organizationId: orgId },
     include: { variantA: true, variantB: true },
   });
-  if (!experiment) throw new Error("Experimento no encontrado");
-  if (experiment.status === "COMPLETED") throw new Error("Este experimento ya está cerrado");
+  if (!experiment) throw new UserError("Experimento no encontrado");
+  if (experiment.status === "COMPLETED") throw new UserError("Este experimento ya está cerrado");
 
   const systemContent = await getActiveSystemContent(orgId);
   const useSystemContext = experiment.promptType !== "SYSTEM";
@@ -368,7 +369,7 @@ export async function judgeExperimentSample(sampleId: string, preferred: "A" | "
   const sample = await prisma.promptExperimentSample.findFirst({
     where: { id: sampleId, experiment: { organizationId: session.user.organizationId! } },
   });
-  if (!sample) throw new Error("Muestra no encontrada");
+  if (!sample) throw new UserError("Muestra no encontrada");
 
   await prisma.promptExperimentSample.update({ where: { id: sampleId }, data: { preferred } });
 
@@ -382,7 +383,7 @@ export async function completeExperiment(experimentId: string, winnerVariant: "A
   const experiment = await prisma.promptExperiment.findFirst({
     where: { id: experimentId, organizationId: session.user.organizationId! },
   });
-  if (!experiment) throw new Error("Experimento no encontrado");
+  if (!experiment) throw new UserError("Experimento no encontrado");
 
   await prisma.promptExperiment.update({
     where: { id: experimentId },

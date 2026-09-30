@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { usePreferences } from "@/context/preferences";
 import { mergeLeads } from "@/actions/leads";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface DuplicateLead {
   id: string;
@@ -35,7 +36,7 @@ export function LeadDuplicatesPanel({ leadId, duplicates }: { leadId: string; du
         setTarget(null);
         router.refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al fusionar" : "Error merging leads"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al fusionar" : "Error merging leads")));
       }
     });
   }

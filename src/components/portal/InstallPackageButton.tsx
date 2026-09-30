@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { installTemplatePackage } from "@/actions/templates";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface InstallPackageButtonProps {
   packageId: string;
@@ -38,7 +39,7 @@ export function InstallPackageButton({ packageId, fullyInstalled }: InstallPacka
         );
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al instalar el paquete" : "Error installing the package"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al instalar el paquete" : "Error installing the package")));
     } finally {
       setLoading(false);
     }

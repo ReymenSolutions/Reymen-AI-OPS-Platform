@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { createFoodModifierGroup, updateFoodModifierGroup } from "@/actions/food";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const optionSchema = z.object({
   name: z.string().min(1, "Nombre de opción requerido"),
@@ -79,7 +80,7 @@ export function FoodModifierGroupFormDialog({ group }: { group?: ExistingGroup }
       }
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al guardar" : "Error saving"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al guardar" : "Error saving")));
     } finally {
       setLoading(false);
     }
@@ -109,7 +110,7 @@ export function FoodModifierGroupFormDialog({ group }: { group?: ExistingGroup }
           <div className="space-y-2">
             <Label>{lang === "es" ? "Nombre *" : "Name *"}</Label>
             <Input placeholder={lang === "es" ? "Término, Extras..." : "Doneness, Extras..."} {...register("name")} />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -124,7 +125,7 @@ export function FoodModifierGroupFormDialog({ group }: { group?: ExistingGroup }
               <p className="text-xs text-slate-500">{lang === "es" ? "1 = elección única" : "1 = single choice"}</p>
             </div>
           </div>
-          {errors.minSelect && <p className="text-xs text-red-500">{errors.minSelect.message}</p>}
+          {errors.minSelect && <p className="text-xs text-red-500">{translateMessage(errors.minSelect.message)}</p>}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -134,7 +135,7 @@ export function FoodModifierGroupFormDialog({ group }: { group?: ExistingGroup }
                 {lang === "es" ? "Agregar" : "Add"}
               </Button>
             </div>
-            {typeof errors.options?.message === "string" && <p className="text-xs text-red-500">{errors.options.message}</p>}
+            {typeof errors.options?.message === "string" && <p className="text-xs text-red-500">{translateMessage(errors.options.message)}</p>}
             <div className="max-h-64 space-y-2 overflow-y-auto pr-0.5">
               {optionFields.map((field, index) => (
                 <div key={field.id} className="flex flex-col gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2 sm:flex-row sm:items-end">

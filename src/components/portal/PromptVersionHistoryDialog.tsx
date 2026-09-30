@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/utils";
 import { listPromptVersions, rollbackPromptVersion } from "@/actions/prompts";
 import { usePreferences } from "@/context/preferences";
 import type { PromptVersion } from "@prisma/client";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface PromptVersionHistoryDialogProps {
   promptId: string;
@@ -32,7 +33,7 @@ export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersi
       try {
         setVersions(await listPromptVersions(promptId));
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al cargar el historial" : "Error loading history"));
+        toast.error(getErrorMessage(e, (lang === "es" ? "Error al cargar el historial" : "Error loading history")));
       } finally {
         setLoading(false);
       }
@@ -46,7 +47,7 @@ export function PromptVersionHistoryDialog({ promptId, promptName }: PromptVersi
       setVersions(await listPromptVersions(promptId));
       toast.success(lang === "es" ? "Prompt restaurado a esa versión" : "Prompt restored to that version");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al restaurar la versión" : "Error restoring version"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al restaurar la versión" : "Error restoring version")));
     } finally {
       setRollingBack(null);
     }

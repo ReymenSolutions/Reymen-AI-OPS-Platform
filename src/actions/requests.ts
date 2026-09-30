@@ -8,6 +8,7 @@ import { notifyAdmins } from "@/lib/admin-notifications";
 import { newClientRequestEmail } from "@/lib/email-templates";
 import type { RequestStatus } from "@prisma/client";
 import { appUrl } from "@/lib/app-url";
+import { UserError } from "@/lib/user-error";
 
 const createRequestSchema = z.object({
   title: z.string().min(1),
@@ -18,7 +19,7 @@ const createRequestSchema = z.object({
 
 export async function createRequest(formData: FormData) {
   const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
+  if (!session?.user.organizationId) throw new UserError("No autorizado");
 
   const parsed = createRequestSchema.safeParse({
     title: formData.get("title"),
@@ -27,7 +28,7 @@ export async function createRequest(formData: FormData) {
     priority: formData.get("priority") || "medium",
   });
 
-  if (!parsed.success) throw new Error("Datos inválidos");
+  if (!parsed.success) throw new UserError("Datos inválidos");
 
   const [, org] = await Promise.all([
     prisma.request.create({
@@ -49,7 +50,7 @@ export async function createRequest(formData: FormData) {
 
 export async function updateRequestStatus(requestId: string, status: RequestStatus) {
   const session = await auth();
-  if (!session) throw new Error("No autorizado");
+  if (!session) throw new UserError("No autorizado");
 
   if (isAdmin(session.user.role)) {
     await prisma.request.update({
@@ -63,7 +64,7 @@ export async function updateRequestStatus(requestId: string, status: RequestStat
     const req = await prisma.request.findFirst({
       where: { id: requestId, organizationId: session.user.organizationId! },
     });
-    if (!req) throw new Error("Solicitud no encontrada");
+    if (!req) throw new UserError("Solicitud no encontrada");
 
     await prisma.request.update({
       where: { id: requestId },

@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { resetPassword } from "@/actions/password-reset";
+import { getErrorMessage, translateMessage } from "@/lib/user-error";
 
 const schema = z
   .object({
@@ -43,7 +44,7 @@ function ResetPasswordForm() {
       toast.success("Contraseña actualizada. Ya puedes iniciar sesión.");
       router.push("/login");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al restablecer la contraseña");
+      toast.error(getErrorMessage(e, "Error al restablecer la contraseña"));
     } finally {
       setLoading(false);
     }
@@ -65,12 +66,12 @@ function ResetPasswordForm() {
       <div className="space-y-2">
         <Label htmlFor="password">Nueva contraseña</Label>
         <Input id="password" type="password" placeholder="••••••••" {...register("password")} autoFocus />
-        {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+        {errors.password && <p className="text-xs text-red-500">{translateMessage(errors.password.message)}</p>}
       </div>
       <div className="space-y-2">
         <Label htmlFor="confirm">Confirmar contraseña</Label>
         <Input id="confirm" type="password" placeholder="••••••••" {...register("confirm")} />
-        {errors.confirm && <p className="text-xs text-red-500">{errors.confirm.message}</p>}
+        {errors.confirm && <p className="text-xs text-red-500">{translateMessage(errors.confirm.message)}</p>}
       </div>
       <Button type="submit" className="w-full" disabled={loading}>
         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
