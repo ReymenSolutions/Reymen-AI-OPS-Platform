@@ -50,10 +50,6 @@ if [ ! -f "$compose_file" ]; then
   exit 1
 fi
 
-# Se detectan ANTES del pull, comparando contra lo que trae origin/main.
-g fetch origin main
-new_migrations="$(g diff --name-only --diff-filter=A HEAD origin/main -- prisma/migrations | grep 'migration.sql$' || true)"
-
 g pull --ff-only origin main
 # Solo la app: Postgres, n8n y el proxy siguen corriendo sin reiniciarse.
 compose build "$service"
@@ -63,17 +59,33 @@ compose build "$service"
 # por el build de arriba), conectada a la misma red y base que usa la app.
 # Se hace ANTES de levantar la app nueva: código nuevo sobre un esquema viejo
 # truena, y mientras tanto la app anterior sigue atendiendo.
-if [ -n "$new_migrations" ]; then
-  echo "→ Migraciones nuevas:"
-  echo "$new_migrations" | sed 's/^/    /'
+# Se pregunta a la propia base qué migraciones faltan (prisma migrate status),
+# en vez de comparar commits: así también se aplican las que hayan quedado
+# pendientes de una actualización anterior.
+db_url="$(sudo docker exec "$container" printenv DATABASE_URL 2>/dev/null || true)"
+db_network="$(sudo docker inspect "$db_container" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | awk '{print $1}')"
+if [ -z "$db_url" ] || [ -z "$db_network" ]; then
+  echo "✗ No se pudo leer DATABASE_URL de $container o la red de $db_container." >&2
+  echo "  Revisa que ambos contenedores estén corriendo (o indica APP_CONTAINER / DB_CONTAINER)." >&2
+  exit 1
+fi
+sudo docker build --target builder -t reymen-ai-ops-migrator -f docker/Dockerfile . >/dev/null
+migrator() { sudo docker run --rm --network "$db_network" -e DATABASE_URL="$db_url" reymen-ai-ops-migrator "$@"; }
 
-  db_url="$(sudo docker exec "$container" printenv DATABASE_URL 2>/dev/null || true)"
-  db_network="$(sudo docker inspect "$db_container" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | awk '{print $1}')"
-  if [ -z "$db_url" ] || [ -z "$db_network" ]; then
-    echo "✗ No se pudo leer DATABASE_URL de $container o la red de $db_container." >&2
-    echo "  Revisa que ambos contenedores estén corriendo (o indica APP_CONTAINER / DB_CONTAINER)." >&2
-    exit 1
-  fi
+migrate_status="$(migrator npx prisma migrate status 2>&1 || true)"
+if echo "$migrate_status" | grep -q "Database schema is up to date"; then
+  pending=""
+elif echo "$migrate_status" | grep -q "have not yet been applied"; then
+  pending="yes"
+else
+  echo "✗ No se pudo revisar el estado de las migraciones:" >&2
+  echo "$migrate_status" | tail -15 | sed 's/^/    /' >&2
+  exit 1
+fi
+
+if [ -n "$pending" ]; then
+  echo "→ Hay migraciones de base de datos pendientes:"
+  echo "$migrate_status" | sed -n '/have not yet been applied/,/^$/p' | sed 's/^/    /'
 
   mkdir -p backups
   backup="backups/antes-de-migrar-$(date +%Y%m%d-%H%M%S).dump"
@@ -84,8 +96,7 @@ if [ -n "$new_migrations" ]; then
   fi
 
   echo "→ Aplicando migraciones ..."
-  sudo docker build --target builder -t reymen-ai-ops-migrator -f docker/Dockerfile . >/dev/null
-  if ! sudo docker run --rm --network "$db_network" -e DATABASE_URL="$db_url" reymen-ai-ops-migrator npx prisma migrate deploy; then
+  if ! migrator npx prisma migrate deploy; then
     echo "✗ La migración falló. La app anterior sigue corriendo sin cambios." >&2
     echo "  Respaldo previo: $(pwd)/$backup" >&2
     echo "  Para restaurarlo:" >&2
