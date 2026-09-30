@@ -80,10 +80,20 @@ export function can(role: UserRole, action: Action): boolean {
   return ROLE_PERMISSIONS[role]?.includes(action) ?? false;
 }
 
+// Sin tope real. Antes Enterprise usaba 99 / 99999 como "ilimitado" y cada
+// pantalla comparaba contra su propio número mágico (=== 99, >= 99999); con
+// Infinity el límite de verdad no existe (assertPlanCapacity nunca bloquea)
+// y las pantallas preguntan isUnlimited() en vez de adivinar el número.
+export const UNLIMITED = Number.POSITIVE_INFINITY;
+
+export function isUnlimited(limit: number): boolean {
+  return limit === UNLIMITED;
+}
+
 export const PLAN_LIMITS: Record<string, { leads: number; users: number; automations: number; label: string }> = {
-  starter:      { leads: 500,    users: 2,  automations: 3,  label: "Starter" },
-  professional: { leads: 5000,   users: 10, automations: 15, label: "Professional" },
-  enterprise:   { leads: 99999,  users: 99, automations: 99, label: "Enterprise" },
+  starter:      { leads: 500,       users: 2,         automations: 3,         label: "Starter" },
+  professional: { leads: 5000,      users: 10,        automations: 15,        label: "Professional" },
+  enterprise:   { leads: UNLIMITED, users: UNLIMITED, automations: UNLIMITED, label: "Enterprise" },
 };
 
 // Monthly subscription cost per plan, in USD. The single source of truth for

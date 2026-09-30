@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { changePlan } from "@/actions/admin/clients";
-import { PLAN_LIMITS, PLAN_MODULES, PLAN_PRICES } from "@/lib/permissions";
+import { PLAN_LIMITS, PLAN_MODULES, PLAN_PRICES, isUnlimited } from "@/lib/permissions";
 import { getModuleLabel } from "@/lib/modules";
 import { usePreferences } from "@/context/preferences";
 
@@ -93,9 +93,9 @@ export function ChangePlanDialog({ orgId, currentPlan }: ChangePlanDialogProps) 
                   {isSelected && <Check className="h-4 w-4 text-brand-600" />}
                 </div>
                 <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-                  <span>{limits?.leads.toLocaleString("en-US")} leads</span>
-                  <span>{limits?.users === 99 ? (lang === "es" ? "Ilimitado" : "Unlimited") : limits?.users} {lang === "es" ? "usuarios" : "users"}</span>
-                  <span>{limits?.automations === 99 ? (lang === "es" ? "Ilimitadas" : "Unlimited") : limits?.automations} {lang === "es" ? "automatizaciones" : "automations"}</span>
+                  <span>{limits && isUnlimited(limits.leads) ? (lang === "es" ? "Ilimitados" : "Unlimited") : limits?.leads.toLocaleString("en-US")} leads</span>
+                  <span>{limits && isUnlimited(limits.users) ? (lang === "es" ? "Ilimitado" : "Unlimited") : limits?.users} {lang === "es" ? "usuarios" : "users"}</span>
+                  <span>{limits && isUnlimited(limits.automations) ? (lang === "es" ? "Ilimitadas" : "Unlimited") : limits?.automations} {lang === "es" ? "automatizaciones" : "automations"}</span>
                 </div>
                 <p className="mt-1.5 text-xs text-slate-400">
                   {lang === "es" ? "Incluye" : "Includes"}: {(PLAN_MODULES[plan.key] ?? []).map((m) => MODULE_LABEL[m]).join(", ")}
