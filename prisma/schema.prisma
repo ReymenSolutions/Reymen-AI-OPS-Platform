@@ -82,6 +82,8 @@ model Organization {
   foodOperatingCosts      FoodOperatingCost[]
   foodModifierGroups      FoodModifierGroup[]
   foodModifierOptionSales FoodModifierOptionSale[]
+  foodInventoryMovements  FoodInventoryMovement[]
+  foodPurchases           FoodPurchase[]
 
   @@index([slug])
 }
@@ -1087,14 +1089,18 @@ model FoodInventoryItem {
   name           String
   unit           String // "kg", "lt", "pza", etc. -- texto libre, mismo criterio que FoodSale.channel
   category       FoodInventoryCategory @default(EDIBLE)
-  currentStock   Decimal               @default(0) @db.Decimal(10, 2)
-  minStock       Decimal               @default(0) @db.Decimal(10, 2)
+  // 3 decimales, igual que FoodDishVariantIngredient.quantity: las recetas
+  // descuentan porciones como 0.150 kg y con 2 decimales se perdían.
+  currentStock   Decimal               @default(0) @db.Decimal(12, 3)
+  minStock       Decimal               @default(0) @db.Decimal(12, 3)
   unitCost       Decimal?              @db.Decimal(10, 2)
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
-  organization Organization                @relation(fields: [organizationId], references: [id])
-  dishLinks    FoodDishVariantIngredient[]
+  organization  Organization                @relation(fields: [organizationId], references: [id])
+  dishLinks     FoodDishVariantIngredient[]
+  movements     FoodInventoryMovement[]
+  purchaseItems FoodPurchaseItem[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1111,9 +1117,83 @@ model FoodSupplier {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  purchases    FoodPurchase[]
 
   @@index([organizationId])
+}
+
+// ─── FOOD OPS — Movimientos de inventario ────────────────────────────
+// Cada cambio a FoodInventoryItem.currentStock deja aquí un renglón con su
+// motivo, para poder explicar cualquier existencia ("¿por qué quedan 3 kg?").
+// quantity va con signo: negativo resta, positivo suma. stockAfter es la
+// existencia justo después del movimiento.
+enum FoodInventoryMovementType {
+  SALE // venta del POS: receta × unidades vendidas
+  SALE_CANCELLATION // cancelación de una venta del POS: devuelve los insumos
+  MANUAL_DISH_SALES // captura manual de "ventas de hoy por platillo" (sin POS)
+  PURCHASE // compra registrada
+  PURCHASE_VOID // compra anulada: quita lo que había sumado
+  ADJUSTMENT // conteo físico / corrección manual
+}
+
+model FoodInventoryMovement {
+  id              String                    @id @default(cuid())
+  organizationId  String
+  inventoryItemId String
+  type            FoodInventoryMovementType
+  quantity        Decimal                   @db.Decimal(12, 3)
+  stockAfter      Decimal                   @db.Decimal(12, 3)
+  foodSaleId      String?
+  purchaseId      String?
+  note            String?                   @db.Text
+  // Quién lo hizo (null = automático, p. ej. una venta del POS). Sin FK, igual
+  // que AuditLog: el historial no debe depender de que el usuario exista.
+  userId          String?
+  createdAt       DateTime                  @default(now())
+
+  organization  Organization      @relation(fields: [organizationId], references: [id])
+  inventoryItem FoodInventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([inventoryItemId, createdAt])
+}
+
+// ─── FOOD OPS — Compras ──────────────────────────────────────────────
+// Una compra suma sus cantidades a las existencias y deja el costo unitario
+// pagado como el costo actual del insumo (último costo de compra). Anular
+// una compra quita lo que sumó, pero no regresa el costo anterior.
+model FoodPurchase {
+  id             String    @id @default(cuid())
+  organizationId String
+  supplierId     String?
+  purchasedAt    DateTime
+  total          Decimal   @db.Decimal(12, 2)
+  notes          String?   @db.Text
+  userId         String?
+  voidedAt       DateTime?
+  voidReason     String?   @db.Text
+  createdAt      DateTime  @default(now())
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  supplier     FoodSupplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items        FoodPurchaseItem[]
+
+  @@index([organizationId, purchasedAt])
+}
+
+model FoodPurchaseItem {
+  id              String  @id @default(cuid())
+  purchaseId      String
+  inventoryItemId String
+  quantity        Decimal @db.Decimal(12, 3)
+  unitCost        Decimal @db.Decimal(10, 2)
+
+  purchase      FoodPurchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  inventoryItem FoodInventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([purchaseId])
+  @@index([inventoryItemId])
 }
 
 // ─── FOOD OPS — Platillos, costeo y rentabilidad (Fase 2) ────────────

@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { assertModuleEnabled, assertManualSalesAllowed } from "@/lib/modules";
 import { UserError } from "@/lib/user-error";
+import { applyStockMovements, consumptionToDeltas, recipeConsumption } from "@/lib/food-inventory";
 
 // ─── FOOD OPS — Server Actions ──────────────────────────────────────
 // Mismo patrón que src/actions/leads.ts (ver DOCUMENTACION_TECNICA.md §18):
@@ -651,15 +652,30 @@ export async function logFoodDishSales(data: { date: string; entries: { variantI
   const ownedCount = await prisma.foodDishVariant.count({ where: { id: { in: variantIds }, dish: { organizationId } } });
   if (ownedCount !== new Set(variantIds).size) throw new UserError("Una o más variantes no son válidas");
 
-  await prisma.$transaction(
-    parsed.data.entries.map((entry) =>
-      prisma.foodDishSale.upsert({
+  await prisma.$transaction(async (tx) => {
+    // Esta captura REEMPLAZA la cantidad del día, así que al inventario solo
+    // se le aplica la diferencia contra lo que ya estaba guardado.
+    const previous = await tx.foodDishSale.findMany({
+      where: { variantId: { in: variantIds }, occurredAt },
+      select: { variantId: true, quantity: true },
+    });
+    const previousByVariant = new Map(previous.map((p) => [p.variantId, p.quantity]));
+    for (const entry of parsed.data.entries) {
+      await tx.foodDishSale.upsert({
         where: { variantId_occurredAt: { variantId: entry.variantId, occurredAt } },
         update: { quantity: entry.quantity },
         create: { organizationId, variantId: entry.variantId, occurredAt, quantity: entry.quantity },
-      })
-    )
-  );
+      });
+    }
+    const changes = parsed.data.entries
+      .map((e) => ({ variantId: e.variantId, quantity: e.quantity - (previousByVariant.get(e.variantId) ?? 0) }))
+      .filter((c) => c.quantity !== 0);
+    await applyStockMovements(tx, organizationId, consumptionToDeltas(await recipeConsumption(tx, changes)), {
+      type: "MANUAL_DISH_SALES",
+      note: parsed.data.date,
+      userId: session.user.id,
+    });
+  });
 
   await logAudit({
     organizationId,

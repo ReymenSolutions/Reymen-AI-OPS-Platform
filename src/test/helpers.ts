@@ -94,6 +94,8 @@ export async function cleanupOrg(orgId: string) {
   // FoodDishVariant/FoodDishVariantIngredient/FoodDishSale cascade from
   // FoodDish (onDelete: Cascade all the way down), so deleting the dishes
   // is enough to clean up all three.
+  await prisma.foodInventoryMovement.deleteMany({ where: { organizationId: orgId } });
+  await prisma.foodPurchase.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodDish.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodOperatingCost.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodSale.deleteMany({ where: { organizationId: orgId } });

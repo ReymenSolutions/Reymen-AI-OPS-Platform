@@ -554,6 +554,57 @@ describe("food.ts — costeo y rentabilidad (platillos con variantes)", () => {
       return dish.variants[0];
     }
 
+    it("CRITICAL: deducts each ingredient by recipe × units sold, logging a SALE movement", async () => {
+      org = await createTestOrg("Food Pos Stock Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const cheese = await makeInventoryItem(org.id, "Queso", 150); // existencia 100 kg
+      const dough = await makeInventoryItem(org.id, "Masa", 20);
+      const { variant } = await makeDish(org.id, "Pizza con receta", 180, [
+        { inventoryItemId: cheese.id, quantity: 0.15 },
+        { inventoryItemId: dough.id, quantity: 0.3 },
+      ]);
+
+      await processFoodPosOrder({ grossAmount: 540, netAmount: 465.52, items: [{ variantId: variant.id, quantity: 3 }] }, org.id);
+
+      const after = await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: cheese.id } });
+      expect(Number(after.currentStock)).toBeCloseTo(99.55, 3); // 100 − 0.15 × 3
+      const doughAfter = await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: dough.id } });
+      expect(Number(doughAfter.currentStock)).toBeCloseTo(99.1, 3);
+
+      const movements = await prisma.foodInventoryMovement.findMany({ where: { inventoryItemId: cheese.id } });
+      expect(movements).toHaveLength(1);
+      expect(movements[0].type).toBe("SALE");
+      expect(Number(movements[0].quantity)).toBeCloseTo(-0.45, 3);
+      expect(Number(movements[0].stockAfter)).toBeCloseTo(99.55, 3);
+      expect(movements[0].foodSaleId).not.toBeNull();
+    });
+
+    it("gives the ingredients back when the POS cancels a sale (negative quantities)", async () => {
+      org = await createTestOrg("Food Pos Cancel Stock Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const cheese = await makeInventoryItem(org.id, "Queso", 150);
+      const { variant } = await makeDish(org.id, "Pizza", 180, [{ inventoryItemId: cheese.id, quantity: 0.2 }]);
+
+      await processFoodPosOrder({ grossAmount: 360, netAmount: 310, items: [{ variantId: variant.id, quantity: 2 }] }, org.id);
+      await processFoodPosOrder({ grossAmount: -360, netAmount: -310, items: [{ variantId: variant.id, quantity: -2 }] }, org.id);
+
+      const after = await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: cheese.id } });
+      expect(Number(after.currentStock)).toBeCloseTo(100, 3);
+      const types = (await prisma.foodInventoryMovement.findMany({ where: { inventoryItemId: cheese.id }, orderBy: { createdAt: "asc" } })).map((m) => m.type);
+      expect(types).toEqual(["SALE", "SALE_CANCELLATION"]);
+    });
+
+    it("never blocks a sale for lack of stock: the stock goes negative instead", async () => {
+      org = await createTestOrg("Food Pos Negative Stock Org");
+      await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });
+      const cheese = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Queso", unit: "kg", currentStock: 0.1 } });
+      const { variant } = await makeDish(org.id, "Pizza", 180, [{ inventoryItemId: cheese.id, quantity: 0.2 }]);
+
+      await processFoodPosOrder({ grossAmount: 180, netAmount: 155, items: [{ variantId: variant.id, quantity: 1 }] }, org.id);
+      const after = await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: cheese.id } });
+      expect(Number(after.currentStock)).toBeCloseTo(-0.1, 3);
+    });
+
     it("accumulates quantity across multiple orders on the same business day", async () => {
       org = await createTestOrg("Food Pos Order Org");
       await prisma.organizationModule.create({ data: { organizationId: org.id, module: "FOOD_OPS", status: "ACTIVE", source: "SUBSCRIBED" } });

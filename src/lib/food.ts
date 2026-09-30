@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { hasModule } from "./modules";
+import { applyStockMovements, consumptionToDeltas, recipeConsumption } from "./food-inventory";
 
 // ─── FOOD OPS — agregados de Ventas ──────────────────────────────────
 // Compartido entre /portal/food (resumen) y /portal/food/sales
@@ -985,25 +986,26 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
   }
   const recognizedModifierEntries = modifierEntries.filter((m) => optionNameById.has(m.optionId));
 
-  await prisma.$transaction([
-    prisma.foodSale.create({
+  const items = body.items;
+  await prisma.$transaction(async (tx) => {
+    const sale = await tx.foodSale.create({
       data: {
         organizationId,
         occurredAt,
         channel: body.channel ?? "POS",
-        grossAmount: body.grossAmount,
-        netAmount: body.netAmount,
+        grossAmount: body.grossAmount!,
+        netAmount: body.netAmount!,
       },
-    }),
-    ...body.items.map((item) =>
-      prisma.foodDishSale.upsert({
+    });
+    for (const item of items) {
+      await tx.foodDishSale.upsert({
         where: { variantId_occurredAt: { variantId: item.variantId, occurredAt: businessDay } },
         update: { quantity: { increment: item.quantity } },
         create: { organizationId, variantId: item.variantId, occurredAt: businessDay, quantity: item.quantity },
-      })
-    ),
-    ...recognizedModifierEntries.map((mod) =>
-      prisma.foodModifierOptionSale.upsert({
+      });
+    }
+    for (const mod of recognizedModifierEntries) {
+      await tx.foodModifierOptionSale.upsert({
         where: { optionId_occurredAt: { optionId: mod.optionId, occurredAt: businessDay } },
         update: { quantity: { increment: mod.quantity } },
         create: {
@@ -1013,7 +1015,24 @@ export async function processFoodPosOrder(payload: unknown, organizationId: stri
           occurredAt: businessDay,
           quantity: mod.quantity,
         },
-      })
-    ),
-  ]);
+      });
+    }
+
+    // Descuento de insumos según la receta de cada platillo vendido; una
+    // cancelación (cantidades negativas) los devuelve.
+    const sold = items.filter((i) => i.quantity > 0);
+    const cancelled = items.filter((i) => i.quantity < 0);
+    if (sold.length) {
+      await applyStockMovements(tx, organizationId, consumptionToDeltas(await recipeConsumption(tx, sold)), {
+        type: "SALE",
+        foodSaleId: sale.id,
+      });
+    }
+    if (cancelled.length) {
+      await applyStockMovements(tx, organizationId, consumptionToDeltas(await recipeConsumption(tx, cancelled)), {
+        type: "SALE_CANCELLATION",
+        foodSaleId: sale.id,
+      });
+    }
+  });
 }
