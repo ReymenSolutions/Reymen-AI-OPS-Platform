@@ -11,10 +11,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatMoney } from "@/lib/utils";
 import { BarChart3, DollarSign } from "lucide-react";
-
-const money = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`;
 
 export default async function FoodSalesPage() {
   const session = await auth();
@@ -43,12 +41,12 @@ export default async function FoodSalesPage() {
       <PageHeader title={t.foodSales} description={f.salesAnalyticsDesc} />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard title={f.today} value={money(summary.today.gross)} description={f.salesCountGross(summary.today.count)} icon={DollarSign} />
-        <MetricCard title={f.last7Days} value={money(summary.last7Days.gross)} description={f.salesCountGross(summary.last7Days.count)} icon={DollarSign} />
+        <MetricCard title={f.today} value={formatMoney(summary.today.gross)} description={f.salesCountGross(summary.today.count)} icon={DollarSign} />
+        <MetricCard title={f.last7Days} value={formatMoney(summary.last7Days.gross)} description={f.salesCountGross(summary.last7Days.count)} icon={DollarSign} />
         <MetricCard
           title={f.last30Days}
-          value={money(summary.last30Days.gross)}
-          description={f.netLabel(money(summary.last30Days.net))}
+          value={formatMoney(summary.last30Days.gross)}
+          description={f.netLabel(formatMoney(summary.last30Days.net))}
           icon={DollarSign}
           trend={summary.monthOverMonthGrossPct !== null ? { value: summary.monthOverMonthGrossPct, label: f.vsPrev30Days } : undefined}
         />
@@ -73,7 +71,7 @@ export default async function FoodSalesPage() {
                   <li key={c.channel ?? ""} className="px-6 py-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium text-slate-900">{c.channel ?? f.noChannel}</span>
-                      <span className="text-slate-500">{money(c.gross)} · {f.salesCount(c.count)} · {pct}%</span>
+                      <span className="text-slate-500">{formatMoney(c.gross)} · {f.salesCount(c.count)} · {pct}%</span>
                     </div>
                     <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
@@ -106,8 +104,8 @@ export default async function FoodSalesPage() {
                         <p className="text-xs text-slate-500">{sale.channel ?? f.noChannel}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-900">{money(Number(sale.grossAmount))}</p>
-                        <p className="text-xs text-slate-500">{f.netLabel(money(Number(sale.netAmount)))}</p>
+                        <p className="text-sm font-semibold text-slate-900">{formatMoney(Number(sale.grossAmount))}</p>
+                        <p className="text-xs text-slate-500">{f.netLabel(formatMoney(Number(sale.netAmount)))}</p>
                       </div>
                     </li>
                   ))}

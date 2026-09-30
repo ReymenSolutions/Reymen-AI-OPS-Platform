@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import { usePreferences } from "@/context/preferences";
 
 export interface FoodNetProfitByPeriod {
@@ -10,8 +10,6 @@ export interface FoodNetProfitByPeriod {
   "7d": { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { itemsWithSales: number; totalActiveItems: number } };
   "30d": { revenue: number; cogs: number; fixedCostsProrated: number; netProfit: number; coverage: { itemsWithSales: number; totalActiveItems: number } };
 }
-
-const money = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function FoodNetProfitPanel({ data }: { data: FoodNetProfitByPeriod }) {
   const { lang } = usePreferences();
@@ -47,20 +45,20 @@ export function FoodNetProfitPanel({ data }: { data: FoodNetProfitByPeriod }) {
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="rounded-md bg-slate-50 p-3">
             <p className="text-[11px] font-medium text-slate-500">{lang === "es" ? "Ingresos" : "Revenue"}</p>
-            <p className="text-sm font-bold text-slate-900">{money(current.revenue)}</p>
+            <p className="text-sm font-bold text-slate-900">{formatMoney(current.revenue)}</p>
           </div>
           <div className="rounded-md bg-slate-50 p-3">
             <p className="text-[11px] font-medium text-slate-500">{lang === "es" ? "Costo de insumos" : "Cost of goods"}</p>
-            <p className="text-sm font-bold text-slate-900">− {money(current.cogs)}</p>
+            <p className="text-sm font-bold text-slate-900">− {formatMoney(current.cogs)}</p>
           </div>
           <div className="rounded-md bg-slate-50 p-3">
             <p className="text-[11px] font-medium text-slate-500">{lang === "es" ? "Gastos fijos" : "Fixed costs"}</p>
-            <p className="text-sm font-bold text-slate-900">− {money(current.fixedCostsProrated)}</p>
+            <p className="text-sm font-bold text-slate-900">− {formatMoney(current.fixedCostsProrated)}</p>
           </div>
         </div>
         <div className={cn("rounded-md p-3", current.netProfit >= 0 ? "bg-emerald-50" : "bg-red-50")}>
           <p className="text-[11px] font-medium text-slate-500">{lang === "es" ? "Utilidad neta" : "Net profit"}</p>
-          <p className={cn("text-xl font-bold", current.netProfit >= 0 ? "text-emerald-700" : "text-red-700")}>{money(current.netProfit)}</p>
+          <p className={cn("text-xl font-bold", current.netProfit >= 0 ? "text-emerald-700" : "text-red-700")}>{formatMoney(current.netProfit)}</p>
         </div>
         {current.coverage.totalActiveItems > 0 && current.coverage.itemsWithSales < current.coverage.totalActiveItems && (
           <p className="text-xs text-amber-600">

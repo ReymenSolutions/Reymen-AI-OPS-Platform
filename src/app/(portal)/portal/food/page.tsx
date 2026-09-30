@@ -11,7 +11,7 @@ import { getSmartcardCompanyIdForOrg, getCompanyCardStats } from "@/lib/smartcar
 import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
 import { pickDict } from "@/lib/i18n-dict";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,10 +35,6 @@ const AREAS = [
   { href: "/portal/food/profitability", key: "foodProfitability", icon: Wallet, ready: true },
   { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: false },
 ] as const;
-
-function money(n: number, opts: Intl.NumberFormatOptions = {}) {
-  return `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2, ...opts })}`;
-}
 
 // ─── Sparkline mínimo, sin dependencias -- una sola serie, un solo trazo ──
 function Sparkline({ points, positive }: { points: number[]; positive: boolean | null }) {
@@ -176,7 +172,7 @@ export default async function FoodOverviewPage() {
         <FoodKpiCard
           icon={DollarSign}
           label={f.salesToday}
-          value={money(summary.today.gross)}
+          value={formatMoney(summary.today.gross)}
           trendPct={summary.vsYesterdayGrossPct}
           trendLabel={f.vsYesterday}
           sparkline={grossSpark}
@@ -185,7 +181,7 @@ export default async function FoodOverviewPage() {
         <FoodKpiCard
           icon={Receipt}
           label={f.avgTicket}
-          value={money(avgTicketToday)}
+          value={formatMoney(avgTicketToday)}
           trendPct={summary.vsYesterdayTicketPct}
           trendLabel={f.vsYesterday}
           sparkline={ticketSpark}
@@ -237,7 +233,7 @@ export default async function FoodOverviewPage() {
                   return (
                     <div key={h.hour} className="group flex flex-1 flex-col items-center gap-1">
                       <span className="h-3 text-[10px] font-medium text-slate-600">
-                        {isPeak ? `$${h.gross.toLocaleString("es-MX", { maximumFractionDigits: 0 })}` : ""}
+                        {isPeak ? formatMoney(h.gross, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : ""}
                       </span>
                       <div
                         className={cn(
@@ -245,7 +241,7 @@ export default async function FoodOverviewPage() {
                           isPeak ? "bg-orange-500" : "bg-orange-300 group-hover:bg-orange-400"
                         )}
                         style={{ height: `${barPx}px` }}
-                        title={f.hourTooltip(h.hour, money(h.gross), h.count)}
+                        title={f.hourTooltip(h.hour, formatMoney(h.gross), h.count)}
                       />
                       <span className="text-[10px] text-slate-400">{h.hour}h</span>
                     </div>
@@ -280,7 +276,7 @@ export default async function FoodOverviewPage() {
                       <p className="truncate text-sm font-medium text-slate-900">{dish.name}</p>
                       <p className="text-xs text-slate-500">{f.unitsSold(dish.unitsSold)}</p>
                     </div>
-                    <p className="text-sm font-semibold text-slate-900">{money(dish.revenue, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                    <p className="text-sm font-semibold text-slate-900">{formatMoney(dish.revenue, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                   </li>
                 ))}
               </ul>

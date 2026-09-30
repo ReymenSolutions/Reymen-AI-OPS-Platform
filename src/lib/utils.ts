@@ -35,6 +35,14 @@ export function formatDateTimeInTz(date: Date | string, timezone: string) {
   }).format(new Date(date));
 }
 
+/**
+ * Monto en pesos con 2 decimales, p. ej. "$1,234.50" (el formato de Food).
+ * Antes cada página de Food tenía su propia función money() igual.
+ */
+export function formatMoney(amount: number, options: Intl.NumberFormatOptions = {}) {
+  return `$${amount.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2, ...options })}`;
+}
+
 export function formatCurrency(amount: number, currency: string = "MXN") {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
 }
