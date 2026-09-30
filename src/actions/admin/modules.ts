@@ -7,10 +7,12 @@ import { logAudit } from "@/lib/audit";
 import { PLAN_MODULES } from "@/lib/permissions";
 import type { ModuleSource, ModuleStatus, PlatformModule } from "@prisma/client";
 import { requireAdmin } from "@/lib/guards";
+import { ALL_MODULES, hasModule } from "@/lib/modules";
+import { UserError } from "@/lib/user-error";
 
 const setModuleSchema = z.object({
   orgId: z.string(),
-  module: z.enum(["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC_QR", "MARKETING_ADS", "FOOD_OPS"]),
+  module: z.enum(ALL_MODULES as [PlatformModule, ...PlatformModule[]]),
   status: z.enum(["ACTIVE", "SUSPENDED", "CANCELLED"]),
   source: z.enum(["SUBSCRIBED", "ADMIN_GRANTED"]),
   notes: z.string().optional(),
@@ -23,6 +25,11 @@ export async function setOrganizationModule(
   const session = await requireAdmin();
 
   const { orgId, module, status, source, notes } = setModuleSchema.parse(data);
+
+  // Reymen POS manda sus ventas al módulo Food: sin Food no tendría dónde caer.
+  if (module === "REYMEN_POS" && status === "ACTIVE" && !(await hasModule(orgId, "FOOD_OPS"))) {
+    throw new UserError("Para activar Reymen POS primero activa REYMEN Ops Food");
+  }
 
   const timestamps: { suspendedAt?: Date | null; cancelledAt?: Date | null } = {};
   if (status === "SUSPENDED") timestamps.suspendedAt = new Date();
@@ -101,7 +108,6 @@ export interface ModuleEntitlementView {
   notes: string | null;
 }
 
-const ALL_MODULES: PlatformModule[] = ["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC_QR", "MARKETING_ADS", "FOOD_OPS"];
 
 /** Every module's current state for an org, including ones with no row yet (shown as not-enabled). */
 export async function getOrganizationModules(orgId: string): Promise<ModuleEntitlementView[]> {

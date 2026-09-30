@@ -1013,6 +1013,10 @@ enum PlatformModule {
   NFC_QR // reserved — no schema/UI yet, integration point for a separate future repo
   MARKETING_ADS // reserved — no schema/UI yet, future module
   FOOD_OPS // restaurant ops — Sales/Inventory/Suppliers have real models below; Recipes/Operations are view-only placeholders for now
+  // El restaurante vende con Reymen POS: las ventas llegan solas por el webhook
+  // del POS, así que la captura manual de ventas (que las duplicaría o
+  // reemplazaría) se bloquea. Requiere FOOD_OPS.
+  REYMEN_POS
 }
 
 enum ModuleStatus {

@@ -150,6 +150,10 @@ export const foodStrings = defineDict({
     promotionTip: "Considera un descuento o un combo con tu platillo más popular para darle salida.",
     // Ventas y analítica (unificadas en /portal/food/sales)
     salesAnalyticsDesc: "Registro de ventas, comparación diaria/semanal/mensual y desglose por canal.",
+    // Bloqueo por Reymen POS
+    posLockedTitle: "Ventas desde Reymen POS",
+    posLockedSaleDesc: "Este negocio vende con Reymen POS: cada venta llega aquí sola. La captura manual está desactivada para no contar ventas dos veces.",
+    posLockedDishDesc: "Las cantidades por platillo llegan solas desde Reymen POS. La captura manual está desactivada para no reemplazar lo que mandó el POS.",
   },
   en: {
     dateLocale: "en-US",
@@ -296,5 +300,9 @@ export const foodStrings = defineDict({
     promotionTip: "Consider a discount or a combo with your most popular dish to move it.",
     // Ventas y analítica (unificadas en /portal/food/sales)
     salesAnalyticsDesc: "Sales log, daily/weekly/monthly comparison and channel breakdown.",
+    // Bloqueo por Reymen POS
+    posLockedTitle: "Sales from Reymen POS",
+    posLockedSaleDesc: "This business sells with Reymen POS: every sale arrives here on its own. Manual entry is disabled so sales aren't counted twice.",
+    posLockedDishDesc: "Per-dish quantities arrive on their own from Reymen POS. Manual entry is disabled so it doesn't overwrite what the POS sent.",
   },
 });

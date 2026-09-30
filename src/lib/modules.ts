@@ -20,6 +20,7 @@ export const MODULE_LABEL: Record<PlatformModule, string> = {
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
   FOOD_OPS: "REYMEN Ops Food",
+  REYMEN_POS: "Reymen POS",
 };
 
 const MODULE_LABEL_EN: Record<PlatformModule, string> = {
@@ -29,7 +30,11 @@ const MODULE_LABEL_EN: Record<PlatformModule, string> = {
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
   FOOD_OPS: "REYMEN Ops Food",
+  REYMEN_POS: "Reymen POS",
 };
+
+/** Todos los módulos, en el orden en que se muestran. */
+export const ALL_MODULES: PlatformModule[] = ["CRM", "AI_WHATSAPP", "AUTOMATIONS", "NFC_QR", "MARKETING_ADS", "FOOD_OPS", "REYMEN_POS"];
 
 export function getModuleLabel(lang: "es" | "en"): Record<PlatformModule, string> {
   return lang === "es" ? MODULE_LABEL : MODULE_LABEL_EN;
@@ -48,6 +53,18 @@ export async function assertModuleEnabled(organizationId: string, module: Platfo
   if (!(await hasModule(organizationId, module))) {
     throw new UserError(`Tu organización no tiene el módulo "${MODULE_LABEL[module]}" habilitado.`);
   }
+}
+
+/**
+ * Las organizaciones que venden con Reymen POS reciben sus ventas por el
+ * webhook del POS; capturarlas a mano en el portal las duplicaría ("Registrar
+ * venta") o reemplazaría lo que mandó el POS ("Ventas de hoy por platillo").
+ */
+export const MANUAL_SALES_BLOCKED_MESSAGE =
+  "Las ventas llegan desde Reymen POS; la captura manual está desactivada para no duplicarlas ni reemplazarlas.";
+
+export async function assertManualSalesAllowed(organizationId: string): Promise<void> {
+  if (await hasModule(organizationId, "REYMEN_POS")) throw new UserError(MANUAL_SALES_BLOCKED_MESSAGE);
 }
 
 /** For Server Component pages: redirects instead of throwing, since there's no toast to catch an error. */

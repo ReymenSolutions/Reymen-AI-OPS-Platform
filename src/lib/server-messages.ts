@@ -155,6 +155,8 @@ const EN: Record<string, string> = {
   "Ya existe un usuario con ese email": "A user with that email already exists",
   "Ya existe una categoría con ese nombre": "A category with that name already exists",
   "Zona horaria inválida": "Invalid time zone",
+  "Las ventas llegan desde Reymen POS; la captura manual está desactivada para no duplicarlas ni reemplazarlas.": "Sales arrive from Reymen POS; manual entry is disabled so they aren't duplicated or overwritten.",
+  "Para activar Reymen POS primero activa REYMEN Ops Food": "To enable Reymen POS, enable REYMEN Ops Food first",
 };
 
 // Los pocos mensajes que se escribieron en inglés en el servidor.

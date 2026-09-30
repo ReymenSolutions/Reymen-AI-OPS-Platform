@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { assertModuleEnabled } from "@/lib/modules";
+import { assertModuleEnabled, assertManualSalesAllowed } from "@/lib/modules";
 import { UserError } from "@/lib/user-error";
 
 // ─── FOOD OPS — Server Actions ──────────────────────────────────────
@@ -27,6 +27,7 @@ export async function createFoodSale(formData: FormData) {
   const session = await auth();
   if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  await assertManualSalesAllowed(session.user.organizationId);
 
   const parsed = createSaleSchema.safeParse({
     occurredAt: formData.get("occurredAt"),
@@ -636,6 +637,7 @@ export async function logFoodDishSales(data: { date: string; entries: { variantI
   const session = await auth();
   if (!session?.user.organizationId) throw new UserError("No autorizado");
   await assertModuleEnabled(session.user.organizationId, "FOOD_OPS");
+  await assertManualSalesAllowed(session.user.organizationId);
 
   const parsed = logDishSalesSchema.safeParse(data);
   if (!parsed.success) throw new UserError("Datos de venta por platillo inválidos");

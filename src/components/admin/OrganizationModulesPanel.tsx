@@ -13,24 +13,8 @@ import { setOrganizationModule, syncModulesToPlan, type ModuleEntitlementView } 
 import { usePreferences } from "@/context/preferences";
 import type { ModuleSource, ModuleStatus, PlatformModule } from "@prisma/client";
 import { getErrorMessage } from "@/lib/user-error";
+import { getModuleLabel } from "@/lib/modules";
 
-const MODULE_LABEL_ES: Record<PlatformModule, string> = {
-  CRM: "CRM",
-  AI_WHATSAPP: "Asistente IA / WhatsApp",
-  AUTOMATIONS: "Automatizaciones",
-  NFC_QR: "Smart Cards NFC/QR",
-  MARKETING_ADS: "Marketing / Ads",
-  FOOD_OPS: "REYMEN Ops Food",
-};
-
-const MODULE_LABEL_EN: Record<PlatformModule, string> = {
-  CRM: "CRM",
-  AI_WHATSAPP: "AI Assistant / WhatsApp",
-  AUTOMATIONS: "Automations",
-  NFC_QR: "Smart Cards NFC/QR",
-  MARKETING_ADS: "Marketing / Ads",
-  FOOD_OPS: "REYMEN Ops Food",
-};
 
 // MARKETING_ADS is reserved for a future module — no functionality exists
 // behind it yet, so it's shown but can't be toggled on here. NFC_QR used to
@@ -63,7 +47,7 @@ export function OrganizationModulesPanel({
   planModules: PlatformModule[];
 }) {
   const { lang } = usePreferences();
-  const MODULE_LABEL = lang === "es" ? MODULE_LABEL_ES : MODULE_LABEL_EN;
+  const MODULE_LABEL = getModuleLabel(lang);
   const STATUS_BADGE = lang === "es" ? STATUS_BADGE_ES : STATUS_BADGE_EN;
   const [editing, setEditing] = useState<PlatformModule | null>(null);
   const [status, setStatus] = useState<ModuleStatus>("ACTIVE");

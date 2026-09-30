@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { requireModule } from "@/lib/modules";
+import { hasModule, requireModule } from "@/lib/modules";
 import { prisma } from "@/lib/prisma";
 import { getFoodDishesWithCost, flattenVariants, getFoodDishCategories, getFoodModifierGroups } from "@/lib/food";
 import { getServerLang, getServerT } from "@/lib/i18n-server";
@@ -19,6 +19,7 @@ import { FoodModifierGroupFormDialog } from "@/components/portal/FoodModifierGro
 import { FoodModifierGroupDeleteButton } from "@/components/portal/FoodModifierGroupDeleteButton";
 import { cn } from "@/lib/utils";
 import { ChefHat, Tag, SlidersHorizontal } from "lucide-react";
+import { PosLockedNotice } from "@/components/portal/PosLockedNotice";
 
 function marginColor(marginPct: number | null): string {
   if (marginPct === null) return "text-slate-400";
@@ -40,7 +41,7 @@ export default async function FoodRecipesPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, lang, dishes, inventoryItemsRaw, todaySales, categories, modifierGroups] = await Promise.all([
+  const [t, lang, dishes, inventoryItemsRaw, todaySales, categories, modifierGroups, usesPos] = await Promise.all([
     getServerT(),
     getServerLang(),
     getFoodDishesWithCost(orgId),
@@ -55,6 +56,7 @@ export default async function FoodRecipesPage() {
     }),
     getFoodDishCategories(orgId),
     getFoodModifierGroups(orgId),
+    hasModule(orgId, "REYMEN_POS"),
   ]);
 
   const f = pickDict(foodStrings, lang);
@@ -220,9 +222,15 @@ export default async function FoodRecipesPage() {
           </Card>
         </div>
 
-        <FoodDailyDishSalesForm
-          variants={activeVariants.map((v) => ({ variantId: v.id, displayName: v.displayName, todayQuantity: todayQtyByVariant.get(v.id) ?? 0 }))}
-        />
+        {usesPos ? (
+          <div>
+            <PosLockedNotice title={f.posLockedTitle} description={f.posLockedDishDesc} />
+          </div>
+        ) : (
+          <FoodDailyDishSalesForm
+            variants={activeVariants.map((v) => ({ variantId: v.id, displayName: v.displayName, todayQuantity: todayQtyByVariant.get(v.id) ?? 0 }))}
+          />
+        )}
       </div>
     </div>
   );
