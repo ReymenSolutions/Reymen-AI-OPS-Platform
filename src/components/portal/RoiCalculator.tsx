@@ -11,7 +11,9 @@ interface RoiCalculatorProps {
 }
 
 export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
-  if (!data.hasWonDeals) {
+  // Si hay ventas ganadas pero ninguna se pudo convertir a USD, se muestra la
+  // tarjeta con el aviso del tipo de cambio en vez de "aún no tienes ventas".
+  if (!data.hasWonDeals && data.unconvertedOpportunities === 0) {
     return (
       <Card>
         <CardHeader>
@@ -59,8 +61,8 @@ export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             { label: lang === "es" ? "Oportunidades ganadas (30 días)" : "Won opportunities (30 days)", value: data.last30WonOpportunities.toLocaleString("en-US"), color: "text-slate-900" },
-            { label: lang === "es" ? "Ingresos reales (30 días)" : "Real revenue (30 days)", value: `$${data.last30Revenue.toLocaleString("en-US")}`, color: "text-emerald-600" },
-            { label: lang === "es" ? "Valor promedio por deal" : "Average deal value", value: `$${Math.round(data.avgDealValue).toLocaleString("en-US")}`, color: "text-brand-600" },
+            { label: lang === "es" ? "Ingresos reales (30 días)" : "Real revenue (30 days)", value: `$${data.last30Revenue.toLocaleString("en-US")} USD`, color: "text-emerald-600" },
+            { label: lang === "es" ? "Valor promedio por deal" : "Average deal value", value: `$${Math.round(data.avgDealValue).toLocaleString("en-US")} USD`, color: "text-brand-600" },
             { label: lang === "es" ? "ROI real (30 días)" : "Real ROI (30 days)", value: data.roi !== null ? `${data.roi}%` : "—", color: roiPositive ? "text-emerald-600" : "text-red-500" },
           ].map(({ label, value, color }) => (
             <div key={label} className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-center">
@@ -77,14 +79,14 @@ export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
                 Ingresos últimos 30 días:{" "}
                 <span className="info-box-text text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
                 {" "}vs. tu plan {planLabel}:{" "}
-                <span className="info-box-text text-brand-700">${data.planCost}/mes</span>
+                <span className="info-box-text text-brand-700">${data.planCost.toLocaleString("en-US")} USD/mes</span>
               </>
             ) : (
               <>
                 Revenue last 30 days:{" "}
                 <span className="info-box-text text-brand-700">${data.last30Revenue.toLocaleString("en-US")} USD</span>
                 {" "}vs. your {planLabel} plan:{" "}
-                <span className="info-box-text text-brand-700">${data.planCost}/mo</span>
+                <span className="info-box-text text-brand-700">${data.planCost.toLocaleString("en-US")} USD/mo</span>
               </>
             )}
           </p>
@@ -103,7 +105,22 @@ export function RoiCalculator({ data, planLabel, lang }: RoiCalculatorProps) {
               </>
             )}
           </p>
+          {data.mxnPerUsd !== null && (
+            <p className="info-box-text text-xs text-brand-700 mt-1">
+              {lang === "es"
+                ? `Montos en MXN convertidos a USD con 1 USD = ${data.mxnPerUsd} MXN.`
+                : `MXN amounts converted to USD at 1 USD = ${data.mxnPerUsd} MXN.`}
+            </p>
+          )}
         </div>
+
+        {data.unconvertedOpportunities > 0 && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            {lang === "es"
+              ? `${data.unconvertedOpportunities} oportunidad(es) ganada(s) en MXN no se incluyen porque no hay un tipo de cambio configurado (MXN_PER_USD). Pide a tu administrador que lo configure.`
+              : `${data.unconvertedOpportunities} won opportunit(ies) in MXN are not included because no exchange rate is configured (MXN_PER_USD). Ask your administrator to set it.`}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

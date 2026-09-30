@@ -2652,6 +2652,7 @@ immediately.
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_PROFESSIONAL` / `STRIPE_PRICE_ENTERPRISE` | Billing (upgrade/manage-billing UI, Stripe webhook route) | Without `STRIPE_SECRET_KEY`, the upgrade/manage-billing UI stays hidden. `STRIPE_WEBHOOK_SECRET` gates `/api/webhooks/stripe`; without it that route rejects incoming Stripe events. |
 | `SENTRY_DSN` (server) / `NEXT_PUBLIC_SENTRY_DSN` (client) | Error tracking | Without these, `sentry.server.config.ts` / `sentry.edge.config.ts` / `instrumentation-client.ts` initialize Sentry with no DSN, so error capture is a no-op — errors are only visible in server logs, not in Sentry. Not knowing about this in production means silently losing visibility into crashes. |
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Source map upload at build time | Build-time only, unrelated to runtime error capture. Without them, Sentry still receives errors (if `SENTRY_DSN` is set) but stack traces point at minified code instead of original source. |
+| `MXN_PER_USD` | ROI in Reports (`src/lib/roi.ts`, `src/lib/currency.ts`) | Pesos per dollar used to convert MXN opportunities to USD before comparing against the plan price. Without it, MXN opportunities are left out of the ROI and the card shows a warning — there is deliberately no hardcoded default rate. |
 | `NEXT_PUBLIC_APP_NAME` | Branding text | Falls back to a hardcoded default app name. |
 
 ### SmartCard bridge (Fase 14) — a different pattern from everything else in this table
