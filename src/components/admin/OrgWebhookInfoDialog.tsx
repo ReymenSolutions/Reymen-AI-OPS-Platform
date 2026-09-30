@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Webhook, Copy, Eye, EyeOff, Loader2, RotateCcw, Check, KeyRound } from "lucide-react";
+import { Webhook, Eye, EyeOff, Loader2, RotateCcw, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -10,30 +10,9 @@ import {
 } from "@/components/ui/dialog";
 import { usePreferences } from "@/context/preferences";
 import { rotateOrgWebhookSecret, rotateFoodPosReadKey } from "@/actions/admin/clients";
+import { CopyButton } from "@/components/shared/CopyButton";
 
-function useCopy() {
-  const [copied, setCopied] = useState<string | null>(null);
-  function copy(text: string, key: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(key);
-      setTimeout(() => setCopied(null), 2000);
-    });
-  }
-  return { copied, copy };
-}
 
-function CopyButton({ text, copyKey }: { text: string; copyKey: string }) {
-  const { copied, copy } = useCopy();
-  return (
-    <button
-      onClick={() => copy(text, copyKey)}
-      className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600 transition-colors"
-      title="Copiar"
-    >
-      {copied === copyKey ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-    </button>
-  );
-}
 
 const ENDPOINTS = [
   "/api/webhooks/n8n/leads",
@@ -113,7 +92,7 @@ export function OrgWebhookInfoDialog({
                   <code className="text-xs font-medium text-slate-700">{t.adminOrgWebhookOrgIdLabel}</code>
                   <p className="text-xs text-slate-400 mt-0.5 break-all">{orgId}</p>
                 </div>
-                <CopyButton text={orgId} copyKey="orgid" />
+                <CopyButton text={orgId} />
               </div>
               <div className="flex items-center justify-between px-3 py-2.5 gap-3">
                 <div className="min-w-0 flex-1">
@@ -129,7 +108,7 @@ export function OrgWebhookInfoDialog({
                   >
                     {secretVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
-                  <CopyButton text={currentSecret} copyKey="secret" />
+                  <CopyButton text={currentSecret} />
                   <button
                     onClick={handleRotate}
                     disabled={rotating}
@@ -164,7 +143,7 @@ export function OrgWebhookInfoDialog({
                           >
                             {posKeyVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                           </button>
-                          <CopyButton text={currentPosKey} copyKey="foodPosKey" />
+                          <CopyButton text={currentPosKey} />
                         </>
                       )}
                       <button

@@ -26,6 +26,7 @@ import {
   rotateWebhookSecret,
   archiveAutomation,
 } from "@/actions/admin/automations";
+import { CopyButton, useCopyToClipboard } from "@/components/shared/CopyButton";
 
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -50,44 +51,21 @@ export type AutomationRow = {
 
 export type OrgOption = { id: string; name: string };
 
-function useCopy() {
-  const [copied, setCopied] = useState<string | null>(null);
-  function copy(text: string, key: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(key);
-      setTimeout(() => setCopied(null), 2000);
-    });
-  }
-  return { copied, copy };
-}
 
-function CopyButton({ text, copyKey, label }: { text: string; copyKey: string; label?: string }) {
-  const { copied, copy } = useCopy();
-  return (
-    <button
-      onClick={() => copy(text, copyKey)}
-      className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600 transition-colors"
-      title="Copiar"
-    >
-      {copied === copyKey ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-      {label && <span>{copied === copyKey ? "✓" : label}</span>}
-    </button>
-  );
-}
 
-function CodeBlock({ value, copyKey }: { value: string; copyKey: string }) {
-  const { copied, copy } = useCopy();
+function CodeBlock({ value }: { value: string }) {
+  const { copied, copy } = useCopyToClipboard();
   return (
     <div className="relative">
       <pre className="bg-slate-950 text-slate-100 rounded-md p-3 text-xs overflow-x-auto whitespace-pre-wrap break-all">
         {value}
       </pre>
       <button
-        onClick={() => copy(value, copyKey)}
+        onClick={() => copy(value)}
         className="absolute top-2 right-2 p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
         title="Copiar"
       >
-        {copied === copyKey ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+        {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
       </button>
     </div>
   );
@@ -167,7 +145,7 @@ function WebhookInfoDialog({
             <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.adminWebhookEndpointLabel}</Label>
             <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
               <code className="flex-1 text-xs text-slate-800 break-all">{endpoint}</code>
-              <CopyButton text={endpoint} copyKey="endpoint" label={t.save} />
+              <CopyButton text={endpoint} label={t.save} />
             </div>
           </div>
 
@@ -179,7 +157,7 @@ function WebhookInfoDialog({
                   <code className="text-xs font-medium text-slate-700">x-reymen-orgid</code>
                   <p className="text-xs text-slate-400 mt-0.5 break-all">{automation.organizationId}</p>
                 </div>
-                <CopyButton text={automation.organizationId} copyKey="orgid" label="Copy" />
+                <CopyButton text={automation.organizationId} label="Copy" />
               </div>
               <div className="flex items-center justify-between px-3 py-2.5 gap-3">
                 <div className="min-w-0 flex-1">
@@ -195,7 +173,7 @@ function WebhookInfoDialog({
                   >
                     {secretVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
-                  <CopyButton text={currentSecret} copyKey="secret" label="Copy" />
+                  <CopyButton text={currentSecret} label="Copy" />
                   <button
                     onClick={handleRotate}
                     disabled={rotating}
@@ -211,7 +189,7 @@ function WebhookInfoDialog({
                   <code className="text-xs font-medium text-slate-700">Content-Type</code>
                   <p className="text-xs text-slate-400 mt-0.5">application/json</p>
                 </div>
-                <CopyButton text="application/json" copyKey="ct" label="Copy" />
+                <CopyButton text="application/json" label="Copy" />
               </div>
             </div>
           </div>
@@ -220,7 +198,7 @@ function WebhookInfoDialog({
             <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.adminWebhookAutoIdLabel}</Label>
             <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
               <code className="flex-1 text-xs text-slate-800">{automation.id}</code>
-              <CopyButton text={automation.id} copyKey="autoid" label="Copy" />
+              <CopyButton text={automation.id} label="Copy" />
             </div>
           </div>
 
@@ -239,17 +217,17 @@ function WebhookInfoDialog({
             <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.adminWebhookPayloadsLabel}</Label>
             <div>
               <p className="text-xs text-slate-500 mb-1.5">{t.adminWebhookPayloadStart}</p>
-              <CodeBlock value={exampleStart} copyKey="pl-start" />
+              <CodeBlock value={exampleStart} />
             </div>
             <div>
               <p className="text-xs text-slate-500 mb-1.5">{t.adminWebhookPayloadSuccess}</p>
-              <CodeBlock value={exampleSuccess} copyKey="pl-success" />
+              <CodeBlock value={exampleSuccess} />
             </div>
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.adminWebhookCurlLabel}</Label>
-            <CodeBlock value={curlExample} copyKey="curl" />
+            <CodeBlock value={curlExample} />
           </div>
 
           <div className="text-xs text-slate-500 bg-slate-50 rounded-md p-3">
