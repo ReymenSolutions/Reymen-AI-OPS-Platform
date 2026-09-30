@@ -226,7 +226,7 @@ export default async function FoodRecipesPage() {
                       <p className="mt-0.5 text-xs text-slate-500">
                         {g.options
                           .map((o) => {
-                            const parts = [o.priceDelta > 0 ? `+$${o.priceDelta.toFixed(2)}` : null, o.ingredients.length > 0 ? f.optionCost(`$${o.cost.toFixed(2)}`) : null].filter(Boolean);
+                            const parts = [o.priceDelta > 0 ? `+$${o.priceDelta.toFixed(2)}` : null, o.ingredients.length > 0 ? f.optionCost(`${o.cost < 0 ? "-" : ""}$${Math.abs(o.cost).toFixed(2)}`) : null].filter(Boolean);
                             return parts.length ? `${o.name} (${parts.join(" · ")})` : o.name;
                           })
                           .join(", ")}
