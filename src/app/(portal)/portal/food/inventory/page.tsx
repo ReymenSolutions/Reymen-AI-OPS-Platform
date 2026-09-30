@@ -180,14 +180,14 @@ export default async function FoodInventoryPage() {
                   <option value="NON_EDIBLE">{f.nonEdible}</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
-                <div className="flex flex-1 flex-col gap-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="currentStock" className="text-xs font-medium text-slate-600">{f.currentStock}</label>
-                  <input id="currentStock" name="currentStock" type="number" step="0.01" min="0" defaultValue={0} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                  <input id="currentStock" name="currentStock" type="number" step="0.001" min="0" defaultValue={0} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
-                <div className="flex flex-1 flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="minStock" className="text-xs font-medium text-slate-600">{f.minimum}</label>
-                  <input id="minStock" name="minStock" type="number" step="0.01" min="0" defaultValue={0} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                  <input id="minStock" name="minStock" type="number" step="0.001" min="0" defaultValue={0} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
