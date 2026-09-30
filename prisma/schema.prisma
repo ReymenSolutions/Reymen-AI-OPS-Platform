@@ -1283,6 +1283,11 @@ model FoodDishVariant {
   // esta variante sin adivinar por nombre (mismo criterio que
   // Lead.externalId).
   externalPosId  String?
+  // Una variante con ventas no se borra al quitarla del platillo: se
+  // desactiva, para conservar su historial de ventas y de consumo. Deja de
+  // aparecer en el menú y en el formulario; si se vuelve a agregar con el
+  // mismo nombre, se reactiva.
+  isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -1376,6 +1381,8 @@ model FoodModifierOption {
   // modificador, es una promoción, fuera de alcance por ahora.
   priceDelta Decimal @default(0) @db.Decimal(10, 2)
   sortOrder  Int     @default(0)
+  // Igual que FoodDishVariant.isActive: con ventas se desactiva en vez de borrarse.
+  isActive   Boolean @default(true)
 
   group        FoodModifierGroup              @relation(fields: [groupId], references: [id], onDelete: Cascade)
   ingredients  FoodModifierOptionIngredient[]

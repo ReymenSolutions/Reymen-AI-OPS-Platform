@@ -263,4 +263,70 @@ describe("editing dishes and modifier groups keeps their ids (POS and history de
       food.createFoodDish({ name: "Robado", variants: [{ label: "Único", price: 10, ingredients: [{ inventoryItemId: foreign.id, quantity: 1 }] }] })
     ).rejects.toThrow("Uno o más insumos no son válidos");
   });
+
+  it("CRITICAL: removing a variant or option that already sold archives it instead of deleting its history", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: owner.id, role: "OWNER", organizationId: org.id }));
+    const flour = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Harina", unit: "kg" } });
+    await food.createFoodDish({
+      name: "Pizza",
+      variants: [
+        { label: "Chica", price: 100, ingredients: [{ inventoryItemId: flour.id, quantity: 0.2 }] },
+        { label: "Grande", price: 180, ingredients: [{ inventoryItemId: flour.id, quantity: 0.4 }] },
+        { label: "Familiar", price: 250, ingredients: [{ inventoryItemId: flour.id, quantity: 0.6 }] },
+      ],
+    });
+    const dish = await prisma.foodDish.findFirstOrThrow({ where: { organizationId: org.id, name: "Pizza" }, include: { variants: true } });
+    const byLabel = (l: string) => dish.variants.find((v) => v.label === l)!;
+    await prisma.foodDishSale.create({ data: { organizationId: org.id, variantId: byLabel("Grande").id, occurredAt: new Date("2026-09-28T06:00:00Z"), quantity: 12 } });
+
+    // Se quitan "Grande" (con ventas) y "Familiar" (sin ventas), y "Chica" se renombra a "Grande".
+    await food.updateFoodDish(dish.id, {
+      name: "Pizza",
+      variants: [{ variantId: byLabel("Chica").id, label: "Grande", price: 120, ingredients: [{ inventoryItemId: flour.id, quantity: 0.25 }] }],
+    });
+    const archived = await prisma.foodDishVariant.findUniqueOrThrow({ where: { id: byLabel("Grande").id } });
+    expect(archived.isActive).toBe(false);
+    expect(archived.label).not.toBe("Grande"); // cedió su nombre a la variante activa
+    expect((await prisma.foodDishSale.findFirstOrThrow({ where: { variantId: archived.id } })).quantity).toBe(12);
+    expect(await prisma.foodDishVariant.count({ where: { id: byLabel("Familiar").id } })).toBe(0);
+
+    const { getFoodMenuForPos, getFoodDishesWithCost } = await import("@/lib/food");
+    const menuDish = (await getFoodMenuForPos(org.id)).find((d) => d.dishId === dish.id)!;
+    expect(menuDish.variants.map((v) => v.label)).toEqual(["Grande"]);
+    const editable = (await getFoodDishesWithCost(org.id)).find((d) => d.id === dish.id)!;
+    expect(editable.variants.map((v) => v.id)).toEqual([byLabel("Chica").id]);
+
+    // Volver a agregar una variante archivada por su nombre actual la reactiva, con su historial.
+    await food.updateFoodDish(dish.id, {
+      name: "Pizza",
+      variants: [
+        { variantId: byLabel("Chica").id, label: "Grande", price: 120, ingredients: [{ inventoryItemId: flour.id, quantity: 0.25 }] },
+        { label: archived.label, price: 180, ingredients: [{ inventoryItemId: flour.id, quantity: 0.4 }] },
+      ],
+    });
+    expect((await prisma.foodDishVariant.findUniqueOrThrow({ where: { id: archived.id } })).isActive).toBe(true);
+
+    // Opciones: con ventas se desactiva, sin ventas se borra.
+    await food.createFoodModifierGroup({
+      name: "Orilla",
+      minSelect: 0,
+      maxSelect: 1,
+      options: [
+        { name: "Orilla rellena", priceDelta: 30 },
+        { name: "Orilla delgada", priceDelta: 0 },
+      ],
+    });
+    const group = await prisma.foodModifierGroup.findFirstOrThrow({ where: { organizationId: org.id, name: "Orilla" }, include: { options: true } });
+    const stuffed = group.options.find((o) => o.name === "Orilla rellena")!;
+    const thin = group.options.find((o) => o.name === "Orilla delgada")!;
+    await prisma.foodModifierOptionSale.create({
+      data: { organizationId: org.id, optionId: stuffed.id, optionName: stuffed.name, occurredAt: new Date("2026-09-28T06:00:00Z"), quantity: 4 },
+    });
+    await food.updateFoodModifierGroup(group.id, { name: "Orilla", minSelect: 0, maxSelect: 1, options: [{ name: "Orilla de queso", priceDelta: 35 }] });
+    expect((await prisma.foodModifierOption.findUniqueOrThrow({ where: { id: stuffed.id } })).isActive).toBe(false);
+    expect(await prisma.foodModifierOption.count({ where: { id: thin.id } })).toBe(0);
+    const { getFoodModifierGroups } = await import("@/lib/food");
+    const listed = (await getFoodModifierGroups(org.id)).find((g) => g.id === group.id)!;
+    expect(listed.options.map((o) => o.name)).toEqual(["Orilla de queso"]);
+  });
 });
