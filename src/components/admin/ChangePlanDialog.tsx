@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getModuleLabel } from "@/lib/modules";
 import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
 
 interface ChangePlanDialogProps {
   orgId: string;
@@ -59,7 +60,7 @@ export function ChangePlanDialog({ orgId, currentPlan, currentCustomPrice }: Cha
       toast.success(lang === "es" ? `Plan actualizado a ${PLAN_LIMITS[selected]?.label ?? selected}` : `Plan updated to ${PLAN_LIMITS[selected]?.label ?? selected}`);
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "es" ? "Error al cambiar plan" : "Error changing plan"));
+      toast.error(getErrorMessage(e, (lang === "es" ? "Error al cambiar plan" : "Error changing plan")));
     } finally {
       setLoading(false);
     }
@@ -105,9 +106,9 @@ export function ChangePlanDialog({ orgId, currentPlan, currentCustomPrice }: Cha
                   {isSelected && <Check className="h-4 w-4 text-brand-600" />}
                 </div>
                 <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-                  <span>{limits && isUnlimited(limits.leads) ? (lang === "es" ? "Ilimitados" : "Unlimited") : limits?.leads.toLocaleString("en-US")} leads</span>
-                  <span>{limits && isUnlimited(limits.users) ? (lang === "es" ? "Ilimitado" : "Unlimited") : limits?.users} {lang === "es" ? "usuarios" : "users"}</span>
-                  <span>{limits && isUnlimited(limits.automations) ? (lang === "es" ? "Ilimitadas" : "Unlimited") : limits?.automations} {lang === "es" ? "automatizaciones" : "automations"}</span>
+                  <span>{limits && isUnlimited(limits.leads) ? (lang === "es" ? "Leads ilimitados" : "Unlimited leads") : `${limits?.leads.toLocaleString("en-US")} leads`}</span>
+                  <span>{limits && isUnlimited(limits.users) ? (lang === "es" ? "Usuarios ilimitados" : "Unlimited users") : `${limits?.users} ${lang === "es" ? "usuarios" : "users"}`}</span>
+                  <span>{limits && isUnlimited(limits.automations) ? (lang === "es" ? "Automatizaciones ilimitadas" : "Unlimited automations") : `${limits?.automations} ${lang === "es" ? "automatizaciones" : "automations"}`}</span>
                 </div>
                 <p className="mt-1.5 text-xs text-slate-400">
                   {lang === "es" ? "Incluye" : "Includes"}: {(PLAN_MODULES[plan.key] ?? []).map((m) => MODULE_LABEL[m]).join(", ")}
