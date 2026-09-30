@@ -177,25 +177,3 @@ export async function rotateFoodPosReadKey(orgId: string) {
   return { success: true, secret: newKey };
 }
 
-export async function assignAutomation(
-  orgId: string,
-  data: { name: string; type: string; description?: string; n8nWorkflowId?: string }
-) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-
-  const automation = await prisma.automation.create({
-    data: {
-      organizationId: orgId,
-      name: data.name,
-      type: data.type,
-      description: data.description,
-      n8nWorkflowId: data.n8nWorkflowId,
-      webhookSecret: generateWebhookSecret(),
-    },
-  });
-
-  revalidatePath(`/admin/clients/${orgId}`);
-  revalidatePath("/admin/automations");
-  return { success: true, automationId: automation.id };
-}

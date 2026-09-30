@@ -50,13 +50,6 @@ export async function setAvailabilityRules(rules: z.infer<typeof setRulesSchema>
   return { success: true };
 }
 
-export async function getAvailabilityRules(organizationId: string) {
-  return prisma.availabilityRule.findMany({
-    where: { organizationId, isActive: true },
-    orderBy: [{ dayOfWeek: "asc" }, { startMinute: "asc" }],
-  });
-}
-
 export async function setOrgTimezone(timezone: string) {
   const session = await requireSettingsManage();
   // Validate against the runtime's own IANA database rather than a hardcoded

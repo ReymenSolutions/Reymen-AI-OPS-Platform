@@ -43,25 +43,6 @@ export async function createTemplate(data: z.infer<typeof templateSchema>) {
   return { success: true, templateId: template.id };
 }
 
-export async function updateTemplate(
-  templateId: string,
-  data: Partial<z.infer<typeof templateSchema>>
-) {
-  const session = await auth();
-  if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");
-
-  const parsed = templateSchema.partial().parse(data);
-
-  await prisma.automationTemplate.update({
-    where: { id: templateId },
-    data: { ...parsed, tags: parsed.tags ?? undefined },
-  });
-
-  revalidatePath("/admin/templates");
-  revalidatePath(`/admin/templates/${templateId}`);
-  return { success: true };
-}
-
 export async function publishTemplate(templateId: string, isPublished: boolean) {
   const session = await auth();
   if (!session || !isAdmin(session.user.role)) throw new Error("No autorizado");

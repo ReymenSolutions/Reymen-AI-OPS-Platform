@@ -68,17 +68,3 @@ export async function deleteArticle(id: string) {
   return { success: true };
 }
 
-export async function toggleArticle(id: string, isActive: boolean) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-
-  const article = await prisma.knowledgeBase.findFirst({
-    where: { id, organizationId: session.user.organizationId },
-  });
-  if (!article) throw new Error("Artículo no encontrado");
-
-  await prisma.knowledgeBase.update({ where: { id }, data: { isActive } });
-
-  revalidatePath("/portal/knowledge-base");
-  return { success: true };
-}

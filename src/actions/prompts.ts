@@ -104,21 +104,6 @@ export async function activatePrompt(id: string, type: PromptType) {
   return { success: true };
 }
 
-export async function deletePrompt(id: string) {
-  const session = await auth();
-  if (!session?.user.organizationId) throw new Error("No autorizado");
-
-  const prompt = await prisma.prompt.findFirst({
-    where: { id, organizationId: session.user.organizationId },
-  });
-  if (!prompt) throw new Error("Prompt no encontrado");
-
-  await prisma.prompt.delete({ where: { id } });
-
-  revalidatePath("/portal/prompts");
-  return { success: true };
-}
-
 export async function listPromptVersions(promptId: string) {
   const session = await auth();
   if (!session?.user.organizationId) throw new Error("No autorizado");
