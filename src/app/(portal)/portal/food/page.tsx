@@ -34,7 +34,7 @@ const AREAS = [
   { href: "/portal/food/purchases", key: "foodPurchases", icon: ShoppingCart, ready: true },
   { href: "/portal/food/recipes", key: "foodRecipes", icon: ChefHat, ready: true },
   { href: "/portal/food/profitability", key: "foodProfitability", icon: Wallet, ready: true },
-  { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: false },
+  { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: true },
 ] as const;
 
 // ─── Sparkline mínimo, sin dependencias -- una sola serie, un solo trazo ──
