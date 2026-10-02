@@ -40,6 +40,29 @@ describe("food inventory, suppliers and purchases", () => {
     expect(Number(after.currentStock)).toBe(5);
   });
 
+  it("units come from the list: written variants are normalized, a legacy unit is kept until changed", async () => {
+    const item = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Naranja", unit: "2 pza" } });
+    // Saving other fields keeps the legacy unit as it was.
+    await inv.updateFoodInventoryItem(item.id, { name: "Naranja", unit: "2 pza", category: "EDIBLE", minStock: 3, unitCost: null });
+    expect((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: item.id } })).unit).toBe("2 pza");
+    await inv.updateFoodInventoryItem(item.id, { name: "Naranja", unit: "Piezas", category: "EDIBLE", minStock: 3, unitCost: null });
+    expect((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: item.id } })).unit).toBe("pza");
+    await expect(inv.updateFoodInventoryItem(item.id, { name: "Naranja", unit: "tazas", category: "EDIBLE", minStock: 3, unitCost: null })).rejects.toThrow(
+      "Elige una unidad de la lista"
+    );
+
+    const food = await import("./food");
+    const form = (unit: string, name: string) => {
+      const fd = new FormData();
+      fd.set("name", name);
+      fd.set("unit", unit);
+      return fd;
+    };
+    await food.createFoodInventoryItem(form("Pc", "Mango"));
+    expect((await prisma.foodInventoryItem.findFirstOrThrow({ where: { organizationId: org.id, name: "Mango" } })).unit).toBe("pza");
+    await expect(food.createFoodInventoryItem(form("2 pza", "Papaya"))).rejects.toThrow("Elige una unidad de la lista");
+  });
+
   it("rejects a duplicate name and items from another org", async () => {
     const a = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Cebolla", unit: "kg" } });
     await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Ajo", unit: "kg" } });

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { assertManualSalesAllowed } from "@/lib/modules";
 import { UserError } from "@/lib/user-error";
+import { normalizeFoodUnit } from "@/lib/food-units";
 import { applyStockMovements, consumeRecipes } from "@/lib/food-inventory";
 import { requireFoodManager } from "@/lib/guards";
 
@@ -147,6 +148,8 @@ export async function createFoodInventoryItem(formData: FormData) {
     unitCost: formData.get("unitCost") || undefined,
   });
   if (!parsed.success) throw new UserError("Datos de insumo inválidos");
+  const unit = normalizeFoodUnit(parsed.data.unit);
+  if (!unit) throw new UserError("Elige una unidad de la lista");
 
   const organizationId = session.user.organizationId;
   const duplicate = await prisma.foodInventoryItem.findFirst({ where: { organizationId, name: parsed.data.name }, select: { id: true } });
@@ -163,7 +166,7 @@ export async function createFoodInventoryItem(formData: FormData) {
         data: {
           organizationId,
           name: parsed.data.name,
-          unit: parsed.data.unit,
+          unit,
           category: parsed.data.category,
           currentStock: 0,
           minStock: parsed.data.minStock,

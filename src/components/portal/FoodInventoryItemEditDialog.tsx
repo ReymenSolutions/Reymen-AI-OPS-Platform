@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { updateFoodInventoryItem } from "@/actions/food-inventory";
 import { usePreferences } from "@/context/preferences";
 import { getErrorMessage, translateMessage } from "@/lib/user-error";
+import { FOOD_UNIT_LABELS, FOOD_UNITS, isFoodUnit } from "@/lib/food-units";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Nombre requerido"),
@@ -84,7 +85,13 @@ export function FoodInventoryItemEditDialog({ item }: { item: EditableInventoryI
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>{lang === "es" ? "Unidad *" : "Unit *"}</Label>
-              <Input placeholder="kg, lt, pza..." {...register("unit")} />
+              <select {...register("unit")} className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm">
+                {/* Unidad escrita a mano antes de la lista: se conserva hasta que se elija otra. */}
+                {!isFoodUnit(item.unit) && <option value={item.unit}>{item.unit} {lang === "es" ? "(actual, elige una de la lista)" : "(current, pick one from the list)"}</option>}
+                {FOOD_UNITS.map((u) => (
+                  <option key={u} value={u}>{FOOD_UNIT_LABELS[lang === "en" ? "en" : "es"][u]}</option>
+                ))}
+              </select>
               {errors.unit && <p className="text-xs text-red-500">{translateMessage(errors.unit.message)}</p>}
             </div>
             <div className="space-y-2">
