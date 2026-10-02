@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { assertManualSalesAllowed } from "@/lib/modules";
@@ -153,25 +154,33 @@ export async function createFoodInventoryItem(formData: FormData) {
 
   // Se crea en 0 y la existencia inicial entra como ajuste, para que el
   // historial de movimientos explique la existencia desde el primer día.
-  const item = await prisma.$transaction(async (tx) => {
-    const created = await tx.foodInventoryItem.create({
-      data: {
-        organizationId,
-        name: parsed.data.name,
-        unit: parsed.data.unit,
-        category: parsed.data.category,
-        currentStock: 0,
-        minStock: parsed.data.minStock,
-        unitCost: parsed.data.unitCost ?? null,
-      },
+  // Dos envíos casi simultáneos pasan la revisión de arriba; la base los
+  // detiene con su índice único (organizationId, name) y aquí se convierte en
+  // el mismo aviso en vez de un error genérico.
+  const item = await prisma
+    .$transaction(async (tx) => {
+      const created = await tx.foodInventoryItem.create({
+        data: {
+          organizationId,
+          name: parsed.data.name,
+          unit: parsed.data.unit,
+          category: parsed.data.category,
+          currentStock: 0,
+          minStock: parsed.data.minStock,
+          unitCost: parsed.data.unitCost ?? null,
+        },
+      });
+      await applyStockMovements(tx, organizationId, [{ inventoryItemId: created.id, delta: parsed.data.currentStock }], {
+        type: "ADJUSTMENT",
+        note: "Existencia inicial",
+        userId: session.user.id,
+      });
+      return created;
+    })
+    .catch((e: unknown) => {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new UserError("Ya existe un insumo con ese nombre");
+      throw e;
     });
-    await applyStockMovements(tx, organizationId, [{ inventoryItemId: created.id, delta: parsed.data.currentStock }], {
-      type: "ADJUSTMENT",
-      note: "Existencia inicial",
-      userId: session.user.id,
-    });
-    return created;
-  });
 
   await logAudit({
     organizationId: session.user.organizationId,

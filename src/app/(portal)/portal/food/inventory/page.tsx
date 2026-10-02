@@ -6,6 +6,7 @@ import { createFoodInventoryItem } from "@/actions/food";
 import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
 import { pickDict } from "@/lib/i18n-dict";
+import { ActionForm } from "@/components/shared/ActionForm";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -189,7 +190,7 @@ export default async function FoodInventoryPage() {
               <CardTitle className="text-base">{f.addSupply}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form action={createFoodInventoryItem} className="flex flex-col gap-3">
+              <ActionForm action={createFoodInventoryItem} successMessage={{ es: "Insumo agregado", en: "Supply item added" }} className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
                   <label htmlFor="name" className="text-xs font-medium text-slate-600">{f.name}</label>
                   <input id="name" name="name" type="text" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
@@ -220,10 +221,10 @@ export default async function FoodInventoryPage() {
                   <input id="unitCost" name="unitCost" type="number" step="0.01" min="0" className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
                 <p className="text-xs text-slate-400">{f.initialStockHint}</p>
-                <button type="submit" className="mt-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                <button type="submit" className="mt-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-wait disabled:opacity-60">
                   {f.saveSupply}
                 </button>
-              </form>
+              </ActionForm>
             </CardContent>
           </Card>
         )}

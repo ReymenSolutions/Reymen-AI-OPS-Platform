@@ -7,6 +7,7 @@ import { getServerLang, getServerT } from "@/lib/i18n-server";
 import { foodStrings } from "@/lib/i18n-food";
 import { pickDict } from "@/lib/i18n-dict";
 import { formatMoney } from "@/lib/utils";
+import { ActionForm } from "@/components/shared/ActionForm";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -112,7 +113,7 @@ export default async function FoodSuppliersPage() {
               <CardTitle className="text-base">{f.addSupplier}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form action={createFoodSupplier} className="flex flex-col gap-3">
+              <ActionForm action={createFoodSupplier} successMessage={{ es: "Proveedor agregado", en: "Supplier added" }} className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
                   <label htmlFor="name" className="text-xs font-medium text-slate-600">{f.name}</label>
                   <input id="name" name="name" type="text" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
@@ -129,10 +130,10 @@ export default async function FoodSuppliersPage() {
                   <label htmlFor="email" className="text-xs font-medium text-slate-600">{f.email}</label>
                   <input id="email" name="email" type="email" className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
                 </div>
-                <button type="submit" className="mt-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                <button type="submit" className="mt-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-wait disabled:opacity-60">
                   {f.saveSupplier}
                 </button>
-              </form>
+              </ActionForm>
             </CardContent>
           </Card>
         )}
