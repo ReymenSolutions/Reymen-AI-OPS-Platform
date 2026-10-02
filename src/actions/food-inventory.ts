@@ -7,6 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { requireFoodManager } from "@/lib/guards";
 import { applyStockMovements, recalculateRecipeUsage } from "@/lib/food-inventory";
 import { UserError } from "@/lib/user-error";
+import { normalizeFoodUnit } from "@/lib/food-units";
 
 // ─── FOOD OPS — Insumos, proveedores y compras ───────────────────────
 // Editar insumos y proveedores, ajustar existencias por conteo físico, y el
@@ -40,6 +41,10 @@ export async function updateFoodInventoryItem(itemId: string, data: z.input<type
 
   const item = await prisma.foodInventoryItem.findFirst({ where: { id: itemId, organizationId } });
   if (!item) throw new UserError("Insumo no encontrado");
+  // Una unidad escrita a mano antes de la lista se puede conservar tal cual
+  // mientras no se cambie; cualquier unidad nueva debe ser de la lista.
+  const unit = normalizeFoodUnit(parsed.data.unit) ?? (parsed.data.unit === item.unit ? item.unit : null);
+  if (!unit) throw new UserError("Elige una unidad de la lista");
 
   const duplicate = await prisma.foodInventoryItem.findFirst({
     where: { organizationId, name: parsed.data.name, id: { not: itemId } },
@@ -51,7 +56,7 @@ export async function updateFoodInventoryItem(itemId: string, data: z.input<type
     where: { id: itemId },
     data: {
       name: parsed.data.name,
-      unit: parsed.data.unit,
+      unit,
       category: parsed.data.category,
       minStock: parsed.data.minStock,
       unitCost: parsed.data.unitCost,

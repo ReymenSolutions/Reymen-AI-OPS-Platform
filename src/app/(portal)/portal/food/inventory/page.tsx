@@ -16,6 +16,7 @@ import { FoodInventoryItemEditDialog } from "@/components/portal/FoodInventoryIt
 import { FoodStockAdjustDialog } from "@/components/portal/FoodStockAdjustDialog";
 import { FoodArchiveButtons } from "@/components/portal/FoodArchiveButtons";
 import { can } from "@/lib/permissions";
+import { FOOD_UNIT_LABELS, FOOD_UNITS } from "@/lib/food-units";
 import type { FoodInventoryItem, FoodInventoryMovementType } from "@prisma/client";
 
 export default async function FoodInventoryPage() {
@@ -197,7 +198,11 @@ export default async function FoodInventoryPage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label htmlFor="unit" className="text-xs font-medium text-slate-600">{f.unit}</label>
-                  <input id="unit" name="unit" type="text" placeholder={f.unitPlaceholder} required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                  <select id="unit" name="unit" defaultValue="pza" required className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500">
+                    {FOOD_UNITS.map((u) => (
+                      <option key={u} value={u}>{FOOD_UNIT_LABELS[lang === "en" ? "en" : "es"][u]}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label htmlFor="category" className="text-xs font-medium text-slate-600">{f.category}</label>

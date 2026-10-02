@@ -26,6 +26,7 @@ const EN: Record<string, string> = {
   "Datos de compra inválidos": "Invalid purchase data",
   "Datos de gasto inválidos": "Invalid cost data",
   "Datos de insumo inválidos": "Invalid supply item data",
+  "Elige una unidad de la lista": "Choose a unit from the list",
   "Datos de modificador inválidos": "Invalid modifier data",
   "Datos de platillo inválidos": "Invalid dish data",
   "Datos de proveedor inválidos": "Invalid supplier data",
