@@ -15,6 +15,7 @@ import { Package } from "lucide-react";
 import { FoodInventoryItemEditDialog } from "@/components/portal/FoodInventoryItemEditDialog";
 import { FoodStockAdjustDialog } from "@/components/portal/FoodStockAdjustDialog";
 import { FoodArchiveButtons } from "@/components/portal/FoodArchiveButtons";
+import { FoodInventoryQuickAdjust, type ProductionTemplates } from "@/components/portal/FoodInventoryQuickAdjust";
 import { can } from "@/lib/permissions";
 import { FOOD_UNIT_LABELS, FOOD_UNITS } from "@/lib/food-units";
 import type { FoodInventoryItem, FoodInventoryMovementType } from "@prisma/client";
@@ -26,7 +27,7 @@ export default async function FoodInventoryPage() {
 
   const orgId = session.user.organizationId;
 
-  const [t, lang, items, movements] = await Promise.all([
+  const [t, lang, items, movements, productions] = await Promise.all([
     getServerT(),
     getServerLang(),
     prisma.foodInventoryItem.findMany({
@@ -39,7 +40,28 @@ export default async function FoodInventoryPage() {
       take: 20,
       include: { inventoryItem: { select: { name: true, unit: true } } },
     }),
+    // Producciones recientes: los insumos de la última de cada preparado se
+    // proponen solos en "Producción de preparados".
+    prisma.foodInventoryMovement.findMany({
+      where: { organizationId: orgId, type: "PRODUCTION", batchId: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: 300,
+      select: { batchId: true, inventoryItemId: true, quantity: true },
+    }),
   ]);
+  const templates: ProductionTemplates = {};
+  {
+    const batches = new Map<string, { inventoryItemId: string; quantity: number }[]>();
+    for (const m of productions) batches.set(m.batchId!, [...(batches.get(m.batchId!) ?? []), { inventoryItemId: m.inventoryItemId, quantity: Number(m.quantity) }]);
+    for (const moves of batches.values()) {
+      const out = moves.find((m) => m.quantity > 0);
+      if (!out || templates[out.inventoryItemId]) continue; // newest batch wins (ordered desc)
+      templates[out.inventoryItemId] = {
+        quantity: out.quantity,
+        inputs: moves.filter((m) => m.quantity < 0).map((m) => ({ itemId: m.inventoryItemId, quantity: -m.quantity })),
+      };
+    }
+  }
 
   const f = pickDict(foodStrings, lang);
   const qty = (n: number) => n.toLocaleString(f.dateLocale, { maximumFractionDigits: 3 });
@@ -51,6 +73,9 @@ export default async function FoodInventoryPage() {
     PURCHASE_VOID: f.movPurchaseVoid,
     ADJUSTMENT: f.movAdjustment,
     RECIPE_RECALC: f.movRecipeRecalc,
+    STOCK_IN: f.movStockIn,
+    PRODUCTION: f.movProduction,
+    WASTE: f.movWaste,
   };
   const canManage = can(session.user.role, "food:manage");
   const activeItems = items.filter((i) => i.isActive);
@@ -115,6 +140,17 @@ export default async function FoodInventoryPage() {
             : f.inventoryDesc
         }
       />
+
+      {canManage && activeItems.length > 0 && (
+        <Card className="mb-6">
+          <CardContent className="p-4">
+            <FoodInventoryQuickAdjust
+              items={activeItems.map((i) => ({ id: i.id, name: i.name, unit: i.unit, currentStock: Number(i.currentStock) }))}
+              templates={templates}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">

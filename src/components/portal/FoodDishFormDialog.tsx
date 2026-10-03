@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useForm, useFieldArray, useFormContext, useWatch, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -164,7 +164,7 @@ export function FoodDishFormDialog({ inventoryItems, categories = [], modifierGr
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>{lang === "es" ? "Nombre del platillo *" : "Dish name *"}</Label>
-                <Input placeholder={lang === "es" ? "Berry Bloom" : "Berry Bloom"} {...register("name")} />
+                <Input placeholder={lang === "es" ? "Berry Bloom" : "Berry Bloom"} autoFocus {...register("name")} />
                 {errors.name && <p className="text-xs text-red-500">{translateMessage(errors.name.message)}</p>}
               </div>
               <div className="space-y-2">
@@ -220,7 +220,12 @@ export function FoodDishFormDialog({ inventoryItems, categories = [], modifierGr
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => appendVariant(emptyVariant())}
+                  onClick={() => {
+                    // Sizes usually share ingredients: start from the last variant's, quantities included.
+                    const last = form.getValues("variants").at(-1);
+                    const ingredients = (last?.ingredients ?? []).filter((i) => i.inventoryItemId).map((i) => ({ ...i }));
+                    appendVariant({ ...emptyVariant(), ...(ingredients.length ? { ingredients } : {}) });
+                  }}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   {lang === "es" ? "Agregar variante" : "Add variant"}
@@ -269,11 +274,19 @@ function VariantEditor({
   canRemove: boolean;
 }) {
   const { lang } = usePreferences();
-  const { register, control, formState: { errors } } = useFormContext<FormData>();
+  const { register, control, setValue, formState: { errors } } = useFormContext<FormData>();
   const { fields: ingredientFields, append: appendIngredient, remove: removeIngredient } = useFieldArray({
     control,
     name: `variants.${variantIndex}.ingredients`,
   });
+  const listId = useId();
+  const pickerRefs = useRef(new Map<string, HTMLInputElement>());
+  const focusNew = useRef(false);
+  useEffect(() => {
+    if (!focusNew.current) return;
+    focusNew.current = false;
+    pickerRefs.current.get(ingredientFields.at(-1)?.id ?? "")?.focus();
+  }, [ingredientFields]);
 
   const watchedIngredients = useWatch({ control, name: `variants.${variantIndex}.ingredients` });
   const watchedPrice = Number(useWatch({ control, name: `variants.${variantIndex}.price` })) || 0;
@@ -338,49 +351,76 @@ function VariantEditor({
           </p>
         )}
         <div className="space-y-2">
-          {ingredientFields.map((field, ingIndex) => (
-            <div key={field.id} className="flex flex-col gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2 sm:flex-row sm:items-end">
-              <div className="flex-1 space-y-1">
-                <select
-                  {...register(`variants.${variantIndex}.ingredients.${ingIndex}.inventoryItemId` as const)}
-                  className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm outline-none focus:border-brand-500"
+          {ingredientFields.map((field, ingIndex) => {
+            const item = inventoryById.get(watchedIngredients?.[ingIndex]?.inventoryItemId ?? "");
+            return (
+              <div key={field.id} className="flex flex-col gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2 sm:flex-row sm:items-start">
+                <div className="flex-1 space-y-1">
+                  <IngredientPicker
+                    listId={listId}
+                    items={inventoryItems}
+                    value={watchedIngredients?.[ingIndex]?.inventoryItemId ?? ""}
+                    onChange={(id) =>
+                      setValue(`variants.${variantIndex}.ingredients.${ingIndex}.inventoryItemId` as const, id, { shouldValidate: !!id })
+                    }
+                    inputRef={(el) => {
+                      if (el) pickerRefs.current.set(field.id, el);
+                      else pickerRefs.current.delete(field.id);
+                    }}
+                  />
+                  {variantErrors?.ingredients?.[ingIndex]?.inventoryItemId && (
+                    <p className="text-xs text-red-500">{variantErrors.ingredients[ingIndex]?.inventoryItemId?.message}</p>
+                  )}
+                </div>
+                <div className="w-full space-y-1 sm:w-32">
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      inputMode="decimal"
+                      placeholder={lang === "es" ? "Cantidad" : "Quantity"}
+                      className="pr-10 text-right"
+                      {...register(`variants.${variantIndex}.ingredients.${ingIndex}.quantity` as const)}
+                      onKeyDown={(e) => {
+                        // Enter on the last ingredient adds another one and jumps to it.
+                        if (e.key === "Enter" && ingIndex === ingredientFields.length - 1) {
+                          e.preventDefault();
+                          appendIngredient({ inventoryItemId: "", quantity: undefined as unknown as number });
+                          focusNew.current = true;
+                        }
+                      }}
+                    />
+                    <span className="pointer-events-none absolute right-2 top-2.5 text-xs text-slate-400">{item?.unit ?? ""}</span>
+                  </div>
+                  {variantErrors?.ingredients?.[ingIndex]?.quantity && (
+                    <p className="text-xs text-red-500">{variantErrors.ingredients[ingIndex]?.quantity?.message}</p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeIngredient(ingIndex)}
+                  disabled={ingredientFields.length === 1}
+                  className="text-slate-400 hover:text-red-600 disabled:opacity-30"
                 >
-                  <option value="">{lang === "es" ? "Selecciona..." : "Select..."}</option>
-                  {inventoryItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.unit})
-                    </option>
-                  ))}
-                </select>
-                {variantErrors?.ingredients?.[ingIndex]?.inventoryItemId && (
-                  <p className="text-xs text-red-500">{variantErrors.ingredients[ingIndex]?.inventoryItemId?.message}</p>
-                )}
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
-              <div className="w-full space-y-1 sm:w-28">
-                <Input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  placeholder={lang === "es" ? "Cantidad" : "Quantity"}
-                  {...register(`variants.${variantIndex}.ingredients.${ingIndex}.quantity` as const)}
-                />
-                {variantErrors?.ingredients?.[ingIndex]?.quantity && (
-                  <p className="text-xs text-red-500">{variantErrors.ingredients[ingIndex]?.quantity?.message}</p>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => removeIngredient(ingIndex)}
-                disabled={ingredientFields.length === 1}
-                className="text-slate-400 hover:text-red-600 disabled:opacity-30"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
+        <datalist id={listId}>
+          {inventoryItems.map((i) => (
+            <option key={i.id} value={i.name}>
+              {i.unit}
+            </option>
+          ))}
+        </datalist>
+        <p className="text-[11px] text-slate-400">
+          {lang === "es" ? "Escribe para buscar el insumo; Enter en la cantidad agrega otro." : "Type to search; Enter on the quantity adds another."}
+        </p>
       </div>
 
       <div className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-sm">
@@ -398,5 +438,48 @@ function VariantEditor({
         )}
       </div>
     </div>
+  );
+}
+
+/** Ingredient search: type part of the name (native datalist), the id is set when it matches one. */
+function IngredientPicker({
+  listId,
+  items,
+  value,
+  onChange,
+  inputRef,
+}: {
+  listId: string;
+  items: FoodInventoryOption[];
+  value: string;
+  onChange: (id: string) => void;
+  inputRef: (el: HTMLInputElement | null) => void;
+}) {
+  const { lang } = usePreferences();
+  const current = items.find((i) => i.id === value);
+  const [text, setText] = useState(current?.name ?? "");
+  // The form changed the id (e.g. a copied variant): show its name.
+  const [shownId, setShownId] = useState(value);
+  if (value !== shownId) {
+    setShownId(value);
+    if (current) setText(current.name);
+  }
+  const unknown = text.trim() !== "" && !current;
+  return (
+    <input
+      ref={inputRef}
+      list={listId}
+      value={text}
+      placeholder={lang === "es" ? "Insumo (escribe para buscar)" : "Supply item (type to search)"}
+      onChange={(e) => {
+        setText(e.target.value);
+        const match = items.find((i) => i.name.trim().toLowerCase() === e.target.value.trim().toLowerCase());
+        onChange(match?.id ?? "");
+      }}
+      className={cn(
+        "w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-brand-500",
+        unknown ? "border-red-300" : "border-slate-300",
+      )}
+    />
   );
 }

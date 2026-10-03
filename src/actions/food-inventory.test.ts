@@ -63,6 +63,47 @@ describe("food inventory, suppliers and purchases", () => {
     await expect(food.createFoodInventoryItem(form("2 pza", "Papaya"))).rejects.toThrow("Elige una unidad de la lista");
   });
 
+  it("quick adjustments: stock in, waste with reason, count and production (with cost of the prepared item)", async () => {
+    const tomato = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Tomatillo QA", unit: "kg", currentStock: 2, unitCost: 30 } });
+    const chile = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Chile QA", unit: "kg", currentStock: 1, unitCost: 50 } });
+    const salsa = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Salsa verde QA", unit: "l", currentStock: 0 } });
+    const stock = async (id: string) => Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id } })).currentStock);
+
+    await inv.recordInventoryAdjustment({ kind: "in", lines: [{ itemId: tomato.id, quantity: 3 }, { itemId: chile.id, quantity: 0 }] });
+    expect(await stock(tomato.id)).toBe(5);
+
+    await expect(inv.recordInventoryAdjustment({ kind: "waste", lines: [{ itemId: tomato.id, quantity: 1 }] })).rejects.toThrow("Escribe el motivo del desecho");
+    await inv.recordInventoryAdjustment({ kind: "waste", lines: [{ itemId: tomato.id, quantity: 1 }], note: "Caducado" });
+    expect(await stock(tomato.id)).toBe(4);
+
+    // Production: +2 l of salsa from 1 kg tomatillo + 0.5 kg chile → cost (30 + 25) / 2 = 27.50 per l.
+    const res = await inv.recordInventoryAdjustment({
+      kind: "production",
+      output: { itemId: salsa.id, quantity: 2 },
+      lines: [{ itemId: tomato.id, quantity: 1 }, { itemId: chile.id, quantity: 0.5 }],
+    });
+    expect(res.movements).toBe(3);
+    expect(await stock(salsa.id)).toBe(2);
+    expect(await stock(tomato.id)).toBe(3);
+    expect(await stock(chile.id)).toBe(0.5);
+    expect(Number((await prisma.foodInventoryItem.findUniqueOrThrow({ where: { id: salsa.id } })).unitCost)).toBe(27.5);
+    const batch = await prisma.foodInventoryMovement.findMany({ where: { inventoryItemId: salsa.id, type: "PRODUCTION" } });
+    expect(batch[0].batchId).toBeTruthy();
+    expect(await prisma.foodInventoryMovement.count({ where: { batchId: batch[0].batchId } })).toBe(3);
+    await expect(
+      inv.recordInventoryAdjustment({ kind: "production", output: { itemId: salsa.id, quantity: 1 }, lines: [{ itemId: salsa.id, quantity: 1 }] }),
+    ).rejects.toThrow("El preparado no puede ser también uno de sus insumos");
+
+    // Count: only what was counted changes; the difference is recorded.
+    await inv.recordInventoryAdjustment({ kind: "count", lines: [{ itemId: tomato.id, quantity: 2.5 }] });
+    expect(await stock(tomato.id)).toBe(2.5);
+    expect(await stock(chile.id)).toBe(0.5);
+
+    const viewerSession = fakeSession({ id: viewer.id, role: "VIEWER", organizationId: org.id });
+    authMock.mockResolvedValueOnce(viewerSession);
+    await expect(inv.recordInventoryAdjustment({ kind: "in", lines: [{ itemId: tomato.id, quantity: 1 }] })).rejects.toThrow();
+  });
+
   it("rejects a duplicate name and items from another org", async () => {
     const a = await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Cebolla", unit: "kg" } });
     await prisma.foodInventoryItem.create({ data: { organizationId: org.id, name: "Ajo", unit: "kg" } });

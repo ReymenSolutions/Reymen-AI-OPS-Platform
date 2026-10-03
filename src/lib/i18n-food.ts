@@ -194,6 +194,9 @@ export const foodStrings = defineDict({
     lastPurchase: (date: string, total: string) => `Última compra: ${date} · ${total}`,
     // Recálculo por cambio de receta, desactivados y origen de ventas
     movRecipeRecalc: "Recálculo de receta",
+    movStockIn: "Ingreso de stock",
+    movProduction: "Producción",
+    movWaste: "Desecho",
     recalcTitle: "Recalcular inventario por recetas",
     recalcDesc: "Si corregiste una receta, aplica la receta actual a las ventas desde una fecha: solo se mueve la diferencia contra lo que ya se había descontado.",
     recalcSince: "Ventas desde",
@@ -468,6 +471,9 @@ export const foodStrings = defineDict({
     lastPurchase: (date: string, total: string) => `Last purchase: ${date} · ${total}`,
     // Recálculo por cambio de receta, desactivados y origen de ventas
     movRecipeRecalc: "Recipe recalculation",
+    movStockIn: "Stock in",
+    movProduction: "Production",
+    movWaste: "Waste",
     recalcTitle: "Recalculate stock from recipes",
     recalcDesc: "If you fixed a recipe, apply the current recipe to sales since a date: only the difference against what was already deducted is moved.",
     recalcSince: "Sales since",

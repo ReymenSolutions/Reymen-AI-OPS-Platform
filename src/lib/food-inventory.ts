@@ -162,6 +162,7 @@ export async function applyStockMovements(
     type: FoodInventoryMovementType;
     foodSaleId?: string;
     purchaseId?: string;
+    batchId?: string;
     note?: string;
     userId?: string | null;
   }
@@ -186,6 +187,7 @@ export async function applyStockMovements(
         stockAfter: updated.currentStock,
         foodSaleId: meta.foodSaleId ?? null,
         purchaseId: meta.purchaseId ?? null,
+        batchId: meta.batchId ?? null,
         note: meta.note ?? null,
         userId: meta.userId ?? null,
       },
