@@ -281,6 +281,8 @@ export const foodStrings = defineDict({
     opPosUnreachable: "No se pudo contactar al servidor del POS; se muestran solo los datos de Reymen.",
     opNoTables: "Sin mesas configuradas en el POS",
     opJustNow: "unos segundos",
+    opDelivery: "Delivery en curso",
+    opDeliveryHint: (late: number) => (late ? `${late} retrasados · Uber Eats, Rappi, DiDi` : "Uber Eats, Rappi, DiDi"),
   },
   en: {
     dateLocale: "en-US",
@@ -558,5 +560,7 @@ export const foodStrings = defineDict({
     opPosUnreachable: "Couldn't reach the POS server; showing Reymen data only.",
     opNoTables: "No tables set up in the POS",
     opJustNow: "a few seconds",
+    opDelivery: "Delivery in progress",
+    opDeliveryHint: (late: number) => (late ? `${late} late · Uber Eats, Rappi, DiDi` : "Uber Eats, Rappi, DiDi"),
   },
 });

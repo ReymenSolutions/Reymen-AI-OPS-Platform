@@ -14,7 +14,7 @@ import { ingestWebhookEvent } from "./webhook-ingest";
 interface OrgWebhookOptions<T> {
   /** Parte variable de la llave de rate limit: `webhook:<rateLimitKey>:<orgId>`. */
   rateLimitKey: string;
-  source: "n8n" | "pos";
+  source: "n8n" | "pos" | "delivery";
   eventType: string;
   process: (body: unknown, organizationId: string) => Promise<T>;
   /** Campos extra en la respuesta de éxito (p. ej. el id creado). */

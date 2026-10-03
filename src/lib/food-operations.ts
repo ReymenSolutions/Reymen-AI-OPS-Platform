@@ -3,6 +3,7 @@ import { hasModule } from "./modules";
 import { getFoodLowStockItems, getFoodSalesSummary, type FoodLowStockEntry } from "./food";
 import { fetchPosSnapshot } from "./pos-operations";
 import { summarizeOperations, type OperationsSummary } from "./pos-operations-summary";
+import { FINISHED_STATUSES, isDeliveryLate } from "./delivery";
 
 // Datos del centro de operaciones (Food → Operación): lo que pasa ahora en
 // el POS (mesas, cocina, cajas) más lo que Reymen ya sabe (ventas
@@ -29,13 +30,15 @@ export interface OperationsData {
     recentFailures: { id: string; automation: string; message: string | null; at: Date }[];
   };
   posRejected24h: number;
+  /** Uber Eats / Rappi / DiDi en curso y retrasados (Food → Delivery). */
+  delivery: { active: number; late: number };
 }
 
 const DAY_MS = 24 * 3600_000;
 
 export async function getOperationsData(organizationId: string): Promise<OperationsData> {
   const since = new Date(Date.now() - DAY_MS);
-  const [org, posEnabled, summary, lowStock, automationGroups, failed24h, recentFailures, posRejected24h] = await Promise.all([
+  const [org, posEnabled, summary, lowStock, automationGroups, failed24h, recentFailures, posRejected24h, deliveryActive] = await Promise.all([
     prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { n8nWebhookSecret: true } }),
     hasModule(organizationId, "REYMEN_POS"),
     getFoodSalesSummary(organizationId),
@@ -49,6 +52,10 @@ export async function getOperationsData(organizationId: string): Promise<Operati
       select: { id: true, errorMessage: true, createdAt: true, automation: { select: { name: true } } },
     }),
     prisma.webhookEvent.count({ where: { organizationId, source: "pos", status: "FAILED", createdAt: { gte: since } } }),
+    prisma.deliveryOrder.findMany({
+      where: { organizationId, status: { notIn: FINISHED_STATUSES } },
+      select: { status: true, placedAt: true },
+    }),
   ]);
 
   let pos: PosState = { kind: "disabled" };
@@ -75,5 +82,6 @@ export async function getOperationsData(organizationId: string): Promise<Operati
       recentFailures: recentFailures.map((f) => ({ id: f.id, automation: f.automation.name, message: f.errorMessage, at: f.createdAt })),
     },
     posRejected24h,
+    delivery: { active: deliveryActive.length, late: deliveryActive.filter((o) => isDeliveryLate(o, new Date())).length },
   };
 }
