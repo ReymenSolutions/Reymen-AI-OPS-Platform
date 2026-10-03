@@ -1150,6 +1150,9 @@ enum FoodInventoryMovementType {
   PURCHASE_VOID // compra anulada: quita lo que había sumado
   ADJUSTMENT // conteo físico / corrección manual
   RECIPE_RECALC // ventas anteriores recalculadas con la receta actual
+  STOCK_IN // ingreso de stock sin compra registrada (donación, traspaso, inventario inicial)
+  PRODUCTION // producción de un preparado: suma el preparado y resta sus insumos (mismo batchId)
+  WASTE // desecho / merma con motivo
 }
 
 model FoodInventoryMovement {
@@ -1161,6 +1164,9 @@ model FoodInventoryMovement {
   stockAfter      Decimal                   @db.Decimal(12, 3)
   foodSaleId      String?
   purchaseId      String?
+  // Agrupa los movimientos de un mismo ajuste rápido (p. ej. una producción:
+  // el preparado que entra y los insumos que salen).
+  batchId         String?
   note            String?                   @db.Text
   // Quién lo hizo (null = automático, p. ej. una venta del POS). Sin FK, igual
   // que AuditLog: el historial no debe depender de que el usuario exista.
@@ -1172,6 +1178,7 @@ model FoodInventoryMovement {
 
   @@index([organizationId, createdAt])
   @@index([inventoryItemId, createdAt])
+  @@index([batchId])
 }
 
 // ─── FOOD OPS — Compras ──────────────────────────────────────────────

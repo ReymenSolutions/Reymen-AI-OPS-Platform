@@ -155,6 +155,93 @@ export async function adjustFoodInventoryStock(itemId: string, data: z.input<typ
   revalidateInventory();
 }
 
+// ── Ajustes rápidos ──────────────────────────────────────────────────
+// Un solo formulario para los cuatro movimientos del día a día: ingreso de
+// stock, producción de preparados, desecho y conteo. Varios insumos a la vez;
+// todo en una transacción y agrupado con el mismo batchId.
+
+const quickLineSchema = z.object({
+  itemId: z.string().min(1, "Selecciona un insumo"),
+  quantity: z.number().finite("Cantidad inválida").min(0, "No puede ser negativo"),
+});
+
+const quickAdjustSchema = z.object({
+  kind: z.enum(["in", "production", "waste", "count"]),
+  lines: z.array(quickLineSchema).max(100),
+  /** Producción: el preparado que se obtiene. */
+  output: quickLineSchema.optional(),
+  note: z.string().trim().max(300).optional(),
+});
+
+export type QuickAdjustInput = z.input<typeof quickAdjustSchema>;
+
+export async function recordInventoryAdjustment(data: QuickAdjustInput): Promise<{ movements: number }> {
+  const session = await requireFoodManager();
+  const organizationId = session.user.organizationId;
+  const parsed = quickAdjustSchema.safeParse(data);
+  if (!parsed.success) throw new UserError(parsed.error.errors[0]?.message ?? "Datos inválidos");
+  const { kind, output } = parsed.data;
+  const note = parsed.data.note || undefined;
+  // Líneas sin cantidad (o en 0, salvo en conteo) no cuentan.
+  const lines = parsed.data.lines.filter((l) => (kind === "count" ? true : l.quantity > 0));
+  if (lines.length === 0 && kind !== "production") throw new UserError("Agrega al menos un insumo con cantidad");
+  if (new Set(lines.map((l) => l.itemId)).size !== lines.length) throw new UserError("Un insumo aparece dos veces");
+  if (kind === "waste" && !note) throw new UserError("Escribe el motivo del desecho");
+  if (kind === "production") {
+    if (!output || output.quantity <= 0) throw new UserError("Indica qué preparado y cuánto se produjo");
+    if (lines.length === 0) throw new UserError("Agrega los insumos que se usaron");
+    if (lines.some((l) => l.itemId === output.itemId)) throw new UserError("El preparado no puede ser también uno de sus insumos");
+  }
+
+  const ids = [...lines.map((l) => l.itemId), ...(output ? [output.itemId] : [])];
+  const batchId = crypto.randomUUID();
+  const movements = await prisma.$transaction(async (tx) => {
+    const items = await tx.foodInventoryItem.findMany({
+      where: { organizationId, id: { in: ids }, isActive: true },
+      select: { id: true, name: true, currentStock: true, unitCost: true },
+    });
+    if (items.length !== new Set(ids).size) throw new UserError("Insumo no encontrado");
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const meta = { batchId, userId: session.user.id };
+
+    if (kind === "in") {
+      await applyStockMovements(tx, organizationId, lines.map((l) => ({ inventoryItemId: l.itemId, delta: l.quantity })), { ...meta, type: "STOCK_IN", note });
+    } else if (kind === "waste") {
+      await applyStockMovements(tx, organizationId, lines.map((l) => ({ inventoryItemId: l.itemId, delta: -l.quantity })), { ...meta, type: "WASTE", note });
+    } else if (kind === "count") {
+      const deltas = lines.map((l) => ({ inventoryItemId: l.itemId, delta: l.quantity - Number(byId.get(l.itemId)!.currentStock) }));
+      await applyStockMovements(tx, organizationId, deltas, { ...meta, type: "ADJUSTMENT", note: note ? `Conteo de stock · ${note}` : "Conteo de stock" });
+    } else if (output) {
+      const outName = byId.get(output.itemId)!.name;
+      const prodNote = note ? `Producción de ${outName} · ${note}` : `Producción de ${outName}`;
+      await applyStockMovements(
+        tx,
+        organizationId,
+        [{ inventoryItemId: output.itemId, delta: output.quantity }, ...lines.map((l) => ({ inventoryItemId: l.itemId, delta: -l.quantity }))],
+        { ...meta, type: "PRODUCTION", note: prodNote },
+      );
+      // Costo del preparado = lo que costaron sus insumos ÷ lo producido,
+      // solo si todos los insumos tienen costo (si no, quedaría por debajo).
+      if (lines.every((l) => byId.get(l.itemId)!.unitCost !== null)) {
+        const cost = lines.reduce((sum, l) => sum + Number(byId.get(l.itemId)!.unitCost) * l.quantity, 0) / output.quantity;
+        await tx.foodInventoryItem.update({ where: { id: output.itemId }, data: { unitCost: Math.round(cost * 100) / 100 } });
+      }
+    }
+    return tx.foodInventoryMovement.count({ where: { batchId } });
+  });
+
+  await logAudit({
+    organizationId,
+    userId: session.user.id,
+    action: `food.inventory_${kind === "in" ? "stock_in" : kind}`,
+    resource: "FoodInventoryMovement",
+    resourceId: batchId,
+    metadata: { lines: lines.length, output: output ?? null, note: note ?? null },
+  });
+  revalidateInventory();
+  return { movements };
+}
+
 // ── Proveedores ──────────────────────────────────────────────────────
 
 const supplierSchema = z.object({
