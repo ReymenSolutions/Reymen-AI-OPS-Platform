@@ -96,6 +96,8 @@ export async function cleanupOrg(orgId: string) {
   // is enough to clean up all three.
   await prisma.foodInventoryMovement.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodPurchase.deleteMany({ where: { organizationId: orgId } });
+  await prisma.deliveryOrder.deleteMany({ where: { organizationId: orgId } });
+  await prisma.deliveryChannel.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodDish.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodOperatingCost.deleteMany({ where: { organizationId: orgId } });
   await prisma.foodSale.deleteMany({ where: { organizationId: orgId } });

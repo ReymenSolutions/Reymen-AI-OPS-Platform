@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   DollarSign, Package, ChefHat, ClipboardList, ArrowRight, Receipt, Clock,
   ArrowUpRight, ArrowDownRight, QrCode, MessageCircle, Eye, Phone, ShoppingBag,
-  TrendingUp, Sparkles, Truck, Users, Wallet, ShoppingCart,
+  TrendingUp, Sparkles, Truck, Users, Wallet, ShoppingCart, Bike,
 } from "lucide-react";
 
 // Rango de horas que se dibuja por defecto (horario típico de restaurante).
@@ -35,6 +35,7 @@ const AREAS = [
   { href: "/portal/food/recipes", key: "foodRecipes", icon: ChefHat, ready: true },
   { href: "/portal/food/profitability", key: "foodProfitability", icon: Wallet, ready: true },
   { href: "/portal/food/operations", key: "foodOperations", icon: ClipboardList, ready: true },
+  { href: "/portal/food/delivery", key: "foodDelivery", icon: Bike, ready: true },
 ] as const;
 
 // ─── Sparkline mínimo, sin dependencias -- una sola serie, un solo trazo ──

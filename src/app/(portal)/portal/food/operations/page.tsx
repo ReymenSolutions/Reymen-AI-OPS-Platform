@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
-  AlertTriangle, ChefHat, Clock, Flame, MonitorSmartphone, Printer, Receipt, Store, Users, Workflow, Ban, Package,
+  AlertTriangle, Bike, ChefHat, Clock, Flame, MonitorSmartphone, Printer, Receipt, Store, Users, Workflow, Ban, Package,
 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { requireModule } from "@/lib/modules";
@@ -184,7 +184,7 @@ export default async function FoodOperationsPage() {
       {pos.kind === "unreachable" && <Notice tone="warning">{f.opPosUnreachable}</Notice>}
 
       {/* ── KPIs ── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Kpi
           icon={Receipt}
           label={ops ? f.opPosSalesToday : f.salesToday}
@@ -211,6 +211,15 @@ export default async function FoodOperationsPage() {
           hint={ops ? f.opLateAfter(ops.kitchen.lateMinutes) : undefined}
           tone={ops && ops.kitchen.late.length > 0 ? "red" : "green"}
         />
+        <Link href="/portal/food/delivery" className="block">
+          <Kpi
+            icon={Bike}
+            label={f.opDelivery}
+            value={String(data.delivery.active)}
+            hint={f.opDeliveryHint(data.delivery.late)}
+            tone={data.delivery.late > 0 ? "red" : "brand"}
+          />
+        </Link>
       </div>
 
       {ops && (

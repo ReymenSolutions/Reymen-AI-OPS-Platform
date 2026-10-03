@@ -85,6 +85,8 @@ model Organization {
   foodInventoryMovements  FoodInventoryMovement[]
   foodPurchases           FoodPurchase[]
   foodRecipeUsages        FoodRecipeUsage[]
+  deliveryChannels        DeliveryChannel[]
+  deliveryOrders          DeliveryOrder[]
 
   @@index([slug])
 }
@@ -1522,4 +1524,70 @@ model FoodRecipeUsage {
   @@index([organizationId, occurredAt])
   @@index([variantId])
   @@index([modifierOptionId])
+}
+
+// ─── FOOD OPS — Delivery (Uber Eats, Rappi, DiDi Food) ───────────────
+// Las plataformas solo entregan pedidos a integradores aprobados en sus
+// programas de socios; Reymen los recibe ya normalizados en
+// POST /api/webhooks/delivery/orders (firmado con la llave de la
+// organización, igual que el POS) desde el integrador o un flujo de n8n.
+// Por ahora es monitoreo: no crea ventas ni descuenta inventario.
+
+enum DeliveryPlatform {
+  UBER_EATS
+  RAPPI
+  DIDI_FOOD
+}
+
+enum DeliveryOrderStatus {
+  NEW
+  ACCEPTED
+  PREPARING
+  READY
+  PICKED_UP
+  DELIVERED
+  CANCELLED
+}
+
+model DeliveryChannel {
+  id             String           @id @default(cuid())
+  organizationId String
+  platform       DeliveryPlatform
+  // Apagado: los pedidos de esa plataforma se rechazan.
+  enabled        Boolean          @default(false)
+  // ID de la tienda en la plataforma, para identificarla con el integrador.
+  storeId        String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, platform])
+}
+
+model DeliveryOrder {
+  id             String              @id @default(cuid())
+  organizationId String
+  platform       DeliveryPlatform
+  // Id del pedido en la plataforma; repetirlo actualiza el mismo pedido.
+  externalId     String
+  // Código corto que ve el repartidor ("A1B2").
+  displayId      String
+  status         DeliveryOrderStatus @default(NEW)
+  customerName   String?
+  totalAmount    Decimal             @db.Decimal(10, 2)
+  // [{ name, quantity, notes?, modifiers?: string[] }]
+  items          Json
+  notes          String?             @db.Text
+  isTest         Boolean             @default(false)
+  placedAt       DateTime
+  statusAt       DateTime            @default(now())
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, platform, externalId])
+  @@index([organizationId, placedAt])
+  @@index([organizationId, status])
 }
