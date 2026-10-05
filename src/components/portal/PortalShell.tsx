@@ -1,5 +1,6 @@
 "use client";
 
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { useState } from "react";
 import { PortalSidebar } from "@/components/portal/PortalSidebar";
 import { TopBar } from "@/components/shared/TopBar";
@@ -33,8 +34,8 @@ export function PortalShell({ orgName, orgLogoUrl, enabledModules, pendingConver
       />
       <div className="flex flex-1 flex-col min-h-0 min-w-0">
         <TopBar onMenuClick={() => setMobileOpen(true)} />
-        <main className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto p-4 sm:p-6">
-          {children}
+        <main className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain p-4 sm:p-6">
+          <PullToRefresh>{children}</PullToRefresh>
         </main>
       </div>
     </div>
