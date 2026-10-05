@@ -217,7 +217,7 @@ PRs fusionados en `main` (#1–#28):
 - [D] Si en VG-TEST-03 se quiere otro titular en lugar de "Consultorio 2", cambiarlo en `admin.reymen.mx`.
 
 **De desarrollo:**
-- [D] **Automatizaciones (motor de eventos + n8n):** análisis y arquitectura propuesta en `docs/automations/ARQUITECTURA.md` (ReymenApp). Pendiente de que el usuario apruebe y resuelva las decisiones de su §J antes de programar; la foundation mínima son los PRs 1, 2, 4, 5 y 6 de su §H.
+- [D] **Automatizaciones (motor de eventos + n8n):** arquitectura **aprobada** en `docs/automations/ARQUITECTURA.md` (ReymenApp). Decisiones del usuario y orden de PRs en su **§K**; el siguiente paso exacto está al final de §K (PR 1: `Customer` en ReymenApp). Alcance agregado: descuentos en el POS y eventos de cocina y cierre de turno hacia Reymen. Aviso de privacidad pendiente: hasta tenerlo, solo dry-run y alertas internas.
 - [D] Sucursales en el POS (en pausa por decisión del usuario).
 - [D] Delivery: conectar con credenciales reales de Uber Eats, Rappi y DiDi (dependen de los partners).
 - [D] Traer a ReymenApp el resto del admin de SmartCard (requiere el repo `reymen-smartcard`).

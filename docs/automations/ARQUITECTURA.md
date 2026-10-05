@@ -1,6 +1,6 @@
 # Automatizaciones Reymen — Análisis y arquitectura propuesta
 
-> **Estado:** propuesta. Fase 1 (análisis) terminada; el usuario aún no aprueba implementar.
+> **Estado:** **APROBADA por el usuario (2026-10-05).** Ver §K para las decisiones y el orden de trabajo acordado. Sigue en §K → "Siguiente paso".
 > **Fecha:** 2026-10-05.
 > **Tenant piloto:** Villa Gardenia. Todo lo de abajo es genérico y multi-tenant.
 > **Base:** revisión de `ReymenApp` (`main` @ `36184fa`) y `ReymenPOS` (`main` @ `f9a5dcf`), y las decisiones de `docs/HANDOFF.md`.
@@ -315,3 +315,51 @@ Con eso, cada automatización nueva es un archivo de blueprint más sus pruebas,
    - Las plantillas de marketing requieren aprobación de Meta y opt-in, y cada conversación tiene costo.
 5. **Aviso de privacidad** del restaurante para el texto de consentimiento (LFPDPPP).
 6. **Reseñas:** ofrecer el link de reseña a todos los que respondan el feedback (recomendado y conforme a políticas).
+
+---
+
+## K. Decisiones del usuario (2026-10-05) y plan aprobado
+
+**Respuestas a §J:**
+1. **Captura en el POS:** teléfono opcional al cobrar, con nombre y casilla de consentimiento, más la opción "¿Te mando tu ticket por WhatsApp?". Aprobado tal como se propuso.
+2. **`Customer` es un modelo nuevo**, separado de `Lead`. Aprobado.
+3. **Reloj:** cron del VPS cada 5 min → `POST /api/cron/automations/tick` con `CRON_SECRET`. Aprobado.
+4. **WhatsApp:** por ahora un número y proveedor **ficticios**. Los workflows de n8n se construyen genéricos y el envío real se conecta después. Mientras tanto, las automatizaciones corren en **dry-run** o contra un webhook de n8n de prueba.
+5. **Aviso de privacidad: PENDIENTE** (Villa Gardenia no tiene uno).
+   - El POS muestra un texto de consentimiento genérico **configurable por organización**, guarda la versión del texto aceptado y la fecha.
+   - Hasta que exista el aviso, **no se envían mensajes de marketing reales**: solo dry-run, alertas internas y reporte al dueño.
+6. **Reseñas:** el link de reseña se ofrece a **todos** los que respondan el feedback. Aprobado.
+
+**Alcance agregado por el usuario:**
+- **Descuentos en el POS.** Deben existir: por línea o por cuenta, en % o en monto, con motivo, y con autorización de admin o gerente si superan un límite. El evento lleva el descuento y Reymen lo guarda, lo que habilita después "alertas de descuentos" y el rubro del reporte diario.
+- **Tiempos de cocina y cierre de turno deben llegar a Reymen.** Eventos nuevos del POS por el mismo outbox:
+  - `kitchen.ticket_ready`: orden o línea, `sentAt`, `readyAt`, estación;
+  - `shift.closed`: sesión de caja, esperado, contado, diferencia, ventas, propinas y quién cerró.
+  
+  Reymen los guarda (modelos `FoodKitchenTicket` y `FoodShiftClose`, o un `DomainEvent` con payload tipado) y habilitan `kitchen.sla_exceeded` y `shift.closed` en el motor.
+
+**Orden de trabajo acordado** (PRs pequeños; cada uno con pruebas, CI en verde y squash):
+
+| # | Repo | PR | Notas |
+|---|---|---|---|
+| 1 | App | `Customer` + estadísticas + `FoodSale.externalOrderId/customerId/cancelsSaleId` + webhook acepta `orderId`, `customer` (y `discount`) **opcionales** | Compatible con POS viejos. Ver §H PR 1 |
+| 2 | POS | Captura opcional del cliente al cobrar (offline) + consentimiento configurable + `orderId` y `customer` en el evento y en el adaptador | Ver §H PR 2 |
+| 3 | POS + App | **Descuentos** en el POS (permiso y límite) + campo `discountAmount` y motivo en el evento y en `FoodSale` | Nuevo |
+| 4 | POS + App | Eventos `kitchen.ticket_ready` y `shift.closed` → endpoint en Reymen + modelos | Nuevo |
+| 5 | App | Outbox `DomainEvent` + cron `tick` con candado | §H PR 4 |
+| 6 | App | Blueprints en código + `Automation.blueprintKey/Version/dryRun` + `AutomationExecution` + política de contacto + dry-run + Admin "habilitar blueprint" | §H PR 5 |
+| 7 | App | Despachador firmado hacia n8n + callback con token por ejecución + reintentos + workflows genéricos en `n8n/workflows/` (proveedor ficticio) | §H PR 6 |
+| 8+ | App | UI `/portal/automations`, luego P0: `inventory_low_alert`, `daily_executive_report`, `post_visit_feedback`, `second_visit`, `customer_recovery`, atribución | §H PRs 7–13 |
+
+**Siguiente paso exacto:** PR 1 (ReymenApp).
+- Migración incremental `…_customers`: tabla `Customer` y columnas opcionales en `FoodSale`.
+- `src/lib/customers.ts`: `normalizePhoneMx()` a E.164 (`+52…`), `upsertCustomerForSale()` y `rebuildCustomerStats()`.
+- `processFoodPosOrder` (`src/lib/food.ts:1037`) acepta opcionalmente:
+  - `orderId`;
+  - `customer: { phone, name?, consent?: { accepted, textVersion, at } }`;
+  - `discount: { amount, reason }`.
+- Pruebas en `src/lib/customers.test.ts` y en el test del webhook POS.
+- **Reglas:**
+  - sin cliente, el comportamiento es idéntico al de hoy;
+  - las estadísticas se actualizan en la misma transacción de la venta;
+  - la cancelación (`order.cancelled`) resta la visita y el gasto del cliente.
