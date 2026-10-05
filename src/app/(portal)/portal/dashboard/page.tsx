@@ -117,8 +117,8 @@ export default async function PortalDashboardPage() {
               </p>
               <p className="info-box-text text-xs text-brand-700 mt-0.5">
                 {lang === "es"
-                  ? "Completa la configuración inicial para aprovechar todo Reymen."
-                  : "Complete the initial setup to get the most out of Reymen."}
+                  ? "Completa la configuración inicial para aprovechar todo ReymenApp."
+                  : "Complete the initial setup to get the most out of ReymenApp."}
               </p>
             </div>
           </div>

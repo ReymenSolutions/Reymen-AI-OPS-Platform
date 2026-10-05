@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Actualiza Reymen (app.reymen.mx) en producción desde main y verifica
+# Actualiza ReymenApp (app.reymen.mx) en producción desde main y verifica
 # que quede sana. Mismo flujo que deploy/update.sh del repo ReymenPOS.
 # Uso (en el VPS; la carpeta es de emilianorm, así que se corre con sudo):
 #   sudo /home/emilianorm/reymen-ai-ops-preview/deploy/update.sh

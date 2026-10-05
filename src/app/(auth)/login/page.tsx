@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
@@ -7,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Zap, Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -138,10 +139,8 @@ export default function LoginPage() {
   return (
     <Card className="w-full max-w-sm shadow-2xl border-0">
       <CardHeader className="text-center pb-4">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 shadow-lg">
-          <Zap className="h-6 w-6 text-white" />
-        </div>
-        <CardTitle className="text-xl">Reymen</CardTitle>
+        <Image src="/icons/icon-192.png" alt="ReymenApp" width={56} height={56} priority className="mx-auto mb-4 h-14 w-14 rounded-xl shadow-lg" />
+        <CardTitle className="text-xl">ReymenApp</CardTitle>
         <CardDescription>Ingresa a tu plataforma de operaciones</CardDescription>
       </CardHeader>
 

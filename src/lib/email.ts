@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 
-const FROM = process.env.EMAIL_FROM || "Reymen <onboarding@resend.dev>";
+const FROM = process.env.EMAIL_FROM || "Reymen Solutions <onboarding@resend.dev>";
 
 let client: Resend | null = null;
 function getClient(): Resend | null {
