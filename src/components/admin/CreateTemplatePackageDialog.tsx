@@ -126,7 +126,7 @@ export function CreateTemplatePackageDialog({ templates }: { templates: Template
 
           <div className="space-y-2">
             <Label>{lang === "es" ? "Descripción *" : "Description *"}</Label>
-            <Textarea placeholder={lang === "es" ? "Lo esencial para arrancar una clínica con Reymen AI Ops" : "The essentials to get a clinic started with Reymen AI Ops"} rows={2} {...register("description")} />
+            <Textarea placeholder={lang === "es" ? "Lo esencial para arrancar una clínica con Reymen" : "The essentials to get a clinic started with Reymen"} rows={2} {...register("description")} />
             {errors.description && <p className="text-xs text-red-500">{translateMessage(errors.description.message)}</p>}
           </div>
 

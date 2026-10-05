@@ -21,7 +21,7 @@ export const strings = {
     requests: "Solicitudes",
     settings: "Configuración",
     signOut: "Cerrar sesión",
-    aiOps: "AI Ops",
+    brandName: "Reymen",
     menu: "Menú",
     food: "Food",
     foodSales: "Ventas",
@@ -384,7 +384,7 @@ export const strings = {
 
     // ── Admin settings ────────────────────────────────────────
     adminSettingsTitle: "Configuración del sistema",
-    adminSettingsDesc: "Estado de la plataforma Reymen AI Ops",
+    adminSettingsDesc: "Estado de la plataforma Reymen",
     adminSystemStats: "Estadísticas del sistema",
     adminActiveOrgs: "Organizaciones activas",
     adminActiveUsers: "Usuarios activos",
@@ -562,7 +562,7 @@ export const strings = {
     requests: "Requests",
     settings: "Settings",
     signOut: "Sign out",
-    aiOps: "AI Ops",
+    brandName: "Reymen",
     menu: "Menu",
     food: "Food",
     foodSales: "Sales",
@@ -924,7 +924,7 @@ export const strings = {
 
     // ── Admin settings ────────────────────────────────────────
     adminSettingsTitle: "System settings",
-    adminSettingsDesc: "Reymen AI Ops platform status",
+    adminSettingsDesc: "Reymen platform status",
     adminSystemStats: "System statistics",
     adminActiveOrgs: "Active organizations",
     adminActiveUsers: "Active users",

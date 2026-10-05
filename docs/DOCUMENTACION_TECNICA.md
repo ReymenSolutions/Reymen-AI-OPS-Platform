@@ -1,4 +1,4 @@
-# Reymen AI OPS Platform — Technical Documentation
+# Reymen — Technical Documentation
 
 > **Document Version:** 1.5 | **Date:** September 2026 (updated through Fase 17c — Food Ops menu categories/modifiers, POS sales webhook with cancellations, lenient modifier-option validation, modifier-sale tracking, content-hash ETag/304 caching, separate POS read-only key, SmartCard bridge, admin user management, Next.js 16 upgrade)  
 > **Language:** English/Spanish (technical terms in English, explanations bilingual)  
@@ -31,7 +31,7 @@
 
 ## 1. Platform Overview
 
-**Reymen AI OPS Platform** is a multi-tenant SaaS application that provides AI-powered business operations automation for SMBs. It combines a CRM, WhatsApp AI assistant, knowledge base management, automated workflow execution, and — as of Fases 14–16 — two additional commercial verticals (Food Ops for restaurants, a SmartCard NFC/QR bridge) through a unified portal, each gated by the same commercial module entitlement system (§17 item 7).
+**Reymen** is a multi-tenant SaaS application that provides AI-powered business operations automation for SMBs. It combines a CRM, WhatsApp AI assistant, knowledge base management, automated workflow execution, and — as of Fases 14–16 — two additional commercial verticals (Food Ops for restaurants, a SmartCard NFC/QR bridge) through a unified portal, each gated by the same commercial module entitlement system (§17 item 7).
 
 ### What it is
 
@@ -3770,6 +3770,6 @@ No database migration is needed — permissions are fully code-defined.
 
 ---
 
-*End of Technical Documentation — Reymen AI OPS Platform v1.0*
+*End of Technical Documentation — Reymen v1.0*
 
 *For questions: engineering@reymen.io*
