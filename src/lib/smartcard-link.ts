@@ -1,9 +1,12 @@
 import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSmartcardAdminClient } from "./smartcard-supabase";
+import { prisma } from "./prisma";
 import { UserError } from "./user-error";
 import type {
+  SmartcardCompanyLink,
   SmartcardCompanyOption,
+  SmartcardCompanyRow,
   SmartcardLinkRole,
   SmartcardLinkState,
 } from "./smartcard-link-shared";
@@ -40,16 +43,19 @@ export async function getSmartcardLinkState(organizationId: string): Promise<Sma
   }
 
   if (!company) {
-    const { data: free, error: freeError } = await supabase
-      .from("companies")
-      .select("id, name, slug")
-      .is("external_org_id", null)
-      .order("name", { ascending: true });
-    if (freeError) {
-      console.error("[smartcard-link] Error listando companies:", freeError.message);
-      return { status: "error" };
-    }
-    return { status: "unlinked", candidates: free ?? [] };
+    const companies = await listCompaniesWithLink(supabase);
+    if (!companies) return { status: "error" };
+    return {
+      status: "unlinked",
+      candidates: companies
+        .filter((c) => c.link.kind !== "client")
+        .map((c) => ({ id: c.id, name: c.name, slug: c.slug, staleOrgId: c.link.kind === "stale" ? c.link.orgId : null })),
+      taken: companies.flatMap((c) =>
+        c.link.kind === "client"
+          ? [{ id: c.id, name: c.name, slug: c.slug, clientId: c.link.clientId, clientName: c.link.clientName }]
+          : []
+      ),
+    };
   }
 
   const [{ data: rows, error: membersError }, { data: roles }] = await Promise.all([
@@ -80,7 +86,67 @@ export async function getSmartcardLinkState(organizationId: string): Promise<Sma
   return { status: "linked", company, members };
 }
 
-/** Liga una empresa de SmartCard libre al cliente. */
+/**
+ * Todas las empresas de SmartCard con su vínculo en Reymen: libre, ligada a
+ * un cliente, o "rota" (external_org_id apunta a un ID que no existe aquí,
+ * p. ej. un cliente borrado o de otro entorno). null si falla la consulta.
+ */
+async function listCompaniesWithLink(
+  supabase: SupabaseClient
+): Promise<{ id: string; name: string; slug: string; link: SmartcardCompanyLink }[] | null> {
+  const { data, error } = await supabase
+    .from("companies")
+    .select("id, name, slug, external_org_id")
+    .order("name", { ascending: true });
+  if (error) {
+    console.error("[smartcard-link] Error listando companies:", error.message);
+    return null;
+  }
+  const orgIds = [...new Set((data ?? []).map((c) => c.external_org_id as string | null).filter((v): v is string => !!v))];
+  const orgs = orgIds.length
+    ? await prisma.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })
+    : [];
+  const orgName = new Map(orgs.map((o) => [o.id, o.name]));
+  return (data ?? []).map((c) => {
+    const orgId = c.external_org_id as string | null;
+    const link: SmartcardCompanyLink = !orgId
+      ? { kind: "none" }
+      : orgName.has(orgId)
+        ? { kind: "client", clientId: orgId, clientName: orgName.get(orgId)! }
+        : { kind: "stale", orgId };
+    return { id: c.id as string, name: c.name as string, slug: c.slug as string, link };
+  });
+}
+
+/** Resumen de todas las empresas de SmartCard para Admin → SmartCard. */
+export async function listSmartcardCompanies(): Promise<SmartcardCompanyRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+  const companies = await listCompaniesWithLink(supabase);
+  if (!companies) return null;
+
+  const [{ data: members }, { data: clients }, { data: cards }] = await Promise.all([
+    supabase.from("company_users").select("company_id").eq("status", "active"),
+    supabase.from("clients").select("id, company_id"),
+    supabase.from("cards").select("client_id").is("deleted_at", null),
+  ]);
+  const count = (keys: (string | undefined)[]) => {
+    const m = new Map<string, number>();
+    for (const k of keys) if (k) m.set(k, (m.get(k) ?? 0) + 1);
+    return m;
+  };
+  const membersBy = count((members ?? []).map((m) => m.company_id as string));
+  const companyByClient = new Map((clients ?? []).map((c) => [c.id as string, c.company_id as string]));
+  const cardsBy = count((cards ?? []).map((c) => companyByClient.get(c.client_id as string)));
+
+  return companies.map((c) => ({ ...c, activeMembers: membersBy.get(c.id) ?? 0, cards: cardsBy.get(c.id) ?? 0 }));
+}
+
+/**
+ * Liga una empresa de SmartCard al cliente. Solo si está libre o si su
+ * vínculo está roto (apunta a un ID que no existe en Reymen); nunca se le
+ * quita a otro cliente.
+ */
 export async function linkSmartcardCompany(organizationId: string, companyId: string): Promise<SmartcardCompanyOption> {
   const supabase = requireClient();
 
@@ -91,20 +157,28 @@ export async function linkSmartcardCompany(organizationId: string, companyId: st
     .maybeSingle();
   if (current) throw new UserError("Este cliente ya está vinculado con una empresa de SmartCard.");
 
-  // Solo si sigue libre: el filtro evita quitarle la empresa a otro cliente.
-  const { data: updated, error } = await supabase
+  const { data: target } = await supabase
     .from("companies")
-    .update({ external_org_id: organizationId })
+    .select("id, external_org_id")
     .eq("id", companyId)
-    .is("external_org_id", null)
-    .select("id, name, slug")
     .maybeSingle();
+  if (!target) throw new UserError("Esa empresa ya no está disponible: otro cliente la tiene vinculada.");
+  const previous = (target.external_org_id as string | null) ?? null;
+  if (previous) {
+    const owner = await prisma.organization.findUnique({ where: { id: previous }, select: { id: true } });
+    if (owner) throw new UserError("Esa empresa ya no está disponible: otro cliente la tiene vinculada.");
+  }
+
+  // Solo si nadie la cambió mientras tanto (mismo valor que se revisó arriba).
+  let update = supabase.from("companies").update({ external_org_id: organizationId }).eq("id", companyId);
+  update = previous ? update.eq("external_org_id", previous) : update.is("external_org_id", null);
+  const { data: updated, error } = await update.select("id, name, slug").maybeSingle();
   if (error) {
     console.error("[smartcard-link] Error vinculando company:", error.message);
     throw new UserError("No se pudo vincular la empresa. Intenta de nuevo.");
   }
   if (!updated) throw new UserError("Esa empresa ya no está disponible: otro cliente la tiene vinculada.");
-  return updated;
+  return { ...updated, staleOrgId: previous };
 }
 
 /** Quita la vinculación; la empresa, sus tarjetas y miembros quedan en SmartCard. */

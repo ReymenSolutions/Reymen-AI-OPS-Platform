@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, LogOut, AlertTriangle, Layers, Shield, Code, Upload, Webhook, Package, UserCog, X,
+  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, LogOut, AlertTriangle, Layers, Shield, Code, Upload, Webhook, Package, UserCog, X, CreditCard,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,7 @@ export function AdminSidebar({
     { href: "/admin/requests", label: t.requests, icon: MessageSquare },
     { href: "/admin/templates", label: t.templates, icon: Layers },
     { href: "/admin/template-packages", label: t.adminNavPackages, icon: Package },
+    { href: "/admin/smartcard", label: "SmartCard", icon: CreditCard },
     { href: "/admin/metrics", label: t.adminNavMetrics, icon: BarChart3 },
     { href: "/admin/audit", label: t.adminNavAudit, icon: Shield },
     { href: "/admin/webhooks", label: t.adminNavWebhooks, icon: Webhook },

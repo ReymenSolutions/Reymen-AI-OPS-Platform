@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { CreditCard, Loader2, Unlink, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,10 @@ const COPY = {
     unlinkedIntro:
       "Este cliente todavía no está vinculado con una empresa de SmartCard, por eso su pantalla SmartCard muestra un aviso. Elige su empresa:",
     noCandidates: "No hay empresas libres en SmartCard. Primero hay que crear la empresa en SmartCard.",
+    stale: "vínculo roto",
+    staleHint:
+      "“Vínculo roto”: la empresa apunta a un cliente que no existe en Reymen (borrado o de otro entorno). Al vincularla aquí se corrige.",
+    taken: "Ya vinculadas a otros clientes:",
     company: "Empresa en SmartCard",
     choose: "Elige una empresa",
     link: "Vincular",
@@ -59,6 +64,10 @@ const COPY = {
     unlinkedIntro:
       "This client isn't linked to a SmartCard company yet, so their SmartCard screen shows a notice. Pick their company:",
     noCandidates: "There are no free companies in SmartCard. Create the company in SmartCard first.",
+    stale: "broken link",
+    staleHint:
+      "“Broken link”: the company points to a client that doesn't exist in Reymen (deleted or from another environment). Linking it here fixes it.",
+    taken: "Already linked to other clients:",
     company: "SmartCard company",
     choose: "Choose a company",
     link: "Link",
@@ -143,7 +152,7 @@ export function SmartcardLinkPanel({
                 <SelectContent>
                   {state.candidates.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      {c.name} ({c.slug})
+                      {c.name} ({c.slug}){c.staleOrgId ? ` · ${t.stale}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -156,6 +165,22 @@ export function SmartcardLinkPanel({
               {pending && <Loader2 className="h-4 w-4 animate-spin" />}
               {t.link}
             </Button>
+          </div>
+        )}
+        {state.candidates.some((c) => c.staleOrgId) && <p className="text-xs text-slate-500">{t.staleHint}</p>}
+        {state.taken.length > 0 && (
+          <div className="text-xs text-slate-500">
+            <p>{t.taken}</p>
+            <ul className="mt-1 space-y-0.5">
+              {state.taken.map((c) => (
+                <li key={c.id}>
+                  {c.name} ({c.slug}) →{" "}
+                  <Link href={`/admin/clients/${c.clientId}`} className="text-brand-600 hover:underline">
+                    {c.clientName}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
