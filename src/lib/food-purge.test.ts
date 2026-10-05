@@ -100,7 +100,35 @@ describe("purgePosSales", () => {
     expect((await dishSales()).map((d) => d.quantity)).toEqual([2]);
   });
 
+  it("with Reymen POS, rebuilds the day's dish counts from the remaining sales (no leftovers)", async () => {
+    await prisma.organizationModule.create({ data: { organizationId: orgId, module: "REYMEN_POS", status: "ACTIVE", source: "SUBSCRIBED" } });
+    await order(new Date(2026, 9, 3, 10).toISOString(), 2, true); // prueba
+    await order(new Date(2026, 9, 4, 10).toISOString(), 1); // real, fuera del rango
+    // Conteo sin venta detrás (p. ej. de un borrado con un rango incompleto).
+    await prisma.foodDishSale.update({ where: { variantId_occurredAt: { variantId, occurredAt: new Date(2026, 9, 3) } }, data: { quantity: { increment: 5 } } });
+
+    expect(await previewPosSalesPurge(orgId, "2026-10-03", "2026-10-03")).toMatchObject({ sales: 1, recordedUnits: 7 });
+    await purgePosSales(orgId, "2026-10-03", "2026-10-03");
+    expect((await dishSales()).map((d) => [d.occurredAt.getDate(), d.quantity])).toEqual([[4, 1]]);
+    expect(await prisma.foodModifierOptionSale.count({ where: { organizationId: orgId } })).toBe(0);
+
+    // Solo conteos colgados, sin ventas: también se limpian.
+    await prisma.foodDishSale.create({ data: { organizationId: orgId, variantId, occurredAt: new Date(2026, 9, 2), quantity: 3 } });
+    expect(await previewPosSalesPurge(orgId, "2026-10-02", "2026-10-02")).toMatchObject({ sales: 0, recordedUnits: 3 });
+    await purgePosSales(orgId, "2026-10-02", "2026-10-02");
+    expect((await dishSales()).map((d) => d.quantity)).toEqual([1]);
+  });
+
+  it("with Reymen POS, keeps real sales of a partly-test day", async () => {
+    await prisma.organizationModule.create({ data: { organizationId: orgId, module: "REYMEN_POS", status: "ACTIVE", source: "SUBSCRIBED" } });
+    await order(new Date(2026, 9, 3, 9).toISOString(), 2, true); // real (antes de la prueba)
+    await order(new Date(2026, 9, 4, 10).toISOString(), 3); // prueba
+    await purgePosSales(orgId, "2026-10-04", "2026-10-04");
+    expect((await dishSales()).map((d) => d.quantity)).toEqual([2]);
+    expect((await prisma.foodModifierOptionSale.findMany({ where: { organizationId: orgId } })).map((m) => m.quantity)).toEqual([2]);
+  });
+
   it("is a no-op without sales in the range", async () => {
-    expect(await purgePosSales(orgId, "2026-01-01", "2026-01-31")).toMatchObject({ sales: 0, grossAmount: 0, firstAt: null });
+    expect(await purgePosSales(orgId, "2026-01-01", "2026-01-31")).toMatchObject({ sales: 0, grossAmount: 0, firstAt: null, recordedUnits: 0 });
   });
 });

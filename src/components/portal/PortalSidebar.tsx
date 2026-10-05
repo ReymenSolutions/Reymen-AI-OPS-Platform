@@ -164,7 +164,7 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
                 <Icon className="h-4 w-4 flex-shrink-0" />
                 <span className="flex-1">{labels[item.key]}</span>
                 {item.key === "conversations" && pendingConversations > 0 && (
-                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-amber-950">
                     {pendingConversations > 99 ? "99+" : pendingConversations}
                   </span>
                 )}
