@@ -554,7 +554,7 @@ Una vez obtenidos estos datos, confirma la información y ofrece agendar la cita
     {
       id: "pkg-clinic-starter",
       name: "Paquete inicial de Clínica",
-      description: "Lo esencial para arrancar una clínica con Reymen: captura de leads por WhatsApp y recordatorios de citas, en un clic.",
+      description: "Lo esencial para arrancar una clínica con ReymenApp: captura de leads por WhatsApp y recordatorios de citas, en un clic.",
       industry: "clinic",
       iconEmoji: "🏥",
       isPublished: true,

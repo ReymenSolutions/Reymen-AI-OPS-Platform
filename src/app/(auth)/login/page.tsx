@@ -141,7 +141,7 @@ export default function LoginPage() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 shadow-lg">
           <Zap className="h-6 w-6 text-white" />
         </div>
-        <CardTitle className="text-xl">Reymen</CardTitle>
+        <CardTitle className="text-xl">ReymenApp</CardTitle>
         <CardDescription>Ingresa a tu plataforma de operaciones</CardDescription>
       </CardHeader>
 

@@ -11,7 +11,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Reymen",
+  title: "ReymenApp",
   description: "Automatización inteligente para hacer crecer tu negocio.",
 };
 
