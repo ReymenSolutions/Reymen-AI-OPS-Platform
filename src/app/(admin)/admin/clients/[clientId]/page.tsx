@@ -15,6 +15,8 @@ import { ToggleClientStatusButton } from "@/components/admin/ToggleClientStatusB
 import { OrgWebhookInfoDialog } from "@/components/admin/OrgWebhookInfoDialog";
 import { OrganizationModulesPanel } from "@/components/admin/OrganizationModulesPanel";
 import { PurgePosSalesPanel } from "@/components/admin/PurgePosSalesPanel";
+import { SmartcardLinkPanel } from "@/components/admin/SmartcardLinkPanel";
+import { getSmartcardLinkState } from "@/lib/smartcard-link";
 import { AdminClientUsersPanel } from "@/components/admin/AdminClientUsersPanel";
 import { ConsumptionChart } from "@/components/charts/ConsumptionChart";
 import { getOrganizationModules } from "@/actions/admin/modules";
@@ -334,6 +336,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
         />
 
         {hasModule("FOOD_OPS") && <PurgePosSalesPanel orgId={client.id} />}
+
+        {hasModule("NFC_QR") && (
+          <SmartcardLinkPanel
+            orgId={client.id}
+            state={await getSmartcardLinkState(client.id)}
+            users={client.users.filter((u) => u.isActive).map(({ id, name, email }) => ({ id, name, email }))}
+          />
+        )}
 
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">

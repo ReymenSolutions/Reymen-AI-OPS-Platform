@@ -1,12 +1,12 @@
 "use server";
 
-import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import QRCode from "qrcode";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSmartcardAdminClient } from "@/lib/smartcard-supabase";
 import { resolveSmartcardMembership, buildSmartcardPublicUrl } from "@/lib/smartcard-company";
+import { findOrCreateSmartcardAuthUser } from "@/lib/smartcard-link";
 import { inviteTeamMember } from "@/actions/team";
 import { UserError } from "@/lib/user-error";
 
@@ -158,33 +158,10 @@ async function run(name: string, email: string, roleCode: string, password: stri
   // 1. Supabase Auth user: reuse if one already exists for this email (e.g.
   // added to SmartCard before, or belongs to another company too), otherwise
   // create one with a random password nobody will ever use.
-  let supabaseUserId: string;
-  let createdSupabaseUser = false;
-  const { data: created, error: createError } = await supabase.auth.admin.createUser({
-    email: normalizedEmail,
-    password: crypto.randomBytes(24).toString("hex"),
-    email_confirm: true,
-  });
-
-  if (created?.user) {
-    supabaseUserId = created.user.id;
-    createdSupabaseUser = true;
-  } else if (createError?.message?.toLowerCase().includes("already")) {
-    // Documented admin.listUsers() pagination — deliberately not a raw REST
-    // call with an email query param, since that filter isn't part of the
-    // supabase-js contract and isn't worth depending on here.
-    let match: { id: string } | undefined;
-    for (let page = 1; !match; page++) {
-      const { data: listed, error: listError } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
-      if (listError || !listed?.users?.length) break;
-      match = listed.users.find((u) => u.email?.toLowerCase() === normalizedEmail);
-      if (listed.users.length < 200) break;
-    }
-    if (!match) throw new UserError("No se pudo procesar la invitación. Intenta de nuevo.");
-    supabaseUserId = match.id;
-  } else {
-    throw new UserError("No se pudo procesar la invitación. Intenta de nuevo.");
-  }
+  const { id: supabaseUserId, created: createdSupabaseUser } = await findOrCreateSmartcardAuthUser(
+    supabase,
+    normalizedEmail
+  );
 
   // 2. company_users, active immediately — no separate activation step left
   // to depend on.
