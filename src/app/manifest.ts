@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 /** "Agregar a pantalla de inicio" (Android/Chrome) usa este nombre e ícono. */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "ReymenApp",
-    short_name: "ReymenApp",
+    name: "Reymen",
+    short_name: "Reymen",
     description: "Automatización inteligente para hacer crecer tu negocio.",
     start_url: "/",
     display: "standalone",

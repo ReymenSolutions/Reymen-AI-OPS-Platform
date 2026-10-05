@@ -110,7 +110,7 @@ export function AdminSidebar({
                 {currentLogoUrl ? (
                   <img src={currentLogoUrl} alt={adminName} className="h-8 w-8 rounded-lg object-cover" />
                 ) : (
-                  <Image src="/icons/icon-192.png" alt="ReymenApp" width={32} height={32} className="h-8 w-8 flex-shrink-0 rounded-lg" />
+                  <Image src="/icons/icon-192.png" alt="Reymen Solutions" width={32} height={32} className="h-8 w-8 flex-shrink-0 rounded-lg" />
                 )}
                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Upload className="h-3 w-3 text-white" />
@@ -126,7 +126,7 @@ export function AdminSidebar({
               {currentLogoUrl ? (
                 <img src={currentLogoUrl} alt={adminName} className="h-8 w-8 flex-shrink-0 rounded-lg object-cover" />
               ) : (
-                <Image src="/icons/icon-192.png" alt="ReymenApp" width={32} height={32} className="h-8 w-8 flex-shrink-0 rounded-lg" />
+                <Image src="/icons/icon-192.png" alt="Reymen Solutions" width={32} height={32} className="h-8 w-8 flex-shrink-0 rounded-lg" />
               )}
               <div className="min-w-0">
                 <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{adminName}</p>
