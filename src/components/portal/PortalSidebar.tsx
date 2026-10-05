@@ -133,7 +133,7 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
             </div>
             <div className="min-w-0">
               <p className="sidebar-name truncate text-sm font-bold text-white leading-none">{orgName}</p>
-              <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">{t.aiOps}</p>
+              <p className="sidebar-subtitle text-xs text-brand-200 leading-none mt-0.5">{t.brandName}</p>
             </div>
           </button>
           <button

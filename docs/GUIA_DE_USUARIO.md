@@ -1,4 +1,4 @@
-# Reymen AI OPS Platform — Guía de Usuario
+# Reymen — Guía de Usuario
 
 > **Versión del documento:** 1.3 | **Fecha:** Septiembre 2026 (actualizado con categorías y modificadores de menú, conexión con POS externo, cancelaciones y llave de solo lectura para POS, módulos Food y SmartCard, y gestión de usuarios)  
 > **Idioma:** Español | **Aplicable a:** Portal de Clientes y Panel de Administración
@@ -48,7 +48,7 @@
 
 ## 1. ¿Qué es la Plataforma?
 
-**Reymen AI OPS Platform** es un sistema de operaciones con inteligencia artificial diseñado para que negocios de cualquier industria puedan automatizar sus procesos de ventas, atención al cliente y seguimiento de prospectos desde un solo lugar.
+**Reymen** es un sistema de operaciones con inteligencia artificial diseñado para que negocios de cualquier industria puedan automatizar sus procesos de ventas, atención al cliente y seguimiento de prospectos desde un solo lugar.
 
 ### ¿Para qué sirve?
 
@@ -1339,6 +1339,6 @@ La sección de Configuración (`/admin/settings`) muestra el estado técnico de 
 
 ---
 
-*Fin de la Guía de Usuario — Reymen AI OPS Platform v1.0*
+*Fin de la Guía de Usuario — Reymen v1.0*
 
 *Para soporte técnico, crea una solicitud desde tu portal o contacta a support@reymen.io*

@@ -34,7 +34,7 @@ function button(href: string, label: string): string {
 
 export function passwordResetEmail(resetUrl: string, expiresInMinutes: number) {
   return {
-    subject: "Restablece tu contraseña — Reymen AI Ops",
+    subject: "Restablece tu contraseña — Reymen",
     html: `${brandHeader}
       <h1 style="font-size:20px;color:#0f172a;">Restablece tu contraseña</h1>
       <p style="font-size:14px;color:#475569;line-height:1.6;">
@@ -54,11 +54,11 @@ export function teamInviteEmail(orgName: string, loginUrl: string) {
     html: `${brandHeader}
       <h1 style="font-size:20px;color:#0f172a;">Bienvenido a ${safeOrgName}</h1>
       <p style="font-size:14px;color:#475569;line-height:1.6;">
-        Un administrador te agregó al equipo en Reymen AI Ops. Usa tu email y la contraseña temporal que te compartieron para iniciar sesión.
+        Un administrador te agregó al equipo en Reymen. Usa tu email y la contraseña temporal que te compartieron para iniciar sesión.
       </p>
       <p style="margin: 24px 0;">${button(loginUrl, "Iniciar sesión")}</p>
       ${brandFooter}`,
-    text: `Te agregaron al equipo de ${orgName} en Reymen AI Ops. Inicia sesión en: ${loginUrl}`,
+    text: `Te agregaron al equipo de ${orgName} en Reymen. Inicia sesión en: ${loginUrl}`,
   };
 }
 
