@@ -568,8 +568,8 @@ export function AutomationsManager({
 
   return (
     <>
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold text-slate-900">{t.automations}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {automations.length} {t.adminAutoTotalCount} · {activeCount} {t.adminAutoActiveCount}

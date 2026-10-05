@@ -77,8 +77,8 @@ export function AvailabilityGrid({ initialRules }: { initialRules: { dayOfWeek: 
       )}
       <div className="space-y-1.5">
         {days.map((d, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-md border border-slate-100 p-2 text-sm">
-            <label className="flex w-28 flex-shrink-0 items-center gap-2">
+          <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-slate-100 p-2 text-sm">
+            <label className="flex w-full flex-shrink-0 items-center gap-2 sm:w-28">
               <input type="checkbox" checked={d.enabled} onChange={(e) => updateDay(i, { enabled: e.target.checked })} />
               {labels[i]}
             </label>
@@ -87,7 +87,7 @@ export function AvailabilityGrid({ initialRules }: { initialRules: { dayOfWeek: 
               value={d.start}
               disabled={!d.enabled}
               onChange={(e) => updateDay(i, { start: e.target.value })}
-              className="rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40"
+              className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40 sm:flex-none"
             />
             <span className="text-slate-400">—</span>
             <input
@@ -95,7 +95,7 @@ export function AvailabilityGrid({ initialRules }: { initialRules: { dayOfWeek: 
               value={d.end}
               disabled={!d.enabled}
               onChange={(e) => updateDay(i, { end: e.target.value })}
-              className="rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40"
+              className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-40 sm:flex-none"
             />
           </div>
         ))}

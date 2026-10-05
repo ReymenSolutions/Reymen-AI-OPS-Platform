@@ -287,8 +287,8 @@ export function AdminClientUsersPanel({ orgId, users }: { orgId: string; users: 
         ) : (
           <div className="space-y-3">
             {users.map((user) => (
-              <div key={user.id} className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
+              <div key={user.id} className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1 basis-48">
                   <p className="truncate text-sm font-medium text-slate-900">{user.name ?? t.noName}</p>
                   <p className="truncate text-xs text-slate-400">{user.email}</p>
                 </div>
