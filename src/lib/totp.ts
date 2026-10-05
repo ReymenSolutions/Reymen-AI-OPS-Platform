@@ -1,7 +1,7 @@
 import * as OTPAuth from "otpauth";
 import { randomBytes } from "crypto";
 
-const ISSUER = "ReymenApp";
+const ISSUER = "Reymen Solutions";
 
 export function generateTotpSecret(): string {
   return new OTPAuth.Secret({ size: 20 }).base32;

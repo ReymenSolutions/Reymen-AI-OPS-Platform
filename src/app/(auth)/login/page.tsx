@@ -139,8 +139,8 @@ export default function LoginPage() {
   return (
     <Card className="w-full max-w-sm shadow-2xl border-0">
       <CardHeader className="text-center pb-4">
-        <Image src="/icons/icon-192.png" alt="ReymenApp" width={56} height={56} priority className="mx-auto mb-4 h-14 w-14 rounded-xl shadow-lg" />
-        <CardTitle className="text-xl">ReymenApp</CardTitle>
+        <Image src="/icons/icon-192.png" alt="Reymen Solutions" width={56} height={56} priority className="mx-auto mb-4 h-14 w-14 rounded-xl shadow-lg" />
+        <CardTitle className="text-xl">Reymen Solutions</CardTitle>
         <CardDescription>Ingresa a tu plataforma de operaciones</CardDescription>
       </CardHeader>
 

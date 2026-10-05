@@ -11,10 +11,10 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ReymenApp",
+  title: "Reymen Solutions",
   description: "Automatización inteligente para hacer crecer tu negocio.",
-  // Nombre al agregarla a la pantalla de inicio del iPhone/iPad (ícono: app/apple-icon.png).
-  appleWebApp: { title: "ReymenApp", capable: true, statusBarStyle: "default" },
+  // Nombre corto al agregarla a la pantalla de inicio del iPhone/iPad (ícono: app/apple-icon.png).
+  appleWebApp: { title: "Reymen", capable: true, statusBarStyle: "default" },
 };
 
 // Edge-safe auth() (same pattern as middleware.ts) — this only needs to
