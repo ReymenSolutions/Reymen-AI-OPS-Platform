@@ -18,6 +18,7 @@ import {
 
 function refresh(orgId: string) {
   revalidatePath(`/admin/clients/${orgId}`);
+  revalidatePath("/admin/smartcard");
   revalidatePath("/portal/smartcard");
 }
 
@@ -35,7 +36,7 @@ export async function linkSmartcardCompanyAction(data: z.infer<typeof linkSchema
     action: "client.smartcard_link",
     resource: "SmartcardCompany",
     resourceId: company.id,
-    metadata: { companyName: company.name, slug: company.slug },
+    metadata: { companyName: company.name, slug: company.slug, replacedOrgId: company.staleOrgId ?? null },
   });
   refresh(orgId);
 }

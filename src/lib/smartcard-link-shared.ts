@@ -10,6 +10,31 @@ export interface SmartcardCompanyOption {
   id: string;
   name: string;
   slug: string;
+  /** ID al que apunta su external_org_id cuando no existe en Reymen (vínculo roto). */
+  staleOrgId?: string | null;
+}
+
+/** Empresa de SmartCard ya vinculada a otro cliente de Reymen. */
+export interface SmartcardTakenCompany {
+  id: string;
+  name: string;
+  slug: string;
+  clientId: string;
+  clientName: string;
+}
+
+export type SmartcardCompanyLink =
+  | { kind: "none" }
+  | { kind: "client"; clientId: string; clientName: string }
+  | { kind: "stale"; orgId: string };
+
+export interface SmartcardCompanyRow {
+  id: string;
+  name: string;
+  slug: string;
+  link: SmartcardCompanyLink;
+  activeMembers: number;
+  cards: number;
 }
 
 export interface SmartcardLinkMember {
@@ -22,5 +47,5 @@ export interface SmartcardLinkMember {
 export type SmartcardLinkState =
   | { status: "not_configured" }
   | { status: "error" }
-  | { status: "unlinked"; candidates: SmartcardCompanyOption[] }
+  | { status: "unlinked"; candidates: SmartcardCompanyOption[]; taken: SmartcardTakenCompany[] }
   | { status: "linked"; company: SmartcardCompanyOption; members: SmartcardLinkMember[] };

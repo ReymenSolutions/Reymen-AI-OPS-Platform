@@ -40,12 +40,23 @@ function query(table: string) {
   return builder;
 }
 
+// Clientes que existen en Reymen (para distinguir vínculos válidos de rotos).
+let reymenOrgs: { id: string; name: string }[] = [];
+vi.mock("./prisma", () => ({
+  prisma: {
+    organization: {
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) => reymenOrgs.filter((o) => where.id.in.includes(o.id)),
+      findUnique: async ({ where }: { where: { id: string } }) => reymenOrgs.find((o) => o.id === where.id) ?? null,
+    },
+  },
+}));
+
 let configured = true;
 vi.mock("./smartcard-supabase", () => ({
   getSmartcardAdminClient: () => (configured ? { from: query, auth } : null),
 }));
 
-const { getSmartcardLinkState, linkSmartcardCompany, unlinkSmartcardCompany, addSmartcardMember, removeSmartcardMember } =
+const { getSmartcardLinkState, linkSmartcardCompany, listSmartcardCompanies, unlinkSmartcardCompany, addSmartcardMember, removeSmartcardMember } =
   await import("./smartcard-link");
 
 const has = (c: Call, f: [string, string, unknown]) => c.filters.some((x) => x[0] === f[0] && x[1] === f[1] && x[2] === f[2]);
@@ -53,6 +64,7 @@ const has = (c: Call, f: [string, string, unknown]) => c.filters.some((x) => x[0
 beforeEach(() => {
   calls = [];
   configured = true;
+  reymenOrgs = [];
   respond = () => ({ data: null });
   vi.clearAllMocks();
 });
@@ -63,10 +75,26 @@ describe("getSmartcardLinkState", () => {
     expect(await getSmartcardLinkState("org1")).toEqual({ status: "not_configured" });
   });
 
-  it("lists only free companies when the client isn't linked", async () => {
-    respond = (c) => (c.filters.some((f) => f[0] === "is") ? { data: [{ id: "c2", name: "Villa", slug: "villa" }] } : { data: null });
-    expect(await getSmartcardLinkState("org1")).toEqual({ status: "unlinked", candidates: [{ id: "c2", name: "Villa", slug: "villa" }] });
-    expect(has(calls[1], ["is", "external_org_id", null])).toBe(true);
+  it("offers free and broken-link companies, and shows the ones other clients have", async () => {
+    reymenOrgs = [{ id: "org2", name: "Lonier" }];
+    respond = (c) =>
+      c.filters.length
+        ? { data: null }
+        : {
+            data: [
+              { id: "c1", name: "Free", slug: "free", external_org_id: null },
+              { id: "c2", name: "Villa", slug: "villa", external_org_id: "old-org" },
+              { id: "c3", name: "Lonier Skin", slug: "lonier", external_org_id: "org2" },
+            ],
+          };
+    expect(await getSmartcardLinkState("org1")).toEqual({
+      status: "unlinked",
+      candidates: [
+        { id: "c1", name: "Free", slug: "free", staleOrgId: null },
+        { id: "c2", name: "Villa", slug: "villa", staleOrgId: "old-org" },
+      ],
+      taken: [{ id: "c3", name: "Lonier Skin", slug: "lonier", clientId: "org2", clientName: "Lonier" }],
+    });
   });
 
   it("shows members with their email, role and status", async () => {
@@ -86,24 +114,69 @@ describe("getSmartcardLinkState", () => {
 });
 
 describe("linkSmartcardCompany", () => {
-  it("CRITICAL: only takes a company that is still free", async () => {
-    respond = (c) => (c.op === "update" ? { data: { id: "c2", name: "Villa", slug: "villa" } } : { data: null });
-    await linkSmartcardCompany("org1", "c2");
+  // select por external_org_id = cliente actual → null; select por id → la empresa destino.
+  const target = (externalOrgId: string | null) => (c: Call) => {
+    if (c.op === "update") return { data: { id: "c2", name: "Villa", slug: "villa" } };
+    if (has(c, ["eq", "id", "c2"])) return { data: { id: "c2", external_org_id: externalOrgId } };
+    return { data: null };
+  };
+
+  it("CRITICAL: takes a free company only while it's still free", async () => {
+    respond = target(null);
+    expect(await linkSmartcardCompany("org1", "c2")).toEqual({ id: "c2", name: "Villa", slug: "villa", staleOrgId: null });
     const update = calls.find((c) => c.op === "update")!;
     expect(update.payload).toEqual({ external_org_id: "org1" });
     expect(has(update, ["eq", "id", "c2"])).toBe(true);
     expect(has(update, ["is", "external_org_id", null])).toBe(true);
   });
 
-  it("fails when another client already took it", async () => {
-    respond = () => ({ data: null });
+  it("repairs a broken link (points to an ID that isn't a Reymen client)", async () => {
+    respond = target("old-org");
+    expect(await linkSmartcardCompany("org1", "c2")).toMatchObject({ staleOrgId: "old-org" });
+    const update = calls.find((c) => c.op === "update")!;
+    expect(has(update, ["eq", "external_org_id", "old-org"])).toBe(true);
+  });
+
+  it("CRITICAL: never takes a company from another existing client", async () => {
+    reymenOrgs = [{ id: "org2", name: "Lonier" }];
+    respond = target("org2");
+    await expect(linkSmartcardCompany("org1", "c2")).rejects.toThrow(/otro cliente/);
+    expect(calls.some((c) => c.op === "update")).toBe(false);
+  });
+
+  it("fails when someone changed it in between", async () => {
+    respond = (c) => (c.op === "update" ? { data: null } : target(null)(c));
     await expect(linkSmartcardCompany("org1", "c2")).rejects.toThrow(/otro cliente/);
   });
 
   it("refuses a second company for an already linked client", async () => {
-    respond = (c) => (c.op === "select" ? { data: { id: "c1" } } : { data: null });
+    respond = (c) => (c.op === "select" && has(c, ["eq", "external_org_id", "org1"]) ? { data: { id: "c1" } } : { data: null });
     await expect(linkSmartcardCompany("org1", "c2")).rejects.toThrow(/ya está vinculado/);
     expect(calls.some((c) => c.op === "update")).toBe(false);
+  });
+});
+
+describe("listSmartcardCompanies", () => {
+  it("counts active members and live cards per company", async () => {
+    reymenOrgs = [{ id: "org1", name: "Villa Gardenia" }];
+    respond = (c) => {
+      if (c.table === "companies") return { data: [{ id: "c1", name: "Villa", slug: "villa", external_org_id: "org1" }, { id: "c2", name: "X", slug: "x", external_org_id: "gone" }] };
+      if (c.table === "company_users") return { data: [{ company_id: "c1" }, { company_id: "c1" }] };
+      if (c.table === "clients") return { data: [{ id: "k1", company_id: "c1" }] };
+      if (c.table === "cards") return { data: [{ client_id: "k1" }, { client_id: "k1" }, { client_id: "k1" }] };
+      return { data: null };
+    };
+    expect(await listSmartcardCompanies()).toEqual([
+      { id: "c1", name: "Villa", slug: "villa", link: { kind: "client", clientId: "org1", clientName: "Villa Gardenia" }, activeMembers: 2, cards: 3 },
+      { id: "c2", name: "X", slug: "x", link: { kind: "stale", orgId: "gone" }, activeMembers: 0, cards: 0 },
+    ]);
+    expect(has(calls.find((c) => c.table === "company_users")!, ["eq", "status", "active"])).toBe(true);
+    expect(has(calls.find((c) => c.table === "cards")!, ["is", "deleted_at", null])).toBe(true);
+  });
+
+  it("returns null without the Supabase env", async () => {
+    configured = false;
+    expect(await listSmartcardCompanies()).toBeNull();
   });
 });
 
