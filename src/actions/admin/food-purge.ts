@@ -46,7 +46,7 @@ export async function purgePosSalesAction(data: z.infer<typeof rangeSchema> & { 
     organizationId: orgId,
     action: "client.food_pos_sales_purge",
     resource: "FoodSale",
-    metadata: { from, to, sales: result.sales, grossAmount: result.grossAmount, units: result.units },
+    metadata: { from, to, sales: result.sales, grossAmount: result.grossAmount, units: result.units, recordedUnits: result.recordedUnits },
   });
   revalidatePath(`/admin/clients/${orgId}`);
   revalidatePath("/portal/food", "layout");

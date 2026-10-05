@@ -314,9 +314,9 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
     <>
       {/* ── Impersonation banner ─────────────────────────────────── */}
       {isImpersonating && session?.user?.impersonating && (
-        <div className="flex shrink-0 items-center justify-between bg-amber-500 px-6 py-1.5 text-sm font-medium text-white">
+        <div className="flex shrink-0 items-center justify-between gap-3 bg-amber-400 px-4 py-1.5 text-sm font-medium text-amber-950 sm:px-6">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-white shrink-0" />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-950 shrink-0" />
             <span>
               {t.impersonatingAs}: <strong>{session.user.name || session.user.email}</strong>
               <span className="ml-2 text-xs opacity-75">({session.user.role})</span>
@@ -324,7 +324,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
           </div>
           <button
             onClick={handleStopImpersonation}
-            className="rounded bg-amber-700 px-3 py-0.5 text-xs font-semibold transition-colors hover:bg-amber-800"
+            className="flex-shrink-0 rounded bg-amber-800 px-3 py-0.5 text-xs font-semibold text-white transition-colors hover:bg-amber-900"
           >
             {t.stopImpersonation}
           </button>

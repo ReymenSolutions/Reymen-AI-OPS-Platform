@@ -22,6 +22,9 @@ const COPY = {
     to: "Hasta",
     review: "Revisar",
     none: "No hay ventas del POS en esas fechas.",
+    recorded: (n: number) => `Platillos vendidos registrados en esas fechas: ${n}. Se recalculan con las ventas que queden.`,
+    leftover: (n: number) => `No hay ventas, pero quedan ${n} platillos contados como vendidos en esas fechas (aparecen en "Platillos más vendidos").`,
+    clean: "Limpiar platillos registrados",
     found: (s: PosSalesPurgeSummary, money: string) =>
       `${s.sales} ${s.sales === 1 ? "venta" : "ventas"} · ${money} · ${s.units} platillos · ${s.inventoryItems} insumos regresan al inventario`,
     span: "Primera y última",
@@ -42,6 +45,9 @@ const COPY = {
     to: "To",
     review: "Review",
     none: "No POS sales on those dates.",
+    recorded: (n: number) => `Dishes recorded as sold on those dates: ${n}. They're recalculated from the remaining sales.`,
+    leftover: (n: number) => `No sales, but ${n} dishes are still counted as sold on those dates (they show in "Best-selling dishes").`,
+    clean: "Clean recorded dishes",
     found: (s: PosSalesPurgeSummary, money: string) =>
       `${s.sales} ${s.sales === 1 ? "sale" : "sales"} · ${money} · ${s.units} dishes · ${s.inventoryItems} inventory items restored`,
     span: "First and last",
@@ -122,21 +128,28 @@ export function PurgePosSalesPanel({ orgId }: { orgId: string }) {
         </div>
         {summary && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-            {summary.sales === 0 ? (
+            {summary.sales === 0 && summary.recordedUnits === 0 ? (
               <p className="text-slate-600">{t.none}</p>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-slate-900">{t.found(summary, money(summary.grossAmount))}</p>
-                  {summary.firstAt && summary.lastAt && (
-                    <p className="text-xs text-slate-500">
-                      {t.span}: {when(summary.firstAt)} – {when(summary.lastAt)}
-                    </p>
+                <div className="min-w-0">
+                  {summary.sales > 0 ? (
+                    <>
+                      <p className="font-medium text-slate-900">{t.found(summary, money(summary.grossAmount))}</p>
+                      {summary.firstAt && summary.lastAt && (
+                        <p className="text-xs text-slate-500">
+                          {t.span}: {when(summary.firstAt)} – {when(summary.lastAt)}
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-slate-500">{t.recorded(summary.recordedUnits)}</p>
+                    </>
+                  ) : (
+                    <p className="font-medium text-slate-900">{t.leftover(summary.recordedUnits)}</p>
                   )}
                   <p className="mt-1 text-xs text-slate-500">{t.posNote}</p>
                 </div>
                 <Button variant="destructive" onClick={() => setOpen(true)} disabled={pending}>
-                  {t.delete(summary.sales)}
+                  {summary.sales > 0 ? t.delete(summary.sales) : t.clean}
                 </Button>
               </div>
             )}
