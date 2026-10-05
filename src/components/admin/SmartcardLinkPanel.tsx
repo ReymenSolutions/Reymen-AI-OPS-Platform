@@ -1,0 +1,288 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { CreditCard, Loader2, Unlink, UserMinus } from "lucide-react";
+import { toast } from "sonner";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  addSmartcardMemberAction,
+  linkSmartcardCompanyAction,
+  removeSmartcardMemberAction,
+  unlinkSmartcardCompanyAction,
+} from "@/actions/admin/smartcard-link";
+import { SMARTCARD_LINK_ROLES, type SmartcardLinkRole, type SmartcardLinkState } from "@/lib/smartcard-link-shared";
+import { usePreferences } from "@/context/preferences";
+import { getErrorMessage } from "@/lib/user-error";
+
+const COPY = {
+  es: {
+    title: "SmartCard",
+    notConfigured: "SmartCard no está configurado en este servidor (faltan SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY).",
+    error: "No se pudo consultar SmartCard. Recarga la página en unos minutos.",
+    unlinkedIntro:
+      "Este cliente todavía no está vinculado con una empresa de SmartCard, por eso su pantalla SmartCard muestra un aviso. Elige su empresa:",
+    noCandidates: "No hay empresas libres en SmartCard. Primero hay que crear la empresa en SmartCard.",
+    company: "Empresa en SmartCard",
+    choose: "Elige una empresa",
+    link: "Vincular",
+    linkedTo: "Vinculado con",
+    unlink: "Desvincular",
+    unlinkConfirm: "¿Desvincular? El cliente dejará de ver SmartCard en Reymen. Sus tarjetas y datos se quedan en SmartCard.",
+    members: "Quién ve SmartCard",
+    membersHint: "Solo lo ven los usuarios de este cliente que estén aquí como activos.",
+    noMembers: "Nadie todavía.",
+    notInReymen: "no es usuario de este cliente",
+    user: "Usuario",
+    chooseUser: "Elige un usuario",
+    role: "Rol",
+    give: "Dar acceso",
+    remove: "Quitar acceso",
+    removeConfirm: (email: string) => `¿Quitar el acceso a SmartCard de ${email}?`,
+    linked: "Empresa vinculada",
+    unlinked: "Empresa desvinculada",
+    added: "Acceso dado",
+    updated: "Acceso actualizado",
+    removed: "Acceso quitado",
+    failed: "No se pudo completar",
+    allIn: "Todos los usuarios activos de este cliente ya tienen acceso.",
+    roles: { owner: "Dueño", admin: "Administrador", manager: "Gerente", staff: "Personal", agent: "Agente" },
+    status: { active: "Activo", invited: "Invitado" } as Record<string, string>,
+  },
+  en: {
+    title: "SmartCard",
+    notConfigured: "SmartCard isn't configured on this server (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are missing).",
+    error: "Couldn't reach SmartCard. Reload the page in a few minutes.",
+    unlinkedIntro:
+      "This client isn't linked to a SmartCard company yet, so their SmartCard screen shows a notice. Pick their company:",
+    noCandidates: "There are no free companies in SmartCard. Create the company in SmartCard first.",
+    company: "SmartCard company",
+    choose: "Choose a company",
+    link: "Link",
+    linkedTo: "Linked to",
+    unlink: "Unlink",
+    unlinkConfirm: "Unlink? The client will stop seeing SmartCard in Reymen. Their cards and data stay in SmartCard.",
+    members: "Who sees SmartCard",
+    membersHint: "Only this client's users listed here as active can see it.",
+    noMembers: "Nobody yet.",
+    notInReymen: "isn't a user of this client",
+    user: "User",
+    chooseUser: "Choose a user",
+    role: "Role",
+    give: "Give access",
+    remove: "Remove access",
+    removeConfirm: (email: string) => `Remove SmartCard access for ${email}?`,
+    linked: "Company linked",
+    unlinked: "Company unlinked",
+    added: "Access given",
+    updated: "Access updated",
+    removed: "Access removed",
+    failed: "Couldn't complete",
+    allIn: "Every active user of this client already has access.",
+    roles: { owner: "Owner", admin: "Admin", manager: "Manager", staff: "Staff", agent: "Agent" },
+    status: { active: "Active", invited: "Invited" } as Record<string, string>,
+  },
+};
+
+export interface SmartcardLinkUser {
+  id: string;
+  name: string | null;
+  email: string;
+}
+
+export function SmartcardLinkPanel({
+  orgId,
+  state,
+  users,
+}: {
+  orgId: string;
+  state: SmartcardLinkState;
+  users: SmartcardLinkUser[];
+}) {
+  const { lang } = usePreferences();
+  const t = COPY[lang === "en" ? "en" : "es"];
+  const [pending, startTransition] = useTransition();
+  const [companyId, setCompanyId] = useState("");
+  const [userId, setUserId] = useState("");
+  const [role, setRole] = useState<SmartcardLinkRole>("owner");
+
+  function run(action: () => Promise<unknown>, done: (result: unknown) => string) {
+    startTransition(async () => {
+      try {
+        toast.success(done(await action()));
+      } catch (e) {
+        toast.error(getErrorMessage(e, t.failed));
+      }
+    });
+  }
+
+  const userEmails = new Set(users.map((u) => u.email.toLowerCase()));
+
+  let body: React.ReactNode;
+  if (state.status === "not_configured") {
+    body = <p className="text-sm text-slate-500">{t.notConfigured}</p>;
+  } else if (state.status === "error") {
+    body = <p className="text-sm text-red-600">{t.error}</p>;
+  } else if (state.status === "unlinked") {
+    body = (
+      <div className="space-y-3">
+        <p className="text-sm text-slate-500">{t.unlinkedIntro}</p>
+        {state.candidates.length === 0 ? (
+          <p className="text-sm text-amber-700">{t.noCandidates}</p>
+        ) : (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-56 flex-1 space-y-1">
+              <Label>{t.company}</Label>
+              <Select value={companyId} onValueChange={setCompanyId}>
+                <SelectTrigger aria-label={t.company}>
+                  <SelectValue placeholder={t.choose} />
+                </SelectTrigger>
+                <SelectContent>
+                  {state.candidates.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name} ({c.slug})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              disabled={pending || !companyId}
+              onClick={() => run(() => linkSmartcardCompanyAction({ orgId, companyId }), () => t.linked)}
+            >
+              {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t.link}
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  } else {
+    const memberEmails = new Set(state.members.map((m) => m.email).filter(Boolean));
+    const available = users.filter((u) => !memberEmails.has(u.email.toLowerCase()));
+    body = (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-700">
+            {t.linkedTo} <span className="font-medium text-slate-900">{state.company.name}</span>{" "}
+            <span className="text-slate-400">({state.company.slug})</span>
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              if (!window.confirm(t.unlinkConfirm)) return;
+              run(() => unlinkSmartcardCompanyAction({ orgId }), () => t.unlinked);
+            }}
+          >
+            <Unlink className="h-3.5 w-3.5" />
+            {t.unlink}
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-slate-900">{t.members}</p>
+          <p className="text-xs text-slate-500">{t.membersHint}</p>
+          {state.members.length === 0 ? (
+            <p className="text-sm text-slate-400">{t.noMembers}</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+              {state.members.map((m) => (
+                <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-slate-900">{m.email ?? "—"}</p>
+                    {m.email && !userEmails.has(m.email) && <p className="text-xs text-amber-700">{t.notInReymen}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{t.roles[m.roleCode as SmartcardLinkRole] ?? m.roleCode}</Badge>
+                    <Badge variant={m.status === "active" ? "default" : "outline"}>{t.status[m.status] ?? m.status}</Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t.remove}
+                      title={t.remove}
+                      disabled={pending}
+                      onClick={() => {
+                        if (!window.confirm(t.removeConfirm(m.email ?? "—"))) return;
+                        run(() => removeSmartcardMemberAction({ orgId, memberId: m.id, email: m.email }), () => t.removed);
+                      }}
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {available.length === 0 ? (
+          <p className="text-xs text-slate-500">{t.allIn}</p>
+        ) : (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-56 flex-1 space-y-1">
+              <Label>{t.user}</Label>
+              <Select value={userId} onValueChange={setUserId}>
+                <SelectTrigger aria-label={t.user}>
+                  <SelectValue placeholder={t.chooseUser} />
+                </SelectTrigger>
+                <SelectContent>
+                  {available.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name ? `${u.name} · ${u.email}` : u.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-40 space-y-1">
+              <Label>{t.role}</Label>
+              <Select value={role} onValueChange={(v) => setRole(v as SmartcardLinkRole)}>
+                <SelectTrigger aria-label={t.role}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SMARTCARD_LINK_ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {t.roles[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              disabled={pending || !userId}
+              onClick={() =>
+                run(
+                  async () => {
+                    const outcome = await addSmartcardMemberAction({ orgId, userId, role });
+                    setUserId("");
+                    return outcome;
+                  },
+                  (outcome) => (outcome === "updated" ? t.updated : t.added)
+                )
+              }
+            >
+              {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t.give}
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle>{t.title}</CardTitle>
+        <CreditCard className="h-4 w-4 text-slate-400" />
+      </CardHeader>
+      <CardContent>{body}</CardContent>
+    </Card>
+  );
+}
