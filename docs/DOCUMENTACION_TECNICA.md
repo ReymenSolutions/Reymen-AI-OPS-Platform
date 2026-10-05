@@ -2705,8 +2705,8 @@ Before going to production, confirm:
 #### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-org/reymen-ai-ops-platform.git
-cd reymen-ai-ops-platform
+git clone https://github.com/ReymenSolutions/ReymenApp.git
+cd ReymenApp
 ```
 
 #### 2. Configure environment variables
@@ -2920,7 +2920,7 @@ When deploying to an OVH VPS (or any Linux VPS):
 ## 16. Directory Structure
 
 ```
-reymen-ai-ops-platform/
+ReymenApp/
 ├── docker/
 │   ├── docker-compose.yml          # Dev: postgres + n8n only
 │   ├── docker-compose.prod.yml     # Prod: app + postgres + n8n + nginx + certbot
