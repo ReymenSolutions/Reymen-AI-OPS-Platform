@@ -16,10 +16,19 @@ const lib = vi.hoisted(() => ({
   linkSmartcardCompany: vi.fn(async () => ({ id: "c1", name: "Villa", slug: "villa" })),
   removeSmartcardMember: vi.fn(async () => {}),
   unlinkSmartcardCompany: vi.fn(async () => {}),
+  planMemberLimit: (plan: string) => (plan === "enterprise" ? null : plan === "professional" ? 10 : 2),
+  syncSmartcardMemberLimit: vi.fn(async () => "updated" as const),
+  syncSmartcardMemberLimitForPlan: vi.fn(async () => "updated" as const),
 }));
 vi.mock("@/lib/smartcard-link", () => lib);
 
-const { addSmartcardMemberAction, linkSmartcardCompanyAction, removeSmartcardMemberAction, unlinkSmartcardCompanyAction } =
+const {
+  addSmartcardMemberAction,
+  linkSmartcardCompanyAction,
+  removeSmartcardMemberAction,
+  syncSmartcardMemberLimitAction,
+  unlinkSmartcardCompanyAction,
+} =
   await import("./smartcard-link");
 
 describe("SmartCard link actions", () => {
@@ -51,6 +60,8 @@ describe("SmartCard link actions", () => {
 
     await linkSmartcardCompanyAction({ orgId: org.id, companyId: "c1" });
     expect(lib.linkSmartcardCompany).toHaveBeenCalledWith(org.id, "c1");
+    // Al vincular, el límite de integrantes de SmartCard toma el del plan.
+    expect(lib.syncSmartcardMemberLimitForPlan).toHaveBeenCalledWith(org.id, "starter");
 
     await expect(addSmartcardMemberAction({ orgId: org.id, userId: outsider.id, role: "owner" })).rejects.toThrow(/no pertenece/);
     await expect(addSmartcardMemberAction({ orgId: org.id, userId: member.id, role: "superadmin" as "owner" })).rejects.toThrow();
@@ -69,6 +80,24 @@ describe("SmartCard link actions", () => {
       "client.smartcard_member_remove",
       "client.smartcard_unlink",
     ]);
+    await prisma.auditLog.deleteMany({ where: { userId: admin.id } });
+    await prisma.user.delete({ where: { id: admin.id } });
+  });
+
+  it("applies the plan's member limit and refuses non-admins", async () => {
+    const org = await createTestOrg("SC Limit Org");
+    orgs.push(org.id);
+    await prisma.organization.update({ where: { id: org.id }, data: { plan: "professional" } });
+    authMock.mockResolvedValue(fakeSession({ id: "owner", role: "OWNER", organizationId: org.id }));
+    await expect(syncSmartcardMemberLimitAction({ orgId: org.id })).rejects.toThrow(/autorizado/i);
+
+    const admin = await prisma.user.create({ data: { email: `sc-admin3-${Date.now()}@test.local`, name: "Admin", role: "SUPER_ADMIN" } });
+    authMock.mockResolvedValue(fakeSession({ id: admin.id, role: "SUPER_ADMIN", organizationId: null }));
+    expect(await syncSmartcardMemberLimitAction({ orgId: org.id })).toBe("updated");
+    expect(lib.syncSmartcardMemberLimit).toHaveBeenCalledWith(org.id, 10);
+
+    lib.syncSmartcardMemberLimit.mockResolvedValueOnce("no_module" as never);
+    await expect(syncSmartcardMemberLimitAction({ orgId: org.id })).rejects.toThrow(/módulo SmartCard/);
     await prisma.auditLog.deleteMany({ where: { userId: admin.id } });
     await prisma.user.delete({ where: { id: admin.id } });
   });

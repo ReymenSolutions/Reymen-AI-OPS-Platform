@@ -56,7 +56,7 @@ vi.mock("./smartcard-supabase", () => ({
   getSmartcardAdminClient: () => (configured ? { from: query, auth } : null),
 }));
 
-const { getSmartcardLinkState, linkSmartcardCompany, listSmartcardCompanies, unlinkSmartcardCompany, addSmartcardMember, removeSmartcardMember } =
+const { getSmartcardLinkState, linkSmartcardCompany, listSmartcardCompanies, syncSmartcardMemberLimit, planMemberLimit, unlinkSmartcardCompany, addSmartcardMember, removeSmartcardMember } =
   await import("./smartcard-link");
 
 const has = (c: Call, f: [string, string, unknown]) => c.filters.some((x) => x[0] === f[0] && x[1] === f[1] && x[2] === f[2]);
@@ -101,6 +101,8 @@ describe("getSmartcardLinkState", () => {
     respond = (c) => {
       if (c.table === "companies") return { data: { id: "c1", name: "Villa", slug: "villa" } };
       if (c.table === "company_users") return { data: [{ id: "m1", user_id: "u1", role_id: "r1", status: "active" }] };
+      if (c.table === "modules") return { data: { id: "mod-sc" } };
+      if (c.table === "company_modules") return { data: { module_id: "mod-sc", limits: { max_team_members: 2 } } };
       return { data: [{ id: "r1", code: "owner" }] };
     };
     auth.admin.getUserById.mockResolvedValue({ data: { user: { email: "Dueno@Villa.mx" } } });
@@ -108,6 +110,7 @@ describe("getSmartcardLinkState", () => {
       status: "linked",
       company: { id: "c1", name: "Villa", slug: "villa" },
       members: [{ id: "m1", email: "dueno@villa.mx", roleCode: "owner", status: "active" }],
+      memberLimit: 2,
     });
     expect(has(calls.find((c) => c.table === "company_users")!, ["eq", "company_id", "c1"])).toBe(true);
   });
@@ -237,5 +240,47 @@ describe("removeSmartcardMember", () => {
   it("fails when the member isn't in that company", async () => {
     respond = (c) => (c.op === "delete" ? { data: [] } : { data: { id: "c1" } });
     await expect(removeSmartcardMember("org1", "other")).rejects.toThrow(/ya no existe/);
+  });
+});
+
+describe("syncSmartcardMemberLimit", () => {
+  const withModule = (limits: Record<string, unknown> | null) => (c: Call) => {
+    if (c.table === "companies") return { data: { id: "c1" } };
+    if (c.table === "modules") return { data: { id: "mod-sc" } };
+    if (c.table === "company_modules" && c.op === "select") return { data: { module_id: "mod-sc", limits } };
+    return { data: null };
+  };
+
+  it("sets max_team_members keeping the other limits, only on that company's module", async () => {
+    respond = withModule({ max_team_members: 2, max_cards: 5 });
+    expect(await syncSmartcardMemberLimit("org1", 10)).toBe("updated");
+    const update = calls.find((c) => c.op === "update")!;
+    expect(update).toMatchObject({ table: "company_modules", payload: { limits: { max_team_members: 10, max_cards: 5 } } });
+    expect(has(update, ["eq", "company_id", "c1"])).toBe(true);
+    expect(has(update, ["eq", "module_id", "mod-sc"])).toBe(true);
+    expect(has(calls.find((c) => c.table === "modules")!, ["eq", "code", "smartcard"])).toBe(true);
+  });
+
+  it("removes the key for unlimited plans and skips when already equal", async () => {
+    respond = withModule({ max_team_members: 2 });
+    expect(await syncSmartcardMemberLimit("org1", null)).toBe("updated");
+    expect(calls.find((c) => c.op === "update")!.payload).toEqual({ limits: {} });
+    calls = [];
+    expect(await syncSmartcardMemberLimit("org1", 2)).toBe("unchanged");
+    expect(calls.some((c) => c.op === "update")).toBe(false);
+  });
+
+  it("doesn't create anything when unlinked or without the module", async () => {
+    expect(await syncSmartcardMemberLimit("org1", 10)).toBe("unlinked");
+    respond = (c) => (c.table === "companies" ? { data: { id: "c1" } } : { data: null });
+    expect(await syncSmartcardMemberLimit("org1", 10)).toBe("no_module");
+    expect(calls.some((c) => c.op !== "select")).toBe(false);
+  });
+
+  it("maps Reymen plans to SmartCard limits", () => {
+    expect(planMemberLimit("starter")).toBe(2);
+    expect(planMemberLimit("professional")).toBe(10);
+    expect(planMemberLimit("enterprise")).toBeNull();
+    expect(planMemberLimit("unknown")).toBe(2);
   });
 });

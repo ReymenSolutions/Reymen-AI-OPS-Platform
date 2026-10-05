@@ -16,7 +16,7 @@ import { OrgWebhookInfoDialog } from "@/components/admin/OrgWebhookInfoDialog";
 import { OrganizationModulesPanel } from "@/components/admin/OrganizationModulesPanel";
 import { PurgePosSalesPanel } from "@/components/admin/PurgePosSalesPanel";
 import { SmartcardLinkPanel } from "@/components/admin/SmartcardLinkPanel";
-import { getSmartcardLinkState } from "@/lib/smartcard-link";
+import { getSmartcardLinkState, planMemberLimit } from "@/lib/smartcard-link";
 import { AdminClientUsersPanel } from "@/components/admin/AdminClientUsersPanel";
 import { ConsumptionChart } from "@/components/charts/ConsumptionChart";
 import { getOrganizationModules } from "@/actions/admin/modules";
@@ -342,6 +342,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
             orgId={client.id}
             state={await getSmartcardLinkState(client.id)}
             users={client.users.filter((u) => u.isActive).map(({ id, name, email }) => ({ id, name, email }))}
+            planLimit={planMemberLimit(client.plan)}
           />
         )}
 

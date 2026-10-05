@@ -48,4 +48,10 @@ export type SmartcardLinkState =
   | { status: "not_configured" }
   | { status: "error" }
   | { status: "unlinked"; candidates: SmartcardCompanyOption[]; taken: SmartcardTakenCompany[] }
-  | { status: "linked"; company: SmartcardCompanyOption; members: SmartcardLinkMember[] };
+  | {
+      status: "linked";
+      company: SmartcardCompanyOption;
+      members: SmartcardLinkMember[];
+      /** max_team_members del módulo smartcard de la empresa: null = sin límite, undefined = sin módulo. */
+      memberLimit?: number | null;
+    };

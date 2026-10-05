@@ -9,6 +9,7 @@ import { logAudit } from "@/lib/audit";
 import { hasCustomPrice } from "@/lib/permissions";
 import { requireAdmin } from "@/lib/guards";
 import { UserError } from "@/lib/user-error";
+import { syncSmartcardMemberLimitForPlan } from "@/lib/smartcard-link";
 
 const createClientSchema = z.object({
   orgName: z.string().min(2),
@@ -99,16 +100,20 @@ export async function changePlan(orgId: string, plan: string, customMonthlyPrice
     data: { plan, customMonthlyPriceUsd: customPrice },
   });
 
+  // SmartCard guarda su propio límite de integrantes; se iguala al del plan.
+  const smartcardMemberLimit = await syncSmartcardMemberLimitForPlan(orgId, plan);
+
   await logAudit({
     userId: session.user.id,
     organizationId: orgId,
     action: "client.plan_change",
     resource: "Organization",
     resourceId: orgId,
-    metadata: { newPlan: plan, customMonthlyPriceUsd: customPrice },
+    metadata: { newPlan: plan, customMonthlyPriceUsd: customPrice, smartcardMemberLimit },
   });
 
   revalidatePath(`/admin/clients/${orgId}`);
+  revalidatePath("/portal/smartcard");
   return { success: true, plan: org.plan };
 }
 

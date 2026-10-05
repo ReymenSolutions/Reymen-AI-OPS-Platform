@@ -140,6 +140,8 @@ const EN: Record<string, string> = {
   "Este cliente no está vinculado con SmartCard.": "This client isn't linked to SmartCard.",
   "No se pudo quitar el acceso. Intenta de nuevo.": "Couldn't remove access. Please try again.",
   "Ese miembro ya no existe.": "That member no longer exists.",
+  "No se pudo actualizar el límite de integrantes en SmartCard.": "Couldn't update the member limit in SmartCard.",
+  "Esa empresa no tiene el módulo SmartCard activo en SmartCard.": "That company doesn't have the SmartCard module active in SmartCard.",
   "No se pudo validar el tipo de destino. Intenta de nuevo.": "Couldn't validate the destination type. Please try again.",
   "No se puede eliminar un servicio con citas asociadas. Desactívalo en su lugar.": "A service with appointments can't be deleted. Deactivate it instead.",
   "No se puede eliminar una etapa con oportunidades activas. Muévelas primero.": "A stage with active opportunities can't be deleted. Move them first.",
