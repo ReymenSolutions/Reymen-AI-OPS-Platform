@@ -17,7 +17,7 @@ export function PortalSectionTabs({ tabs }: { tabs: PortalTab[] }) {
   const pathname = usePathname();
 
   return (
-    <div className="mb-6 flex gap-1 border-b border-slate-200">
+    <div className="mb-6 -mx-1 flex gap-1 overflow-x-auto border-b border-slate-200 px-1">
       {tabs.map((tab) => {
         const active = pathname === tab.href;
         return (
@@ -25,7 +25,7 @@ export function PortalSectionTabs({ tabs }: { tabs: PortalTab[] }) {
             key={tab.href}
             href={tab.href}
             className={cn(
-              "border-b-2 px-4 py-2 text-sm font-medium transition-colors",
+              "flex-shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors sm:px-4",
               active
                 ? "border-brand-600 text-brand-700"
                 : "border-transparent text-slate-500 hover:text-slate-700"
