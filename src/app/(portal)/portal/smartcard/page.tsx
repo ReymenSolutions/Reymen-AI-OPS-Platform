@@ -9,6 +9,8 @@ import {
 } from "@/lib/smartcard-company";
 import { SmartcardPanel } from "@/components/portal/SmartcardPanel";
 import { getServerLang } from "@/lib/i18n-server";
+import { prisma } from "@/lib/prisma";
+import { syncSmartcardMemberLimitForPlan } from "@/lib/smartcard-link";
 
 const FAILURE_MESSAGES: Record<"es" | "en", Record<string, string>> = {
   es: {
@@ -45,6 +47,15 @@ export default async function SmartcardPage() {
   // requireModule() redirects to /portal/dashboard by itself when NFC_QR
   // isn't enabled for this org — same guard the page always had.
   await requireModule(session.user.organizationId, "NFC_QR");
+
+  // El límite de integrantes de SmartCard debe seguir al plan de Reymen. Se
+  // iguala al cambiar el plan (admin o Stripe); esto corrige además lo que
+  // haya quedado desfasado antes (solo escribe si no coincide).
+  const org = await prisma.organization.findUnique({
+    where: { id: session.user.organizationId },
+    select: { plan: true },
+  });
+  if (org) await syncSmartcardMemberLimitForPlan(session.user.organizationId, org.plan);
 
   const result = await resolveSmartcardMembership(session.user.organizationId, session.user.email);
 

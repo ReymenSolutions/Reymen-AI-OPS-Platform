@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { getStripeClient, planForPriceId } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { syncSmartcardMemberLimitForPlan } from "@/lib/smartcard-link";
 
 export async function POST(req: NextRequest) {
   const stripe = getStripeClient();
@@ -55,11 +56,13 @@ export async function POST(req: NextRequest) {
             where: { id: org.id },
             data: { plan: "starter", stripeSubscriptionId: null, stripeSubscriptionStatus: "canceled" },
           });
+          const smartcardMemberLimit = await syncSmartcardMemberLimitForPlan(org.id, "starter");
           await logAudit({
             organizationId: org.id,
             action: "billing.subscription_canceled",
             resource: "Organization",
             resourceId: org.id,
+            metadata: { smartcardMemberLimit },
           });
         }
         break;
@@ -88,11 +91,14 @@ async function applySubscriptionToOrg(orgId: string, subscription: Stripe.Subscr
     },
   });
 
+  // SmartCard guarda su propio límite de integrantes; se iguala al del plan.
+  const smartcardMemberLimit = await syncSmartcardMemberLimitForPlan(orgId, plan);
+
   await logAudit({
     organizationId: orgId,
     action: "billing.plan_change",
     resource: "Organization",
     resourceId: orgId,
-    metadata: { plan, status: subscription.status, source: "stripe" },
+    metadata: { plan, status: subscription.status, source: "stripe", smartcardMemberLimit },
   });
 }

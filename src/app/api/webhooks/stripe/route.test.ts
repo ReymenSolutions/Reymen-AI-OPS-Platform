@@ -19,6 +19,10 @@ vi.mock("stripe", () => ({
   },
 }));
 
+// El límite de integrantes de SmartCard se iguala al plan en cada cambio.
+const syncSmartcard = vi.fn(async () => "updated");
+vi.mock("@/lib/smartcard-link", () => ({ syncSmartcardMemberLimitForPlan: syncSmartcard }));
+
 const { POST } = await import("./route");
 
 function makeRequest(body: string): NextRequest {
@@ -53,6 +57,7 @@ describe("POST /api/webhooks/stripe", () => {
   beforeEach(() => {
     constructEvent.mockReset();
     subscriptionsRetrieve.mockReset();
+    syncSmartcard.mockClear();
   });
 
   it("rejects a request with an invalid signature", async () => {
@@ -82,6 +87,7 @@ describe("POST /api/webhooks/stripe", () => {
     expect(updated.plan).toBe("professional");
     expect(updated.stripeSubscriptionId).toBe("sub_123");
     expect(updated.stripeSubscriptionStatus).toBe("active");
+    expect(syncSmartcard).toHaveBeenCalledWith(org.id, "professional");
 
     const audit = await prisma.auditLog.findFirst({
       where: { organizationId: org.id, action: "billing.plan_change" },
@@ -102,6 +108,7 @@ describe("POST /api/webhooks/stripe", () => {
 
     const updated = await prisma.organization.findUniqueOrThrow({ where: { id: org.id } });
     expect(updated.plan).toBe("enterprise");
+    expect(syncSmartcard).toHaveBeenCalledWith(org.id, "enterprise");
   });
 
   it("customer.subscription.deleted reverts the org to the starter plan", async () => {
@@ -117,6 +124,7 @@ describe("POST /api/webhooks/stripe", () => {
     expect(updated.plan).toBe("starter");
     expect(updated.stripeSubscriptionId).toBeNull();
     expect(updated.stripeSubscriptionStatus).toBe("canceled");
+    expect(syncSmartcard).toHaveBeenCalledWith(org.id, "starter");
   });
 
   it("ignores an event for a customer with no matching organization, without erroring", async () => {
