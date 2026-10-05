@@ -13,6 +13,8 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "ReymenApp",
   description: "Automatización inteligente para hacer crecer tu negocio.",
+  // Nombre al agregarla a la pantalla de inicio del iPhone/iPad (ícono: app/apple-icon.png).
+  appleWebApp: { title: "ReymenApp", capable: true, statusBarStyle: "default" },
 };
 
 // Edge-safe auth() (same pattern as middleware.ts) — this only needs to
