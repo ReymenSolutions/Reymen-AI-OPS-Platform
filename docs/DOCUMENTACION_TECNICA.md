@@ -3,6 +3,8 @@
 > **Document Version:** 1.5 | **Date:** September 2026 (updated through Fase 17c — Food Ops menu categories/modifiers, POS sales webhook with cancellations, lenient modifier-option validation, modifier-sale tracking, content-hash ETag/304 caching, separate POS read-only key, SmartCard bridge, admin user management, Next.js 16 upgrade)  
 > **Language:** English/Spanish (technical terms in English, explanations bilingual)  
 > **Audience:** Developers, DevOps, and technical team members
+>
+> **Estado al día (octubre 2026):** este documento cubre hasta Fase 17c. Lo agregado después (Operación, Delivery, inventario en un paso, borrar ventas de prueba del POS, SmartCard desde Admin, límites de SmartCard por plan, renombres, modo oscuro, deslizar para actualizar) está resumido en [`docs/HANDOFF.md`](./HANDOFF.md), que es el documento de continuidad de ReymenApp y ReymenPOS.
 
 ---
 
