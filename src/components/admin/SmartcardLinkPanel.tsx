@@ -13,6 +13,7 @@ import {
   addSmartcardMemberAction,
   linkSmartcardCompanyAction,
   removeSmartcardMemberAction,
+  syncSmartcardMemberLimitAction,
   unlinkSmartcardCompanyAction,
 } from "@/actions/admin/smartcard-link";
 import { SMARTCARD_LINK_ROLES, type SmartcardLinkRole, type SmartcardLinkState } from "@/lib/smartcard-link-shared";
@@ -54,6 +55,11 @@ const COPY = {
     removed: "Acceso quitado",
     failed: "No se pudo completar",
     allIn: "Todos los usuarios activos de este cliente ya tienen acceso.",
+    limit: (current: string, plan: string) => `Límite de integrantes en SmartCard: ${current} · según su plan: ${plan}`,
+    noModule: "Esta empresa no tiene el módulo SmartCard en SmartCard, así que no tiene límite de integrantes que ajustar.",
+    unlimited: "sin límite",
+    applyLimit: "Aplicar límite del plan",
+    limitDone: "Límite actualizado en SmartCard",
     roles: { owner: "Dueño", admin: "Administrador", manager: "Gerente", staff: "Personal", agent: "Agente" },
     status: { active: "Activo", invited: "Invitado" } as Record<string, string>,
   },
@@ -91,6 +97,11 @@ const COPY = {
     removed: "Access removed",
     failed: "Couldn't complete",
     allIn: "Every active user of this client already has access.",
+    limit: (current: string, plan: string) => `SmartCard member limit: ${current} · per their plan: ${plan}`,
+    noModule: "This company doesn't have the SmartCard module in SmartCard, so there's no member limit to adjust.",
+    unlimited: "unlimited",
+    applyLimit: "Apply plan limit",
+    limitDone: "Limit updated in SmartCard",
     roles: { owner: "Owner", admin: "Admin", manager: "Manager", staff: "Staff", agent: "Agent" },
     status: { active: "Active", invited: "Invited" } as Record<string, string>,
   },
@@ -106,10 +117,13 @@ export function SmartcardLinkPanel({
   orgId,
   state,
   users,
+  planLimit,
 }: {
   orgId: string;
   state: SmartcardLinkState;
   users: SmartcardLinkUser[];
+  /** Límite de usuarios del plan de Reymen (null = sin límite). */
+  planLimit: number | null;
 }) {
   const { lang } = usePreferences();
   const t = COPY[lang === "en" ? "en" : "es"];
@@ -208,6 +222,26 @@ export function SmartcardLinkPanel({
             {t.unlink}
           </Button>
         </div>
+
+        {state.memberLimit === undefined ? (
+          <p className="text-xs text-slate-500">{t.noModule}</p>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-xs text-slate-600">
+              {t.limit(state.memberLimit === null ? t.unlimited : String(state.memberLimit), planLimit === null ? t.unlimited : String(planLimit))}
+            </p>
+            {state.memberLimit !== planLimit && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() => run(() => syncSmartcardMemberLimitAction({ orgId }), () => t.limitDone)}
+              >
+                {t.applyLimit}
+              </Button>
+            )}
+          </div>
+        )}
 
         <div className="space-y-2">
           <p className="text-sm font-medium text-slate-900">{t.members}</p>

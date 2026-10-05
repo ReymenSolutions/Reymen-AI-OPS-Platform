@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSmartcardAdminClient } from "./smartcard-supabase";
 import { prisma } from "./prisma";
+import { PLAN_LIMITS, isUnlimited } from "./permissions";
 import { UserError } from "./user-error";
 import type {
   SmartcardCompanyLink,
@@ -83,7 +84,9 @@ export async function getSmartcardLinkState(organizationId: string): Promise<Sma
       };
     })
   );
-  return { status: "linked", company, members };
+  const scModule = await getSmartcardModuleRow(supabase, company.id);
+  const memberLimit = scModule ? readMemberLimit(scModule.limits) : undefined;
+  return { status: "linked", company, members, memberLimit };
 }
 
 /**
@@ -307,4 +310,84 @@ export async function removeSmartcardMember(organizationId: string, memberId: st
     throw new UserError("No se pudo quitar el acceso. Intenta de nuevo.");
   }
   if (!removed?.length) throw new UserError("Ese miembro ya no existe.");
+}
+
+/** Fila de company_modules del módulo "smartcard" de la empresa, si la tiene. */
+async function getSmartcardModuleRow(
+  supabase: SupabaseClient,
+  companyId: string
+): Promise<{ moduleId: string; limits: Record<string, unknown> } | null> {
+  const { data: mod } = await supabase.from("modules").select("id").eq("code", "smartcard").maybeSingle();
+  if (!mod) return null;
+  const { data: row } = await supabase
+    .from("company_modules")
+    .select("module_id, limits")
+    .eq("company_id", companyId)
+    .eq("module_id", mod.id)
+    .maybeSingle();
+  if (!row) return null;
+  return { moduleId: row.module_id as string, limits: (row.limits as Record<string, unknown> | null) ?? {} };
+}
+
+function readMemberLimit(limits: Record<string, unknown>): number | null {
+  const v = limits.max_team_members;
+  return typeof v === "number" ? v : null;
+}
+
+export type MemberLimitSync = "updated" | "unchanged" | "unlinked" | "no_module" | "not_configured";
+
+/**
+ * Iguala el límite de integrantes de SmartCard (company_modules.limits
+ * .max_team_members del módulo smartcard) al límite de usuarios del plan de
+ * Reymen. Cada integrante de SmartCard es también usuario del portal, así que
+ * el límite de Reymen es el que de verdad aplica. null = sin límite (se quita
+ * la llave, como lo lee el portal). No crea el módulo si la empresa no lo tiene.
+ */
+export async function syncSmartcardMemberLimit(organizationId: string, limit: number | null): Promise<MemberLimitSync> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return "not_configured";
+  const { data: company } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("external_org_id", organizationId)
+    .maybeSingle();
+  if (!company) return "unlinked";
+
+  const row = await getSmartcardModuleRow(supabase, company.id);
+  if (!row) return "no_module";
+  if (readMemberLimit(row.limits) === limit) return "unchanged";
+
+  const limits: Record<string, unknown> = { ...row.limits };
+  if (limit === null) delete limits.max_team_members;
+  else limits.max_team_members = limit;
+
+  const { error } = await supabase
+    .from("company_modules")
+    .update({ limits })
+    .eq("company_id", company.id)
+    .eq("module_id", row.moduleId);
+  if (error) {
+    console.error("[smartcard-link] Error actualizando el límite de integrantes:", error.message);
+    throw new UserError("No se pudo actualizar el límite de integrantes en SmartCard.");
+  }
+  return "updated";
+}
+
+/** Límite de integrantes de SmartCard que corresponde al plan de Reymen (null = sin límite). */
+export function planMemberLimit(plan: string): number | null {
+  const users = (PLAN_LIMITS[plan] ?? PLAN_LIMITS.starter).users;
+  return isUnlimited(users) ? null : users;
+}
+
+/**
+ * Igual que syncSmartcardMemberLimit con el plan actual del cliente, pero sin
+ * lanzar: un problema en SmartCard no debe impedir cambiar el plan en Reymen.
+ */
+export async function syncSmartcardMemberLimitForPlan(organizationId: string, plan: string): Promise<MemberLimitSync | "failed"> {
+  try {
+    return await syncSmartcardMemberLimit(organizationId, planMemberLimit(plan));
+  } catch (e) {
+    console.error("[smartcard-link] No se pudo igualar el límite de SmartCard al plan:", e);
+    return "failed";
+  }
 }

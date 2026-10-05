@@ -11,6 +11,9 @@ import {
   addSmartcardMember,
   linkSmartcardCompany,
   removeSmartcardMember,
+  planMemberLimit,
+  syncSmartcardMemberLimit,
+  syncSmartcardMemberLimitForPlan,
   unlinkSmartcardCompany,
 } from "@/lib/smartcard-link";
 
@@ -27,16 +30,17 @@ const linkSchema = z.object({ orgId: z.string().min(1), companyId: z.string().mi
 export async function linkSmartcardCompanyAction(data: z.infer<typeof linkSchema>) {
   const session = await requireAdmin();
   const { orgId, companyId } = linkSchema.parse(data);
-  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true, plan: true } });
   if (!org) throw new UserError("Ese cliente no existe.");
   const company = await linkSmartcardCompany(orgId, companyId);
+  const memberLimit = await syncSmartcardMemberLimitForPlan(orgId, org.plan);
   await logAudit({
     userId: session.user.id,
     organizationId: orgId,
     action: "client.smartcard_link",
     resource: "SmartcardCompany",
     resourceId: company.id,
-    metadata: { companyName: company.name, slug: company.slug, replacedOrgId: company.staleOrgId ?? null },
+    metadata: { companyName: company.name, slug: company.slug, replacedOrgId: company.staleOrgId ?? null, memberLimit },
   });
   refresh(orgId);
 }
@@ -96,4 +100,26 @@ export async function removeSmartcardMemberAction(data: { orgId: string; memberI
     metadata: { email: data.email ?? null },
   });
   refresh(orgId);
+}
+
+/** Botón "Aplicar límite del plan" de la tarjeta SmartCard del cliente. */
+export async function syncSmartcardMemberLimitAction(data: { orgId: string }) {
+  const session = await requireAdmin();
+  const orgId = z.string().min(1).parse(data.orgId);
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { plan: true } });
+  if (!org) throw new UserError("Ese cliente no existe.");
+  const limit = planMemberLimit(org.plan);
+  const outcome = await syncSmartcardMemberLimit(orgId, limit);
+  if (outcome === "no_module") throw new UserError("Esa empresa no tiene el módulo SmartCard activo en SmartCard.");
+  if (outcome === "unlinked") throw new UserError("Este cliente no está vinculado con SmartCard.");
+  if (outcome === "not_configured") throw new UserError("SmartCard aún no está configurado en este entorno.");
+  await logAudit({
+    userId: session.user.id,
+    organizationId: orgId,
+    action: "client.smartcard_member_limit",
+    resource: "SmartcardCompany",
+    metadata: { plan: org.plan, limit, outcome },
+  });
+  refresh(orgId);
+  return outcome;
 }
