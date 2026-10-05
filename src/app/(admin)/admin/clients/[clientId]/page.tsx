@@ -14,6 +14,7 @@ import { ChangePlanDialog } from "@/components/admin/ChangePlanDialog";
 import { ToggleClientStatusButton } from "@/components/admin/ToggleClientStatusButton";
 import { OrgWebhookInfoDialog } from "@/components/admin/OrgWebhookInfoDialog";
 import { OrganizationModulesPanel } from "@/components/admin/OrganizationModulesPanel";
+import { PurgePosSalesPanel } from "@/components/admin/PurgePosSalesPanel";
 import { AdminClientUsersPanel } from "@/components/admin/AdminClientUsersPanel";
 import { ConsumptionChart } from "@/components/charts/ConsumptionChart";
 import { getOrganizationModules } from "@/actions/admin/modules";
@@ -331,6 +332,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
           planLabel={planInfo.label}
           planModules={planModules}
         />
+
+        {hasModule("FOOD_OPS") && <PurgePosSalesPanel orgId={client.id} />}
 
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">
