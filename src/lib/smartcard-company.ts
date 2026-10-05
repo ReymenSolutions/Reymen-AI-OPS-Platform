@@ -203,6 +203,8 @@ export const EVENT_TYPE_LABELS_ES: Record<string, string> = {
   instagram_click: "Clicks a Instagram",
   custom_link_click: "Clicks a links personalizados",
   save_contact: "Contactos guardados",
+  // Visto después en datos reales (2026-10-05): la tarjeta manda a otro link.
+  external_redirect: "Redirecciones a otro link",
 };
 
 export interface CardStatsEntry {

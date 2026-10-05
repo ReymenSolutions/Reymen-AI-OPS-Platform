@@ -78,6 +78,7 @@ const EVENT_TYPE_LABELS_EN: Record<string, string> = {
   instagram_click: "Instagram clicks",
   custom_link_click: "Custom link clicks",
   save_contact: "Contacts saved",
+  external_redirect: "Redirects to another link",
 };
 
 const INVITABLE_ROLES = ["admin", "manager", "staff", "agent"];
@@ -319,11 +320,11 @@ export function SmartcardPanel({
                   {lang === "es" ? "Por tarjeta" : "By card"}
                 </h3>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full min-w-[560px] text-left text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Tarjeta" : "Card"}</th>
-                        <th className="py-2 pr-3 font-medium">{lang === "es" ? "Integrante" : "Member"}</th>
+                        <th className="py-2 pr-3 font-medium">{lang === "es" ? "Titular de la tarjeta" : "Card holder"}</th>
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Estado" : "Status"}</th>
                         <th className="py-2 pr-3 text-right font-medium">{lang === "es" ? "Eventos" : "Events"}</th>
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Última actividad" : "Last activity"}</th>
