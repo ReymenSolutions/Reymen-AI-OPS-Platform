@@ -1,4 +1,5 @@
 import { getSmartcardAdminClient } from "./smartcard-supabase";
+import { isValidLinkIcon } from "./smartcard-link-icons";
 
 /**
  * Acceso de SUPERADMIN/ADMIN a las entidades de SmartCard (clients, cards,
@@ -635,6 +636,445 @@ export async function reactivateSmartcardCard(id: string): Promise<SmartcardAdmi
   if (error) {
     console.error("[smartcard-admin] Error reactivando card:", error.message);
     return { ok: false, error: "No se pudo reactivar la tarjeta. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+/**
+ * --- Perfiles digitales (profiles) ---
+ *
+ * Versión cross-tenant/completa — a diferencia de getSmartcardProfile/
+ * updateProfileThemeColors en smartcard-company.ts (acotado a una company,
+ * solo display_name + contacto + tema básico, lo que ve un company_user en
+ * /portal/smartcard), aquí vive TODO lo que admin.reymen.mx's
+ * apps/admin/app/profiles exponía: slug, theme_id (catálogo completo),
+ * status, is_noindex, y el CRUD de profile_links (con ícono, orden,
+ * activar/desactivar). Deliberadamente NO incluye la subida de foto/logo a
+ * Supabase Storage (apps/admin/app/profiles/[id]/media-actions.ts) — ese es
+ * un pedazo aparte y más grande (bucket, magic-bytes, límites de tamaño);
+ * photo_url/logo_url siguen siendo campos de solo pegar una URL, igual que
+ * ya decidió el formulario de autoservicio (ver comentario de
+ * updateSmartcardProfile en actions/portal/smartcard.ts).
+ */
+
+function describeProfileSaveError(error: { message: string; code?: string } | null): string {
+  if (!error) return "No se pudo guardar el perfil. Intenta de nuevo.";
+  // 23505 = unique_violation (idx_profiles_slug_active, slug único entre perfiles no borrados).
+  if (error.code === "23505") return "Ese slug ya lo está usando otro perfil activo. Elige uno distinto.";
+  // 23514 = check_violation (formato del slug) / P0001 = excepción propia de prevent_reserved_slug().
+  if (error.code === "23514" || error.code === "P0001") {
+    return 'Ese slug no es válido: usa solo minúsculas, números y guiones simples (ej. "juan-perez"), y confirma que no sea una palabra reservada (admin, login, api, etc.).';
+  }
+  console.error("[smartcard-admin] Error guardando profile:", error.message);
+  return "No se pudo guardar el perfil. Intenta de nuevo.";
+}
+
+export interface SmartcardAdminProfileRow {
+  id: string;
+  slug: string;
+  displayName: string;
+  company: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  clientId: string;
+  clientName: string | null;
+  createdAt: string;
+}
+
+export async function listSmartcardProfiles(opts?: {
+  search?: string;
+  clientId?: string;
+}): Promise<SmartcardAdminProfileRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  let query = supabase
+    .from("profiles")
+    .select("id, slug, display_name, company, status, client_id, clients(name), created_at")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (opts?.clientId) query = query.eq("client_id", opts.clientId);
+
+  const term = opts?.search ? sanitizeSearchTerm(opts.search) : "";
+  if (term) query = query.or(`display_name.ilike.%${term}%,slug.ilike.%${term}%,company.ilike.%${term}%`);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[smartcard-admin] Error listando profiles:", error.message);
+    return null;
+  }
+
+  return (data ?? []).map((p) => ({
+    id: p.id as string,
+    slug: p.slug as string,
+    displayName: p.display_name as string,
+    company: p.company as string | null,
+    status: p.status as "ACTIVE" | "INACTIVE",
+    clientId: p.client_id as string,
+    clientName: (p.clients as unknown as { name: string } | null)?.name ?? null,
+    createdAt: p.created_at as string,
+  }));
+}
+
+export interface SmartcardThemeOption {
+  id: string;
+  name: string;
+}
+
+export async function listSmartcardThemes(): Promise<SmartcardThemeOption[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.from("themes").select("id, name").eq("is_active", true).order("name");
+  if (error) {
+    console.error("[smartcard-admin] Error listando themes:", error.message);
+    return null;
+  }
+  return (data ?? []).map((t) => ({ id: t.id as string, name: t.name as string }));
+}
+
+export interface SmartcardAdminProfileDetail {
+  id: string;
+  slug: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  jobTitle: string | null;
+  company: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  logoUrl: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  website: string | null;
+  address: string | null;
+  mapsUrl: string | null;
+  instagram: string | null;
+  facebook: string | null;
+  linkedin: string | null;
+  tiktok: string | null;
+  youtube: string | null;
+  themeId: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  isNoindex: boolean;
+  clientId: string;
+  clientName: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+}
+
+export async function getSmartcardAdminProfile(id: string): Promise<SmartcardAdminProfileDetail | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(
+      "id, slug, display_name, first_name, last_name, job_title, company, bio, photo_url, logo_url, phone, whatsapp, email, website, address, maps_url, instagram, facebook, linkedin, tiktok, youtube, theme_id, status, is_noindex, client_id, clients(name), deleted_at, created_at"
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[smartcard-admin] Error buscando profile:", error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  return {
+    id: data.id as string,
+    slug: data.slug as string,
+    displayName: data.display_name as string,
+    firstName: data.first_name as string | null,
+    lastName: data.last_name as string | null,
+    jobTitle: data.job_title as string | null,
+    company: data.company as string | null,
+    bio: data.bio as string | null,
+    photoUrl: data.photo_url as string | null,
+    logoUrl: data.logo_url as string | null,
+    phone: data.phone as string | null,
+    whatsapp: data.whatsapp as string | null,
+    email: data.email as string | null,
+    website: data.website as string | null,
+    address: data.address as string | null,
+    mapsUrl: data.maps_url as string | null,
+    instagram: data.instagram as string | null,
+    facebook: data.facebook as string | null,
+    linkedin: data.linkedin as string | null,
+    tiktok: data.tiktok as string | null,
+    youtube: data.youtube as string | null,
+    themeId: data.theme_id as string | null,
+    status: data.status as "ACTIVE" | "INACTIVE",
+    isNoindex: data.is_noindex as boolean,
+    clientId: data.client_id as string,
+    clientName: (data.clients as unknown as { name: string } | null)?.name ?? null,
+    deletedAt: data.deleted_at as string | null,
+    createdAt: data.created_at as string,
+  };
+}
+
+export interface SmartcardAdminProfileInput {
+  slug: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  jobTitle: string | null;
+  company: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  logoUrl: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  website: string | null;
+  address: string | null;
+  mapsUrl: string | null;
+  instagram: string | null;
+  facebook: string | null;
+  linkedin: string | null;
+  tiktok: string | null;
+  youtube: string | null;
+  themeId: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  isNoindex: boolean;
+}
+
+function profileColumns(input: SmartcardAdminProfileInput) {
+  return {
+    slug: input.slug.trim().toLowerCase(),
+    display_name: input.displayName.trim(),
+    first_name: input.firstName?.trim() || null,
+    last_name: input.lastName?.trim() || null,
+    job_title: input.jobTitle?.trim() || null,
+    company: input.company?.trim() || null,
+    bio: input.bio?.trim() || null,
+    photo_url: input.photoUrl?.trim() || null,
+    logo_url: input.logoUrl?.trim() || null,
+    phone: input.phone?.trim() || null,
+    whatsapp: input.whatsapp?.trim() || null,
+    email: input.email?.trim() || null,
+    website: input.website?.trim() || null,
+    address: input.address?.trim() || null,
+    maps_url: input.mapsUrl?.trim() || null,
+    instagram: input.instagram?.trim() || null,
+    facebook: input.facebook?.trim() || null,
+    linkedin: input.linkedin?.trim() || null,
+    tiktok: input.tiktok?.trim() || null,
+    youtube: input.youtube?.trim() || null,
+    theme_id: input.themeId?.trim() || null,
+    status: input.status,
+    is_noindex: input.isNoindex,
+  };
+}
+
+export async function createSmartcardAdminProfile(
+  clientId: string,
+  input: SmartcardAdminProfileInput
+): Promise<SmartcardAdminResult> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  if (!clientId) return { ok: false, error: "El cliente es obligatorio." };
+  if (!input.slug.trim() || !input.displayName.trim()) {
+    return { ok: false, error: "El slug y el nombre a mostrar son obligatorios." };
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .insert({ client_id: clientId, ...profileColumns(input) })
+    .select("id")
+    .single();
+
+  if (error || !data) return { ok: false, error: describeProfileSaveError(error) };
+  return { ok: true, data: { id: data.id as string } };
+}
+
+export async function updateSmartcardAdminProfile(
+  id: string,
+  input: SmartcardAdminProfileInput
+): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  if (!input.slug.trim() || !input.displayName.trim()) {
+    return { ok: false, error: "El slug y el nombre a mostrar son obligatorios." };
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ ...profileColumns(input), updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) return { ok: false, error: describeProfileSaveError(error) };
+  return { ok: true, data: null };
+}
+
+export async function softDeleteSmartcardAdminProfile(id: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("profiles").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+  if (error) {
+    console.error("[smartcard-admin] Error dando de baja profile:", error.message);
+    return { ok: false, error: "No se pudo dar de baja el perfil. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function reactivateSmartcardAdminProfile(id: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("profiles").update({ deleted_at: null }).eq("id", id);
+  if (error) {
+    console.error("[smartcard-admin] Error reactivando profile:", error.message);
+    return { ok: false, error: "No se pudo reactivar el perfil. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+/**
+ * --- profile_links (desde el panel de admin) ---
+ *
+ * Mismo criterio que admin.reymen.mx's apps/admin/app/profiles/[id]/actions.ts:
+ * SUPERADMIN+ADMIN pueden editar links (no solo SUPERADMIN, a diferencia de
+ * borrar el perfil completo), y estos cambios NO se registran uno por uno en
+ * audit_logs a propósito — el cambio que sí importa rastrear es el del
+ * perfil mismo (ver createSmartcardAdminProfile/updateSmartcardAdminProfile
+ * y sus Server Actions).
+ */
+
+export interface SmartcardAdminProfileLink {
+  id: string;
+  title: string;
+  url: string;
+  icon: string | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export async function listSmartcardAdminProfileLinks(profileId: string): Promise<SmartcardAdminProfileLink[]> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("profile_links")
+    .select("id, title, url, icon, is_active, sort_order")
+    .eq("profile_id", profileId)
+    .order("sort_order", { ascending: true });
+  if (error) {
+    console.error("[smartcard-admin] Error listando profile_links:", error.message);
+    return [];
+  }
+  return (data ?? []).map((l) => ({
+    id: l.id as string,
+    title: l.title as string,
+    url: l.url as string,
+    icon: l.icon as string | null,
+    isActive: l.is_active as boolean,
+    sortOrder: l.sort_order as number,
+  }));
+}
+
+export async function addSmartcardAdminProfileLink(
+  profileId: string,
+  input: { title: string; url: string; icon: string | null }
+): Promise<SmartcardAdminResult> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const title = input.title.trim();
+  const url = input.url.trim();
+  if (!title || !url) return { ok: false, error: "El título y la URL del link son obligatorios." };
+  if (!/^https?:\/\//i.test(url)) return { ok: false, error: "La URL del link debe empezar con http:// o https://" };
+  const icon = input.icon && isValidLinkIcon(input.icon) ? input.icon : null;
+
+  const { data: maxRow } = await supabase
+    .from("profile_links")
+    .select("sort_order")
+    .eq("profile_id", profileId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data, error } = await supabase
+    .from("profile_links")
+    .insert({ profile_id: profileId, title, url, icon, sort_order: (maxRow?.sort_order ?? -1) + 1 })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    console.error("[smartcard-admin] Error creando profile_link:", error?.message);
+    return { ok: false, error: "No se pudo guardar el link. Intenta de nuevo." };
+  }
+  return { ok: true, data: { id: data.id as string } };
+}
+
+export async function deleteSmartcardAdminProfileLink(linkId: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("profile_links").delete().eq("id", linkId);
+  if (error) {
+    console.error("[smartcard-admin] Error eliminando profile_link:", error.message);
+    return { ok: false, error: "No se pudo eliminar el link. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function toggleSmartcardAdminProfileLink(linkId: string, nextActive: boolean): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("profile_links").update({ is_active: nextActive }).eq("id", linkId);
+  if (error) {
+    console.error("[smartcard-admin] Error activando/desactivando profile_link:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function updateSmartcardAdminProfileLinkIcon(linkId: string, icon: string | null): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const safeIcon = icon && isValidLinkIcon(icon) ? icon : null;
+  const { error } = await supabase.from("profile_links").update({ icon: safeIcon }).eq("id", linkId);
+  if (error) {
+    console.error("[smartcard-admin] Error actualizando ícono de profile_link:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+/** Intercambia sort_order entre un link y su vecino — mismo mecanismo que
+ * admin.reymen.mx's moveProfileLinkAction (swap, no reescribir toda la lista). */
+export async function moveSmartcardAdminProfileLink(
+  profileId: string,
+  linkId: string,
+  direction: "up" | "down"
+): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const { data: links, error } = await supabase
+    .from("profile_links")
+    .select("id, sort_order")
+    .eq("profile_id", profileId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error || !links) {
+    console.error("[smartcard-admin] Error leyendo profile_links para reordenar:", error?.message);
+    return { ok: false, error: "No se pudo reordenar. Intenta de nuevo." };
+  }
+
+  const index = links.findIndex((l) => l.id === linkId);
+  const swapIndex = direction === "up" ? index - 1 : index + 1;
+  if (index === -1 || swapIndex < 0 || swapIndex >= links.length) return { ok: true, data: null };
+
+  const current = links[index];
+  const neighbor = links[swapIndex];
+  const [{ error: e1 }, { error: e2 }] = await Promise.all([
+    supabase.from("profile_links").update({ sort_order: neighbor.sort_order }).eq("id", current.id),
+    supabase.from("profile_links").update({ sort_order: current.sort_order }).eq("id", neighbor.id),
+  ]);
+  if (e1 || e2) {
+    console.error("[smartcard-admin] Error reordenando profile_links:", e1?.message, e2?.message);
+    return { ok: false, error: "No se pudo reordenar. Intenta de nuevo." };
   }
   return { ok: true, data: null };
 }
