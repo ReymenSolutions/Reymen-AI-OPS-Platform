@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CreditCard } from "lucide-react";
+import { CreditCard, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/guards";
 import { getServerLang } from "@/lib/i18n-server";
 import { listSmartcardCompanies } from "@/lib/smartcard-link";
@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const COPY = {
   es: {
@@ -46,7 +47,18 @@ export default async function AdminSmartcardPage() {
 
   return (
     <div>
-      <PageHeader title={t.title} description={t.desc} />
+      <PageHeader
+        title={t.title}
+        description={t.desc}
+        actions={
+          <Button asChild variant="outline">
+            <Link href="/admin/smartcard/clients">
+              <Users className="h-4 w-4" />
+              {lang === "en" ? "Clients, cards & profiles" : "Clientes, tarjetas y perfiles"}
+            </Link>
+          </Button>
+        }
+      />
       {companies === null ? (
         <EmptyState icon={CreditCard} title={t.notConfigured} description={t.notConfiguredDesc} />
       ) : companies.length === 0 ? (
