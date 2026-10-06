@@ -23,6 +23,7 @@ import {
   type SmartcardProfileInput,
 } from "@/actions/portal/smartcard";
 import type { SmartcardProfile, ProfileLink } from "@/lib/smartcard-company";
+import { passesWcagAA } from "@/lib/smartcard-theme";
 
 /**
  * Self-service editor for a SmartCard PROFILE (2026-09-29) — the rich
@@ -54,7 +55,15 @@ const EMPTY_INPUT: SmartcardProfileInput = {
   linkedin: "",
   tiktok: "",
   youtube: "",
+  primaryColor: "",
+  accentColor: "",
 };
+
+// Default del formulario cuando el perfil no trae theme_overrides todavía
+// — mismos valores base que reymen-smartcard siembra para un theme nuevo
+// (packages/lib/src/theme-tokens.ts), así el picker no abre en negro puro.
+const DEFAULT_PRIMARY_COLOR = "#111111";
+const DEFAULT_ACCENT_COLOR = "#4F46E5";
 
 function toInput(p: SmartcardProfile): SmartcardProfileInput {
   return {
@@ -77,6 +86,8 @@ function toInput(p: SmartcardProfile): SmartcardProfileInput {
     linkedin: p.linkedin ?? "",
     tiktok: p.tiktok ?? "",
     youtube: p.youtube ?? "",
+    primaryColor: p.primaryColor ?? "",
+    accentColor: p.accentColor ?? "",
   };
 }
 
@@ -99,6 +110,50 @@ function Field({
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+    </div>
+  );
+}
+
+const HEX_COLOR_INPUT = /^#[0-9a-fA-F]{6}$/;
+
+/** Selector de color + campo de texto hex, sincronizados — el <input
+ * type="color"> del navegador siempre necesita un #RRGGBB válido (no
+ * acepta vacío ni parcial), así que se le pasa un fallback mientras el
+ * campo de texto se deja escribir libremente (se valida solo al guardar,
+ * igual que el resto del formulario). */
+function ColorField({
+  id,
+  label,
+  value,
+  onChange,
+  fallback,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  fallback: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          aria-label={label}
+          value={HEX_COLOR_INPUT.test(value) ? value : fallback}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-9 w-9 shrink-0 cursor-pointer rounded-md border border-slate-200 bg-transparent p-0.5"
+        />
+        <Input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={fallback}
+          className="font-mono uppercase"
+          maxLength={7}
+        />
+      </div>
     </div>
   );
 }
@@ -233,6 +288,44 @@ export function SmartcardProfileDialog({
                 "For now only pasting a URL to an already-hosted image is supported — direct file upload is coming later."
               )}
             </p>
+
+            <div>
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                {t("Tema", "Theme")}
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ColorField
+                  id="profile-primary-color"
+                  label={t("Color primario", "Primary color")}
+                  value={form.primaryColor ?? ""}
+                  onChange={(v) => set("primaryColor", v)}
+                  fallback={DEFAULT_PRIMARY_COLOR}
+                />
+                <ColorField
+                  id="profile-accent-color"
+                  label={t("Color de acento", "Accent color")}
+                  value={form.accentColor ?? ""}
+                  onChange={(v) => set("accentColor", v)}
+                  fallback={DEFAULT_ACCENT_COLOR}
+                />
+              </div>
+              {HEX_COLOR_INPUT.test(form.primaryColor ?? "") &&
+                HEX_COLOR_INPUT.test(form.accentColor ?? "") &&
+                !passesWcagAA(form.primaryColor as string, form.accentColor as string) && (
+                  <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {t(
+                      "Estos dos colores tienen poco contraste entre sí — el texto podría costar trabajo leerlo. Puedes guardar igual, pero te recomendamos elegir colores más distintos.",
+                      "These two colors have low contrast with each other — text may be hard to read. You can still save, but choosing more distinct colors is recommended."
+                    )}
+                  </p>
+                )}
+              <p className="mt-2 text-xs text-slate-500">
+                {t(
+                  "Déjalos en blanco para usar los colores del tema por default de tu empresa.",
+                  "Leave them blank to use your company's default theme colors."
+                )}
+              </p>
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field id="profile-phone" label={t("Teléfono", "Phone")} value={form.phone ?? ""} onChange={(v) => set("phone", v)} />

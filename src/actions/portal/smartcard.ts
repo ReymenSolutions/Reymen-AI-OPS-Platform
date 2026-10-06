@@ -9,10 +9,12 @@ import {
   resolveSmartcardMembership,
   buildSmartcardPublicUrl,
   getSmartcardProfile,
+  updateProfileThemeColors,
   type SmartcardProfile,
   type ProfileLink,
 } from "@/lib/smartcard-company";
 import { findOrCreateSmartcardAuthUser } from "@/lib/smartcard-link";
+import { HEX_COLOR } from "@/lib/smartcard-theme";
 import { inviteTeamMember } from "@/actions/team";
 import { UserError } from "@/lib/user-error";
 
@@ -441,7 +443,12 @@ const PROFILE_URL_FIELDS: (keyof SmartcardProfileInput)[] = [
   "youtube",
 ];
 
-const PROFILE_FIELD_TO_COLUMN: Record<keyof SmartcardProfileInput, string> = {
+// primaryColor/accentColor deliberadamente NO están aquí — no son columnas
+// directas, viven en el jsonb theme_overrides (ver updateProfileThemeColors
+// en smartcard-company.ts) y se guardan aparte, después del update de
+// abajo. Partial porque de otro modo TS exige una entrada por cada campo de
+// SmartcardProfileInput, incluidos esos dos.
+const PROFILE_FIELD_TO_COLUMN: Partial<Record<keyof SmartcardProfileInput, string>> = {
   displayName: "display_name",
   firstName: "first_name",
   lastName: "last_name",
@@ -465,12 +472,20 @@ const PROFILE_FIELD_TO_COLUMN: Record<keyof SmartcardProfileInput, string> = {
 
 /**
  * Updates the editable subset of a profile — see getSmartcardProfile's own
- * comment for exactly what's excluded (slug/status/is_noindex/theme) and
+ * comment for exactly what's excluded (slug/status/is_noindex/theme_id) and
  * why. photoUrl/logoUrl are plain URL-paste fields here, matching
  * admin.reymen.mx's own fallback path ("También se puede pegar aquí la URL
  * de una imagen ya alojada en otro lugar") — real file upload to the
  * profile-media storage bucket is separate, bigger scope, deliberately not
  * built this round.
+ *
+ * primaryColor/accentColor (2026-10-06, "tema básico") are validated here
+ * (must be #RRGGBB or empty) but saved via updateProfileThemeColors, not
+ * the generic column update above — they're two keys inside the
+ * theme_overrides jsonb, not their own columns. Deliberately not blocking
+ * on low contrast between them: that's a design choice, surfaced to the
+ * person as a warning in the dialog (see passesWcagAA), not a hard error
+ * here — same reasoning as reymen-smartcard's own admin theme form.
  */
 export async function updateSmartcardProfile(
   profileId: string,
@@ -498,6 +513,15 @@ export async function updateSmartcardProfile(
       update[column] = value || null;
     }
 
+    const primaryColor = (input.primaryColor ?? "").trim();
+    const accentColor = (input.accentColor ?? "").trim();
+    if (primaryColor && !HEX_COLOR.test(primaryColor)) {
+      throw new Error(`"${primaryColor}" no es un color válido (formato #RRGGBB).`);
+    }
+    if (accentColor && !HEX_COLOR.test(accentColor)) {
+      throw new Error(`"${accentColor}" no es un color válido (formato #RRGGBB).`);
+    }
+
     const supabase = getSmartcardAdminClient();
     if (!supabase) throw new Error("SmartCard aún no está configurado en este entorno.");
 
@@ -510,6 +534,12 @@ export async function updateSmartcardProfile(
       console.error("[smartcard/actions] Error actualizando profile:", error.message);
       throw new Error("No se pudo guardar el perfil. Intenta de nuevo.");
     }
+
+    const themeResult = await updateProfileThemeColors(profileId, membership.companyId, {
+      primaryColor: primaryColor || null,
+      accentColor: accentColor || null,
+    });
+    if (!themeResult.ok) throw new Error(themeResult.error);
 
     revalidatePath("/portal/smartcard");
     return { success: true };
