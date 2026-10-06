@@ -328,3 +328,313 @@ export async function reactivateSmartcardClient(id: string): Promise<SmartcardAd
   }
   return { ok: true, data: null };
 }
+
+/**
+ * --- Tarjetas (cards) ---
+ *
+ * Mismo criterio cross-tenant que Clientes arriba: antes solo se podía hacer
+ * desde admin.reymen.mx (apps/admin/app/cards). card_code (REY-000001, etc.)
+ * nunca se manda en el insert — lo genera un trigger de Postgres
+ * (set_card_code(), ver functions_and_triggers.sql) a partir de
+ * card_code_seq, igual que allá.
+ */
+
+export interface SmartcardCardRow {
+  id: string;
+  cardCode: string | null;
+  destinationType: string;
+  status: "ACTIVE" | "INACTIVE";
+  clientId: string;
+  clientName: string | null;
+  createdAt: string;
+}
+
+export async function listSmartcardCards(opts?: {
+  search?: string;
+  clientId?: string;
+}): Promise<SmartcardCardRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  let query = supabase
+    .from("cards")
+    .select("id, card_code, destination_type, status, client_id, clients(name), created_at")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (opts?.clientId) query = query.eq("client_id", opts.clientId);
+
+  const term = opts?.search ? sanitizeSearchTerm(opts.search) : "";
+  if (term) query = query.ilike("card_code", `%${term}%`);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[smartcard-admin] Error listando cards:", error.message);
+    return null;
+  }
+
+  return (data ?? []).map((c) => ({
+    id: c.id as string,
+    cardCode: c.card_code as string | null,
+    destinationType: c.destination_type as string,
+    status: c.status as "ACTIVE" | "INACTIVE",
+    clientId: c.client_id as string,
+    clientName: (c.clients as unknown as { name: string } | null)?.name ?? null,
+    createdAt: c.created_at as string,
+  }));
+}
+
+export interface SmartcardCardDetail {
+  id: string;
+  cardCode: string | null;
+  destinationType: string;
+  profileId: string | null;
+  destinationUrl: string | null;
+  notes: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  clientId: string;
+  clientName: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+}
+
+export async function getSmartcardCard(id: string): Promise<SmartcardCardDetail | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("cards")
+    .select(
+      "id, card_code, destination_type, profile_id, destination_url, notes, status, client_id, clients(name), deleted_at, created_at"
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[smartcard-admin] Error buscando card:", error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  return {
+    id: data.id as string,
+    cardCode: data.card_code as string | null,
+    destinationType: data.destination_type as string,
+    profileId: data.profile_id as string | null,
+    destinationUrl: data.destination_url as string | null,
+    notes: data.notes as string | null,
+    status: data.status as "ACTIVE" | "INACTIVE",
+    clientId: data.client_id as string,
+    clientName: (data.clients as unknown as { name: string } | null)?.name ?? null,
+    deletedAt: data.deleted_at as string | null,
+    createdAt: data.created_at as string,
+  };
+}
+
+export interface SmartcardClientOption {
+  id: string;
+  name: string;
+}
+
+/** Catálogo liviano de clientes para el selector "Cliente" del formulario de
+ * tarjeta — a diferencia de listSmartcardClients, no trae company/email/etc. */
+export async function listSmartcardClientOptions(): Promise<SmartcardClientOption[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("clients")
+    .select("id, name")
+    .is("deleted_at", null)
+    .order("name", { ascending: true });
+
+  if (error) {
+    console.error("[smartcard-admin] Error listando clientes (options):", error.message);
+    return null;
+  }
+  return (data ?? []).map((c) => ({ id: c.id as string, name: c.name as string }));
+}
+
+export interface SmartcardProfileOption {
+  id: string;
+  displayName: string;
+  slug: string;
+  clientName: string | null;
+}
+
+/** Catálogo de perfiles para el selector que aparece solo cuando el tipo de
+ * destino elegido es PROFILE (requires_profile) — mismo query que
+ * admin.reymen.mx's apps/admin/app/cards/new/page.tsx. */
+export async function listSmartcardProfileOptions(): Promise<SmartcardProfileOption[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, display_name, slug, clients(name)")
+    .is("deleted_at", null)
+    .order("display_name", { ascending: true });
+
+  if (error) {
+    console.error("[smartcard-admin] Error listando perfiles (options):", error.message);
+    return null;
+  }
+  return (data ?? []).map((p) => ({
+    id: p.id as string,
+    displayName: p.display_name as string,
+    slug: p.slug as string,
+    clientName: (p.clients as unknown as { name: string } | null)?.name ?? null,
+  }));
+}
+
+export interface SmartcardCardInput {
+  clientId: string;
+  destinationType: string;
+  profileId: string | null;
+  destinationUrl: string | null;
+  notes: string | null;
+  status: "ACTIVE" | "INACTIVE";
+}
+
+/**
+ * Misma regla que `validate_card_destination()` aplica en SQL (trigger,
+ * Fase 2) y que `CardDestinationFields`/`updateSmartcardCardDestination` ya
+ * reflejan en UI/portal: un tipo de destino PROFILE exige profile_id (nunca
+ * destination_url), uno con requires_url exige una URL http(s) (nunca
+ * profile_id). Validar aquí también da un mensaje legible de inmediato en
+ * vez de depender solo del texto crudo que devolvería el trigger.
+ */
+async function validateCardDestination(
+  supabase: ReturnType<typeof getSmartcardAdminClient>,
+  destinationType: string,
+  profileId: string | null,
+  destinationUrl: string | null
+): Promise<{ ok: true; profileId: string | null; destinationUrl: string | null } | { ok: false; error: string }> {
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const { data: type, error } = await supabase
+    .from("destination_types")
+    .select("code, requires_profile, requires_url")
+    .eq("code", destinationType)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[smartcard-admin] Error buscando destination_type:", error.message);
+    return { ok: false, error: "No se pudo validar el tipo de destino. Intenta de nuevo." };
+  }
+  if (!type) return { ok: false, error: "Ese tipo de destino no es válido." };
+
+  if (type.requires_profile) {
+    if (!profileId) return { ok: false, error: "Ese tipo de destino necesita que elijas un perfil digital." };
+    return { ok: true, profileId, destinationUrl: null };
+  }
+
+  if (type.requires_url) {
+    const url = (destinationUrl ?? "").trim();
+    if (!url) return { ok: false, error: "Ese tipo de destino necesita una URL de destino." };
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: "La URL de destino debe empezar con http:// o https://" };
+    return { ok: true, profileId: null, destinationUrl: url };
+  }
+
+  return { ok: true, profileId: null, destinationUrl: null };
+}
+
+export async function createSmartcardCard(input: SmartcardCardInput): Promise<SmartcardAdminResult> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  if (!input.clientId) return { ok: false, error: "El cliente es obligatorio." };
+
+  const validated = await validateCardDestination(supabase, input.destinationType, input.profileId, input.destinationUrl);
+  if (!validated.ok) return validated;
+
+  const { data, error } = await supabase
+    .from("cards")
+    .insert({
+      client_id: input.clientId,
+      destination_type: input.destinationType,
+      profile_id: validated.profileId,
+      destination_url: validated.destinationUrl,
+      notes: input.notes?.trim() || null,
+      status: input.status,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    console.error("[smartcard-admin] Error creando card:", error?.message);
+    return { ok: false, error: "No se pudo guardar la tarjeta. Intenta de nuevo." };
+  }
+  return { ok: true, data: { id: data.id as string } };
+}
+
+export async function updateSmartcardCard(
+  id: string,
+  input: SmartcardCardInput
+): Promise<SmartcardAdminResult<{ destinationChanged: boolean }>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  if (!input.clientId) return { ok: false, error: "El cliente es obligatorio." };
+
+  const validated = await validateCardDestination(supabase, input.destinationType, input.profileId, input.destinationUrl);
+  if (!validated.ok) return validated;
+
+  const { data: before } = await supabase
+    .from("cards")
+    .select("destination_type, profile_id, destination_url")
+    .eq("id", id)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("cards")
+    .update({
+      client_id: input.clientId,
+      destination_type: input.destinationType,
+      profile_id: validated.profileId,
+      destination_url: validated.destinationUrl,
+      notes: input.notes?.trim() || null,
+      status: input.status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) {
+    console.error("[smartcard-admin] Error actualizando card:", error.message);
+    return { ok: false, error: "No se pudo guardar la tarjeta. Intenta de nuevo." };
+  }
+
+  // Mismo criterio que admin.reymen.mx's apps/admin/app/cards/[id]/actions.ts:
+  // "cambiar el destino de una tarjeta sin tocar la tarjeta física" es el
+  // mecanismo central del producto, así que ese cambio en particular se
+  // distingue en el audit log (card.destination_changed) de un card.updated
+  // genérico (p.ej. solo notas o estado).
+  const destinationChanged =
+    !!before &&
+    (before.destination_type !== input.destinationType ||
+      before.profile_id !== validated.profileId ||
+      before.destination_url !== validated.destinationUrl);
+
+  return { ok: true, data: { destinationChanged } };
+}
+
+export async function softDeleteSmartcardCard(id: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("cards").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+  if (error) {
+    console.error("[smartcard-admin] Error dando de baja card:", error.message);
+    return { ok: false, error: "No se pudo dar de baja la tarjeta. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function reactivateSmartcardCard(id: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("cards").update({ deleted_at: null }).eq("id", id);
+  if (error) {
+    console.error("[smartcard-admin] Error reactivando card:", error.message);
+    return { ok: false, error: "No se pudo reactivar la tarjeta. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
