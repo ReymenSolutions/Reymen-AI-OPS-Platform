@@ -42,3 +42,9 @@ next-env.d.ts
 
 # Respaldos de la base que genera deploy/update.sh antes de migrar
 /backups/
+
+# secretos locales de preview/deploy (no deben subirse a git)
+.env.preview
+.env.preview.bak
+.pg_password_preview.txt
+*.dump
