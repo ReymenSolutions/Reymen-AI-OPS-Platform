@@ -23,6 +23,7 @@ import { SmartcardProfileDialog } from "@/components/portal/SmartcardProfileDial
 import {
   inviteSmartcardTeamMember,
   updateSmartcardCardDestination,
+  createSmartcardCardProfile,
   getSmartcardCardQrCode,
 } from "@/actions/portal/smartcard";
 import {
@@ -175,6 +176,28 @@ export function SmartcardPanel({
   function handleSaveCard() {
     if (!editingCard) return;
     startCardEditTransition(async () => {
+      // Switching a card TO "Perfil digital" is a different action than
+      // every other destination (it creates a profiles row, not just a
+      // column update) — see createSmartcardCardProfile's own comment.
+      // editingCard is never already a profile card here: the row's own
+      // "Editar perfil" button opens SmartcardProfileDialog instead of this
+      // dialog for those, so this branch only ever runs on a fresh switch.
+      if (editType === "PROFILE") {
+        const result = await createSmartcardCardProfile(editingCard.cardId);
+        if (!result.success) {
+          toast.error(translateMessage(result.error));
+          return;
+        }
+        toast.success(
+          lang === "es"
+            ? "Perfil digital creado. Complétalo con la info del negocio."
+            : "Digital profile created. Fill it in with the business info."
+        );
+        setEditingCard(null);
+        setEditingProfileId(result.profileId);
+        return;
+      }
+
       const result = await updateSmartcardCardDestination(editingCard.cardId, editType, editUrl);
       if (!result.success) {
         toast.error(translateMessage(result.error));
@@ -616,12 +639,20 @@ export function SmartcardPanel({
                   <SelectValue placeholder={lang === "es" ? "Selecciona un destino" : "Select a destination"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {destinationTypes.map((d) => (
-                    <SelectItem key={d.code} value={d.code} disabled={d.requiresProfile}>
-                      {d.label}
-                      {d.requiresProfile ? (lang === "es" ? " (próximamente)" : " (coming soon)") : ""}
-                    </SelectItem>
-                  ))}
+                  {destinationTypes.map((d) => {
+                    // "Perfil digital" (PROFILE) is the one requires_profile
+                    // type this dialog actually supports (it creates the
+                    // profile on save, see handleSaveCard) — any OTHER
+                    // hypothetical requires_profile type stays disabled,
+                    // same as before.
+                    const disabled = d.requiresProfile && d.code !== "PROFILE";
+                    return (
+                      <SelectItem key={d.code} value={d.code} disabled={disabled}>
+                        {d.label}
+                        {disabled ? (lang === "es" ? " (próximamente)" : " (coming soon)") : ""}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -638,6 +669,14 @@ export function SmartcardPanel({
                 />
               </div>
             )}
+
+            {editSelectedTypeInfo?.code === "PROFILE" && (
+              <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                {lang === "es"
+                  ? "Se crea un perfil digital nuevo para este cliente. Después de guardar se abre el editor para completarlo (foto, bio, redes, enlaces)."
+                  : "This creates a new digital profile for this client. After saving, the editor opens so you can fill it in (photo, bio, socials, links)."}
+              </p>
+            )}
           </div>
 
           <DialogFooter>
@@ -646,7 +685,13 @@ export function SmartcardPanel({
             </Button>
             <Button onClick={handleSaveCard} disabled={isPendingCardEdit || !editType}>
               {isPendingCardEdit && <Loader2 className="h-4 w-4 animate-spin" />}
-              {lang === "es" ? "Guardar" : "Save"}
+              {editType === "PROFILE"
+                ? lang === "es"
+                  ? "Activar perfil digital"
+                  : "Activate digital profile"
+                : lang === "es"
+                  ? "Guardar"
+                  : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

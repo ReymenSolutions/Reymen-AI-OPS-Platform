@@ -240,12 +240,20 @@ export type UpdateCardDestinationResult = { success: true } | { success: false; 
  * Self-service card editing (2026-09-29): lets a company's own owner/admin
  * change where a card's QR points (destination_type + destination_url)
  * without asking Reymen to do it. Confirmed against real data (2026-09-29,
- * Villa Gardenia's 3 test cards) that every card in use today is a plain
+ * Villa Gardenia's 3 test cards) that every card in use then was a plain
  * URL redirect (WHATSAPP/GOOGLE_REVIEWS/CUSTOM_URL/etc, destination_types
- * .requires_url) — none use PROFILE (requires_profile, the richer
- * admin_profiles/profile_links page) — so that type is deliberately
- * rejected here rather than half-supported; editing it is separate, bigger
- * scope for if/when a card actually needs it.
+ * .requires_url) — none used PROFILE (requires_profile, the richer
+ * admin_profiles/profile_links page) — so that type was deliberately
+ * rejected here rather than half-supported.
+ *
+ * requires_profile is STILL rejected here specifically (2026-10-07): this
+ * function only ever flips destination_type/destination_url on an existing
+ * card, it has no notion of attaching a profile. Switching a card INTO
+ * PROFILE now goes through createSmartcardCardProfile below instead, which
+ * creates the profile row and links it in one step; this function stays the
+ * path for every plain redirect-only type, including switching a card OUT
+ * of PROFILE back to one of those (its own profile row is just left
+ * orphaned — unusual enough to not be worth handling specially yet).
  *
  * cardId is client input and this runs on the unscoped service-role client
  * (see smartcard-supabase.ts's own warning: no RLS net here), so the
@@ -315,7 +323,7 @@ export async function updateSmartcardCardDestination(
     if (!type) throw new UserError("Ese tipo de destino no es válido.");
     if (type.requires_profile) {
       throw new UserError(
-        "Ese tipo de destino (perfil digital) todavía no se puede editar desde aquí. Contacta a Reymen."
+        "Para activar un perfil digital en esta tarjeta, usa el botón \"Activar perfil digital\" en vez de este formulario."
       );
     }
 
@@ -341,6 +349,153 @@ export async function updateSmartcardCardDestination(
       console.error("[smartcard/actions] Error actualizando card:", updateError.message);
       throw new UserError("No se pudo guardar el cambio. Intenta de nuevo.");
     }
+  }
+}
+
+// Turns a client/company name into a Postgres-safe slug base — lowercase,
+// accents stripped, anything that isn't a-z0-9 collapsed to a single "-",
+// no leading/trailing "-". Matches the format the DB's own check constraint
+// requires (see describeProfileSaveError in smartcard-admin.ts); the DB
+// still has the final say (format + reserved-word trigger + uniqueness),
+// this just keeps the first attempt from failing on the obvious cases.
+function slugify(input: string): string {
+  const base = input
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || "perfil";
+}
+
+export type CreateCardProfileResult = { success: true; profileId: string } | { success: false; error: string };
+
+/**
+ * Self-service "Perfil digital" (2026-10-07, user request) — until now,
+ * switching a card to PROFILE from this portal was flatly rejected (see
+ * updateSmartcardCardDestination's own comment: no company had one in use
+ * at the time, so it was deliberately left out rather than half-built).
+ * This is the missing piece: create a blank profiles row for the card's own
+ * client, point the card at it, and hand back the new profileId so the
+ * caller can open SmartcardProfileDialog immediately — the same dialog an
+ * existing profile-card already uses to edit itself, reused as-is here.
+ *
+ * Slug collisions: the DB enforces format + reserved words (a trigger) and
+ * uniqueness (a unique index on active profiles) — this only needs to
+ * react to those, not pre-validate them. Retries a couple of times with a
+ * randomized suffix on a unique_violation/reserved-word rejection before
+ * giving up; any other error (including a true network/db failure) is not
+ * retried.
+ */
+export async function createSmartcardCardProfile(cardId: string): Promise<CreateCardProfileResult> {
+  try {
+    const membership = await requireCardManagementMembership();
+
+    const supabase = getSmartcardAdminClient();
+    if (!supabase) throw new UserError("SmartCard aún no está configurado en este entorno.");
+
+    const { data: card, error: cardError } = await supabase
+      .from("cards")
+      .select("id, destination_type, profile_id, client_id, clients!inner(company_id, name, business_name)")
+      .eq("id", cardId)
+      .is("deleted_at", null)
+      .maybeSingle<{
+        id: string;
+        destination_type: string;
+        profile_id: string | null;
+        client_id: string;
+        clients: { company_id: string; name: string; business_name: string | null };
+      }>();
+
+    if (cardError) {
+      console.error("[smartcard/actions] Error buscando card para crear perfil:", cardError.message);
+      throw new UserError("No se pudo cargar la tarjeta. Intenta de nuevo.");
+    }
+    if (!card || card.clients.company_id !== membership.companyId) {
+      throw new UserError("Esa tarjeta no pertenece a tu empresa.");
+    }
+    if (card.destination_type === "PROFILE" && card.profile_id) {
+      throw new UserError("Esta tarjeta ya tiene un perfil digital asignado.");
+    }
+
+    const { data: type, error: typeError } = await supabase
+      .from("destination_types")
+      .select("code, requires_profile")
+      .eq("code", "PROFILE")
+      .eq("is_active", true)
+      .maybeSingle();
+    if (typeError) {
+      console.error("[smartcard/actions] Error validando destination_type PROFILE:", typeError.message);
+      throw new UserError("No se pudo validar el tipo de destino. Intenta de nuevo.");
+    }
+    if (!type || !type.requires_profile) {
+      throw new UserError("El destino de perfil digital no está disponible en este momento.");
+    }
+
+    const baseName = (card.clients.business_name || card.clients.name || "Perfil").trim();
+    const baseSlug = slugify(baseName);
+
+    let profileId: string | null = null;
+    let lastError: { message: string; code?: string } | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const suffix =
+        attempt === 0 ? cardId.replace(/-/g, "").slice(0, 8) : Math.random().toString(36).slice(2, 8);
+      const candidateSlug = `${baseSlug}-${suffix}`.slice(0, 60).replace(/-+$/g, "");
+
+      const { data: created, error } = await supabase
+        .from("profiles")
+        .insert({
+          client_id: card.client_id,
+          slug: candidateSlug,
+          display_name: baseName,
+          status: "ACTIVE",
+          is_noindex: false,
+        })
+        .select("id")
+        .single();
+
+      if (created) {
+        profileId = created.id as string;
+        break;
+      }
+      lastError = error;
+      // 23505 = unique_violation (slug ya usado), 23514/P0001 = formato o
+      // palabra reservada — en cualquier otro código no vale la pena
+      // reintentar con otro slug, el problema no es el slug.
+      if (error?.code !== "23505" && error?.code !== "23514" && error?.code !== "P0001") break;
+    }
+
+    if (!profileId) {
+      console.error("[smartcard/actions] Error creando profile para card:", lastError?.message);
+      throw new UserError("No se pudo crear el perfil digital. Intenta de nuevo.");
+    }
+
+    const { error: updateError } = await supabase
+      .from("cards")
+      .update({
+        destination_type: "PROFILE",
+        destination_url: null,
+        profile_id: profileId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", cardId);
+
+    if (updateError) {
+      console.error("[smartcard/actions] Error vinculando profile recién creado a card:", updateError.message);
+      // Best-effort: no dejar un profile huérfano activo si no se pudo
+      // enlazar — se da de baja igual que softDeleteSmartcardAdminProfile.
+      await supabase.from("profiles").update({ deleted_at: new Date().toISOString() }).eq("id", profileId);
+      throw new UserError("No se pudo activar el perfil digital en la tarjeta. Intenta de nuevo.");
+    }
+
+    revalidatePath("/portal/smartcard");
+    return { success: true, profileId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo crear el perfil digital. Intenta de nuevo.";
+    if (!(err instanceof Error)) {
+      console.error("[smartcard/actions] createSmartcardCardProfile falló con un valor no-Error:", err);
+    }
+    return { success: false, error: message };
   }
 }
 
