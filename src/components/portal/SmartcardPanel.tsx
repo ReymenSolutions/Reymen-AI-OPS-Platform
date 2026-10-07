@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import Link from "next/link";
 import { Loader2, CreditCard, Users, Activity, Pencil, QrCode } from "lucide-react";
 import { toast } from "sonner";
@@ -156,6 +156,13 @@ export function SmartcardPanel({
   const [editType, setEditType] = useState("");
   const [editUrl, setEditUrl] = useState("");
   const [isPendingCardEdit, startCardEditTransition] = useTransition();
+
+  // Per-card event-type breakdown (2026-10-07, user request) — the data was
+  // already computed server-side (CardStatsEntry.byType, see
+  // getCompanyCardStats) but never surfaced here; the company-wide "Por tipo
+  // de evento" section above was the only breakdown shown. This just adds an
+  // expand/collapse toggle per row reusing that same data, no new query.
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
 
   function openEditCard(c: CardStatsEntry) {
     setEditingCard(c);
@@ -337,75 +344,128 @@ export function SmartcardPanel({
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Estado" : "Status"}</th>
                         <th className="py-2 pr-3 text-right font-medium">{lang === "es" ? "Eventos" : "Events"}</th>
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Última actividad" : "Last activity"}</th>
+                        <th className="py-2 pr-3 font-medium" />
                         {canEditCards && <th className="py-2 font-medium" />}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {cardStats.cards.map((c) => {
                         const isProfileCard = c.destinationType === "PROFILE" && !!c.profileId;
+                        const isExpanded = expandedCardId === c.cardId;
+                        const cardByTypeEntries = Object.entries(c.byType).sort((a, b) => b[1] - a[1]);
+                        const cardMaxTypeCount = cardByTypeEntries.length > 0 ? cardByTypeEntries[0][1] : 0;
                         return (
-                          <tr key={c.cardId}>
-                            <td className="py-2 pr-3 font-mono text-xs text-slate-700">{c.cardCode}</td>
-                            <td className="py-2 pr-3 text-slate-600">{c.clientName}</td>
-                            <td className="py-2 pr-3">
-                              <Badge variant="secondary" className="text-xs">
-                                {c.status}
-                              </Badge>
-                            </td>
-                            <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
-                            <td className="py-2 pr-3 text-slate-500">
-                              {c.lastActivityAt
-                                ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
-                                    year: "numeric",
-                                    month: "short",
-                                    day: "numeric",
-                                  })
-                                : lang === "es"
-                                  ? "Sin actividad"
-                                  : "No activity"}
-                            </td>
-                            {canEditCards && (
-                              <td className="py-2 text-right">
-                                <div className="flex justify-end gap-1">
-                                  {isProfileCard ? (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                      onClick={() => setEditingProfileId(c.profileId)}
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                      {lang === "es" ? "Editar perfil" : "Edit profile"}
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                      onClick={() => openEditCard(c)}
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                      {lang === "es" ? "Editar" : "Edit"}
-                                    </Button>
-                                  )}
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                    disabled={downloadingQrCardId === c.cardId}
-                                    onClick={() => handleDownloadQr(c)}
-                                  >
-                                    {downloadingQrCardId === c.cardId ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <QrCode className="h-3.5 w-3.5" />
-                                    )}
-                                    QR
-                                  </Button>
-                                </div>
+                          <Fragment key={c.cardId}>
+                            <tr>
+                              <td className="py-2 pr-3 font-mono text-xs text-slate-700">{c.cardCode}</td>
+                              <td className="py-2 pr-3 text-slate-600">{c.clientName}</td>
+                              <td className="py-2 pr-3">
+                                <Badge variant="secondary" className="text-xs">
+                                  {c.status}
+                                </Badge>
                               </td>
+                              <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
+                              <td className="py-2 pr-3 text-slate-500">
+                                {c.lastActivityAt
+                                  ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                    })
+                                  : lang === "es"
+                                    ? "Sin actividad"
+                                    : "No activity"}
+                              </td>
+                              <td className="py-2 pr-3 text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                  disabled={c.totalEvents === 0}
+                                  onClick={() => setExpandedCardId(isExpanded ? null : c.cardId)}
+                                >
+                                  {isExpanded
+                                    ? lang === "es"
+                                      ? "Ocultar"
+                                      : "Hide"
+                                    : lang === "es"
+                                      ? "Ver detalle"
+                                      : "View detail"}
+                                </Button>
+                              </td>
+                              {canEditCards && (
+                                <td className="py-2 text-right">
+                                  <div className="flex justify-end gap-1">
+                                    {isProfileCard ? (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                        onClick={() => setEditingProfileId(c.profileId)}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                        {lang === "es" ? "Editar perfil" : "Edit profile"}
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                        onClick={() => openEditCard(c)}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                        {lang === "es" ? "Editar" : "Edit"}
+                                      </Button>
+                                    )}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                      disabled={downloadingQrCardId === c.cardId}
+                                      onClick={() => handleDownloadQr(c)}
+                                    >
+                                      {downloadingQrCardId === c.cardId ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <QrCode className="h-3.5 w-3.5" />
+                                      )}
+                                      QR
+                                    </Button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={canEditCards ? 6 : 5} className="bg-slate-50 px-3 py-3">
+                                  {cardByTypeEntries.length === 0 ? (
+                                    <p className="text-xs text-slate-500">
+                                      {lang === "es" ? "Sin eventos para esta tarjeta." : "No events for this card."}
+                                    </p>
+                                  ) : (
+                                    <ul className="max-w-md space-y-1.5">
+                                      {cardByTypeEntries.map(([type, count]) => (
+                                        <li key={type} className="flex items-center gap-3 text-xs">
+                                          <span className="w-32 shrink-0 truncate text-slate-600" title={EVENT_TYPE_LABELS[type] ?? type}>
+                                            {EVENT_TYPE_LABELS[type] ?? type}
+                                          </span>
+                                          <span className="h-1.5 flex-1 rounded-full bg-slate-200">
+                                            <span
+                                              className="block h-1.5 rounded-full bg-blue-500"
+                                              style={{
+                                                width: `${cardMaxTypeCount > 0 ? Math.max(4, (count / cardMaxTypeCount) * 100) : 0}%`,
+                                              }}
+                                            />
+                                          </span>
+                                          <span className="w-8 shrink-0 text-right font-medium text-slate-700">{count}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </td>
+                              </tr>
                             )}
-                          </tr>
+                          </Fragment>
                         );
                       })}
                     </tbody>
