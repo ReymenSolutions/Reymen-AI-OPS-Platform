@@ -1547,3 +1547,499 @@ export async function deleteSmartcardReservedSlug(slug: string): Promise<Smartca
   }
   return { ok: true, data: null };
 }
+
+/**
+ * --- Usuarios de Reymen (Fase 4): staff de admin.reymen.mx ---
+ *
+ * admin_profiles y las cuentas de Supabase Auth que respalda no viven en
+ * este app -- son las credenciales de acceso del panel staff-only de
+ * reymen-smartcard (invite-based). getSmartcardAdminClient() ya usa la
+ * service_role key de ese proyecto, que también habilita el Auth Admin API
+ * (auth.admin.*), así que no hace falta un cliente aparte para
+ * invitar/listar/borrar cuentas -- mismo mecanismo que el propio
+ * createAdminClient() de admin.reymen.mx.
+ *
+ * Nota de alcance: el link de invitación sigue apuntando al flujo de
+ * confirmación de contraseña de admin.reymen.mx (/auth/confirm) -- ese
+ * flujo (verificar el token de Supabase Auth y dejar fijar contraseña) no
+ * se portó aquí, sería duplicar un sistema de autenticación completo y
+ * separado del login de este panel. Si admin.reymen.mx deja de operar algún
+ * día, ese paso específico hay que moverlo a otro lado antes.
+ */
+
+export type SmartcardAdminRole = "SUPERADMIN" | "ADMIN" | "VIEWER";
+
+const SMARTCARD_ADMIN_ROLES: SmartcardAdminRole[] = ["SUPERADMIN", "ADMIN", "VIEWER"];
+
+export interface SmartcardAdminUserRow {
+  id: string;
+  fullName: string;
+  role: SmartcardAdminRole;
+  isActive: boolean;
+  email: string | null;
+  createdAt: string;
+}
+
+export async function listSmartcardAdminUsers(): Promise<SmartcardAdminUserRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data: profiles, error } = await supabase
+    .from("admin_profiles")
+    .select("id, full_name, role, is_active, created_at")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("[smartcard-admin] Error listando admin_profiles:", error.message);
+    return null;
+  }
+
+  // admin_profiles no tiene columna de correo (vive en auth.users, en otro
+  // schema que PostgREST no expone) -- igual que admin.reymen.mx's propia
+  // pantalla de usuarios, se le pide el listado a Supabase Auth con el
+  // cliente de service_role y se cruza por id.
+  const emailById = new Map<string, string>();
+  try {
+    const { data: authUsers } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    for (const u of authUsers?.users ?? []) {
+      if (u.email) emailById.set(u.id, u.email);
+    }
+  } catch (e) {
+    console.error("[smartcard-admin] Error listando auth.users:", (e as Error).message);
+  }
+
+  return (profiles ?? []).map((p) => ({
+    id: p.id as string,
+    fullName: p.full_name as string,
+    role: p.role as SmartcardAdminRole,
+    isActive: p.is_active as boolean,
+    email: emailById.get(p.id as string) ?? null,
+    createdAt: p.created_at as string,
+  }));
+}
+
+export async function getSmartcardAdminUser(id: string): Promise<SmartcardAdminUserRow | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data: profile, error } = await supabase
+    .from("admin_profiles")
+    .select("id, full_name, role, is_active, created_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) {
+    console.error("[smartcard-admin] Error buscando admin_profile:", error.message);
+    return null;
+  }
+  if (!profile) return null;
+
+  let email: string | null = null;
+  try {
+    const { data: authUser } = await supabase.auth.admin.getUserById(id);
+    email = authUser?.user?.email ?? null;
+  } catch (e) {
+    console.error("[smartcard-admin] Error obteniendo correo:", (e as Error).message);
+  }
+
+  return {
+    id: profile.id as string,
+    fullName: profile.full_name as string,
+    role: profile.role as SmartcardAdminRole,
+    isActive: profile.is_active as boolean,
+    email,
+    createdAt: profile.created_at as string,
+  };
+}
+
+function describeSmartcardInviteError(error: { message: string } | null): string {
+  if (!error) return "No se pudo enviar la invitación. Intenta de nuevo.";
+  if (/already.*registered/i.test(error.message)) {
+    return "Ya existe una cuenta con ese correo. Si necesitas reinvitarla, primero bórrala desde el Supabase Studio del proyecto de SmartCard (Authentication → Users).";
+  }
+  if (/invalid/i.test(error.message) && /email/i.test(error.message)) {
+    return "Ese correo no parece válido.";
+  }
+  return "No se pudo enviar la invitación. Intenta de nuevo.";
+}
+
+export interface SmartcardAdminUserInput {
+  fullName: string;
+  email: string;
+  role: SmartcardAdminRole;
+}
+
+export async function inviteSmartcardAdminUser(input: SmartcardAdminUserInput): Promise<SmartcardAdminResult> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const fullName = input.fullName.trim();
+  const email = input.email.trim().toLowerCase();
+  if (!fullName || !email || !SMARTCARD_ADMIN_ROLES.includes(input.role)) {
+    return { ok: false, error: "Faltan campos obligatorios." };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: "Ese correo no parece válido." };
+  }
+
+  // auth.admin.inviteUserByEmail solo existe en el Auth Admin API -- requiere
+  // service_role, igual que en admin.reymen.mx (ver packages/database/src/admin.ts allá).
+  const adminUrl = process.env.SMARTCARD_ADMIN_URL?.trim().replace(/\/+$/, "") || "https://admin.reymen.mx";
+  const { data, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+    redirectTo: `${adminUrl}/auth/confirm`,
+  });
+  if (inviteError || !data?.user) {
+    return { ok: false, error: describeSmartcardInviteError(inviteError) };
+  }
+
+  const { error: profileError } = await supabase
+    .from("admin_profiles")
+    .insert({ id: data.user.id, full_name: fullName, role: input.role });
+  if (profileError) {
+    console.error("[smartcard-admin] admin_profiles insert falló, revirtiendo auth.users:", profileError.message);
+    const { error: rollbackError } = await supabase.auth.admin.deleteUser(data.user.id);
+    if (rollbackError) {
+      console.error("[smartcard-admin] No se pudo revertir el usuario huérfano:", rollbackError.message);
+    }
+    return { ok: false, error: "No se pudo guardar el perfil del nuevo administrador. Intenta de nuevo." };
+  }
+
+  return { ok: true, data: { id: data.user.id } };
+}
+
+export async function updateSmartcardAdminUser(
+  id: string,
+  input: { fullName: string; role: SmartcardAdminRole }
+): Promise<SmartcardAdminResult<{ roleChanged: boolean }>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const fullName = input.fullName.trim();
+  if (!fullName || !SMARTCARD_ADMIN_ROLES.includes(input.role)) {
+    return { ok: false, error: "Faltan campos obligatorios." };
+  }
+
+  const { data: before } = await supabase.from("admin_profiles").select("role").eq("id", id).maybeSingle();
+  if (!before) return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+
+  const { error } = await supabase
+    .from("admin_profiles")
+    .update({ full_name: fullName, role: input.role })
+    .eq("id", id);
+  if (error) {
+    console.error("[smartcard-admin] Error actualizando admin_profile:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+
+  return { ok: true, data: { roleChanged: before.role !== input.role } };
+}
+
+export async function deactivateSmartcardAdminUser(id: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("admin_profiles").update({ is_active: false }).eq("id", id);
+  if (error) {
+    console.error("[smartcard-admin] Error desactivando admin_profile:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function reactivateSmartcardAdminUser(id: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("admin_profiles").update({ is_active: true }).eq("id", id);
+  if (error) {
+    console.error("[smartcard-admin] Error reactivando admin_profile:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+/**
+ * --- Analítica (Fase 4) ---
+ *
+ * Puramente de lectura, portado de admin.reymen.mx's /analytics: `events` ya
+ * existe y se llena vía log_event() (SECURITY DEFINER) desde las rutas
+ * públicas /n/{code} y /q/{code} de reymen-smartcard. is_bot se excluye
+ * siempre de las métricas, y no se toca la decisión de privacidad de esa
+ * tabla (sin columna de IP).
+ */
+
+const SMARTCARD_EVENT_TYPE_LABELS: Record<string, string> = {
+  profile_view: "Vista de perfil",
+  nfc_scan: "Escaneo NFC",
+  qr_scan: "Escaneo QR",
+  whatsapp_click: "Clic en WhatsApp",
+  call_click: "Clic en llamar",
+  email_click: "Clic en correo",
+  instagram_click: "Clic en Instagram",
+  facebook_click: "Clic en Facebook",
+  linkedin_click: "Clic en LinkedIn",
+  maps_click: "Clic en mapa",
+  website_click: "Clic en sitio web",
+  save_contact: "Guardar contacto",
+  custom_link_click: "Clic en enlace",
+  google_reviews_redirect: "Redirección a Google Reviews",
+  external_redirect: "Redirección externa",
+  client_error: "Error técnico (cliente)",
+};
+
+export function smartcardEventTypeLabel(type: string): string {
+  return SMARTCARD_EVENT_TYPE_LABELS[type] ?? type;
+}
+
+const SMARTCARD_SOURCE_LABELS: Record<string, string> = { NFC: "NFC", QR: "QR", DIRECT: "Directo" };
+
+export function smartcardSourceLabel(source: string): string {
+  return SMARTCARD_SOURCE_LABELS[source] ?? source;
+}
+
+export interface SmartcardAnalyticsFilters {
+  clientId?: string;
+  cardId?: string;
+  days?: string;
+}
+
+export interface SmartcardAnalyticsData {
+  clients: { id: string; name: string }[];
+  filteredClientName: string | null;
+  filteredCardCode: string | null;
+  totalEvents: number;
+  totalScans: number;
+  nfcScans: number;
+  qrScans: number;
+  clickCount: number;
+  saveContactCount: number;
+  byType: { type: string; count: number }[];
+  bySource: { source: string; count: number }[];
+  byDevice: { device: string; count: number }[];
+  topCards: { id: string; count: number; cardCode: string | null; clientName: string | null }[];
+  topProfiles: { id: string; count: number; displayName: string | null }[];
+  recentEvents: {
+    id: string;
+    occurredAt: string;
+    eventType: string;
+    source: string;
+    deviceType: string | null;
+    cardId: string | null;
+    cardCode: string | null;
+    profileId: string | null;
+    profileDisplayName: string | null;
+  }[];
+}
+
+export async function getSmartcardAnalytics(filters: SmartcardAnalyticsFilters): Promise<SmartcardAnalyticsData | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const daysParam = filters.days ?? "30";
+  const cutoffIso = daysParam === "all" ? null : new Date(Date.now() - Number(daysParam || 30) * 86400000).toISOString();
+
+  // Igual que en admin.reymen.mx: se traen los 3 catálogos completos en vez
+  // de un embed anidado events -> cards -> clients (no hay Relationships
+  // declaradas en el tipo Database generado a mano para este proyecto).
+  const [{ data: clients }, { data: cards }, { data: profiles }] = await Promise.all([
+    supabase.from("clients").select("id, name").is("deleted_at", null).order("name"),
+    supabase.from("cards").select("id, card_code, client_id").is("deleted_at", null),
+    supabase.from("profiles").select("id, display_name, slug, client_id").is("deleted_at", null),
+  ]);
+
+  const cardMap = new Map((cards ?? []).map((c) => [c.id as string, c as { id: string; card_code: string; client_id: string | null }]));
+  const profileMap = new Map(
+    (profiles ?? []).map((p) => [p.id as string, p as { id: string; display_name: string; slug: string; client_id: string | null }])
+  );
+  const clientMap = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]));
+
+  let cardIdsForClient: string[] = [];
+  let profileIdsForClient: string[] = [];
+  if (filters.clientId) {
+    cardIdsForClient = (cards ?? []).filter((c) => c.client_id === filters.clientId).map((c) => c.id as string);
+    profileIdsForClient = (profiles ?? []).filter((p) => p.client_id === filters.clientId).map((p) => p.id as string);
+  }
+
+  let query = supabase
+    .from("events")
+    .select("id, card_id, profile_id, event_type, source, occurred_at, device_type")
+    .eq("is_bot", false)
+    .order("occurred_at", { ascending: false })
+    .limit(2000);
+
+  if (cutoffIso) query = query.gte("occurred_at", cutoffIso);
+
+  if (filters.cardId) {
+    query = query.eq("card_id", filters.cardId);
+  } else if (filters.clientId) {
+    if (cardIdsForClient.length === 0 && profileIdsForClient.length === 0) {
+      query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+    } else {
+      const orParts: string[] = [];
+      if (cardIdsForClient.length) orParts.push(`card_id.in.(${cardIdsForClient.join(",")})`);
+      if (profileIdsForClient.length) orParts.push(`profile_id.in.(${profileIdsForClient.join(",")})`);
+      query = query.or(orParts.join(","));
+    }
+  }
+
+  const { data: events, error } = await query;
+  if (error) {
+    console.error("[smartcard-admin] Error leyendo events:", error.message);
+    return null;
+  }
+
+  const rows = events ?? [];
+  const scanRows = rows.filter((e) => e.event_type === "nfc_scan" || e.event_type === "qr_scan");
+
+  const byType = new Map<string, number>();
+  const bySource = new Map<string, number>();
+  const byDevice = new Map<string, number>();
+  const byCard = new Map<string, number>();
+  const byProfileView = new Map<string, number>();
+
+  for (const e of rows) {
+    byType.set(e.event_type, (byType.get(e.event_type) ?? 0) + 1);
+    bySource.set(e.source, (bySource.get(e.source) ?? 0) + 1);
+    const device = e.device_type ?? "unknown";
+    byDevice.set(device, (byDevice.get(device) ?? 0) + 1);
+    if (e.card_id) byCard.set(e.card_id, (byCard.get(e.card_id) ?? 0) + 1);
+    if (e.event_type === "profile_view" && e.profile_id) {
+      byProfileView.set(e.profile_id, (byProfileView.get(e.profile_id) ?? 0) + 1);
+    }
+  }
+
+  const topCards = [...byCard.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([id, count]) => {
+      const card = cardMap.get(id);
+      return { id, count, cardCode: card?.card_code ?? null, clientName: card?.client_id ? (clientMap.get(card.client_id) ?? null) : null };
+    });
+
+  const topProfiles = [...byProfileView.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([id, count]) => ({ id, count, displayName: profileMap.get(id)?.display_name ?? null }));
+
+  const recentEvents = rows.slice(0, 25).map((e) => {
+    const card = e.card_id ? cardMap.get(e.card_id) : undefined;
+    const profile = e.profile_id ? profileMap.get(e.profile_id) : undefined;
+    return {
+      id: e.id as string,
+      occurredAt: e.occurred_at as string,
+      eventType: e.event_type as string,
+      source: e.source as string,
+      deviceType: (e.device_type as string | null) ?? null,
+      cardId: (e.card_id as string | null) ?? null,
+      cardCode: card?.card_code ?? null,
+      profileId: (e.profile_id as string | null) ?? null,
+      profileDisplayName: profile?.display_name ?? null,
+    };
+  });
+
+  return {
+    clients: (clients ?? []).map((c) => ({ id: c.id as string, name: c.name as string })),
+    filteredClientName: filters.clientId ? (clientMap.get(filters.clientId) ?? null) : null,
+    filteredCardCode: filters.cardId ? (cardMap.get(filters.cardId)?.card_code ?? null) : null,
+    totalEvents: rows.length,
+    totalScans: scanRows.length,
+    nfcScans: scanRows.filter((e) => e.source === "NFC").length,
+    qrScans: scanRows.filter((e) => e.source === "QR").length,
+    clickCount: rows.filter((e) => !["nfc_scan", "qr_scan", "profile_view"].includes(e.event_type)).length,
+    saveContactCount: rows.filter((e) => e.event_type === "save_contact").length,
+    byType: [...byType.entries()].sort((a, b) => b[1] - a[1]).map(([type, count]) => ({ type, count })),
+    bySource: [...bySource.entries()].map(([source, count]) => ({ source, count })),
+    byDevice: [...byDevice.entries()].map(([device, count]) => ({ device, count })),
+    topCards,
+    topProfiles,
+    recentEvents,
+  };
+}
+
+/**
+ * --- Feedback (Fase 4) ---
+ *
+ * Portado de admin.reymen.mx's /feedback: reportes de problemas, desde el
+ * perfil público de un cliente o desde un panel admin. Solo lectura más un
+ * formulario para reportar -- sin flujo de triage (marcar resuelto/asignar)
+ * todavía, igual que en el origen.
+ *
+ * submit_feedback() (SECURITY DEFINER) resuelve admin_id a partir de
+ * current_admin_role()/auth.uid() -- eso requiere una sesión de Supabase
+ * Auth del proyecto de SmartCard, que este panel no tiene (se llama con la
+ * service_role key, sin sesión de usuario). Por eso un reporte enviado
+ * desde aquí queda con admin_id en null, igual que uno de source
+ * 'public_profile' -- la Server Action que envuelve esto registra quién lo
+ * mandó en la bitácora de auditoría de este mismo panel en su lugar.
+ */
+
+export interface SmartcardFeedbackRow {
+  id: string;
+  source: "public_profile" | "admin_panel";
+  message: string;
+  contactEmail: string | null;
+  profileId: string | null;
+  profileDisplayName: string | null;
+  profileSlug: string | null;
+  adminName: string | null;
+  pageUrl: string | null;
+  createdAt: string;
+}
+
+export async function listSmartcardFeedback(): Promise<SmartcardFeedbackRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data: reports, error } = await supabase
+    .from("feedback")
+    .select("id, source, message, contact_email, profile_id, admin_id, page_url, created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    console.error("[smartcard-admin] Error listando feedback:", error.message);
+    return null;
+  }
+
+  const rows = reports ?? [];
+  const profileIds = [...new Set(rows.map((r) => r.profile_id).filter(Boolean))] as string[];
+  const adminIds = [...new Set(rows.map((r) => r.admin_id).filter(Boolean))] as string[];
+
+  const [{ data: profiles }, { data: admins }] = await Promise.all([
+    profileIds.length
+      ? supabase.from("profiles").select("id, display_name, slug").in("id", profileIds)
+      : Promise.resolve({ data: [] as { id: string; display_name: string; slug: string }[] }),
+    adminIds.length
+      ? supabase.from("admin_profiles").select("id, full_name").in("id", adminIds)
+      : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
+  ]);
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const adminMap = new Map((admins ?? []).map((a) => [a.id, a.full_name]));
+
+  return rows.map((r) => {
+    const profile = r.profile_id ? profileMap.get(r.profile_id) : null;
+    return {
+      id: r.id as string,
+      source: r.source as "public_profile" | "admin_panel",
+      message: r.message as string,
+      contactEmail: (r.contact_email as string | null) ?? null,
+      profileId: (r.profile_id as string | null) ?? null,
+      profileDisplayName: profile?.display_name ?? null,
+      profileSlug: profile?.slug ?? null,
+      adminName: r.admin_id ? (adminMap.get(r.admin_id) ?? null) : null,
+      pageUrl: (r.page_url as string | null) ?? null,
+      createdAt: r.created_at as string,
+    };
+  });
+}
+
+export async function submitSmartcardFeedback(message: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const trimmed = message.trim();
+  if (!trimmed) return { ok: false, error: "Escribe qué encontraste antes de enviar." };
+
+  const { error } = await supabase.rpc("submit_feedback", { p_source: "admin_panel", p_message: trimmed });
+  if (error) {
+    console.error("[smartcard-admin] submit_feedback falló:", error.message);
+    return { ok: false, error: "No se pudo enviar el reporte. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
