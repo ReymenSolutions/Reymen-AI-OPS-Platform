@@ -1,5 +1,6 @@
 import { getSmartcardAdminClient } from "./smartcard-supabase";
 import { isValidLinkIcon } from "./smartcard-link-icons";
+import { prisma } from "./prisma";
 
 /**
  * Acceso de SUPERADMIN/ADMIN a las entidades de SmartCard (clients, cards,
@@ -1077,4 +1078,223 @@ export async function moveSmartcardAdminProfileLink(
     return { ok: false, error: "No se pudo reordenar. Intenta de nuevo." };
   }
   return { ok: true, data: null };
+}
+
+/**
+ * --- Empresas (companies) ---
+ *
+ * Fase 2: portado de admin.reymen.mx's apps/admin/app/companies — por
+ * diseño de ESE panel (no una limitación nuestra) dar de alta una company
+ * completa (company + primer usuario + módulos) sigue siendo manual por SQL
+ * Editor (ver el comentario de companies/page.tsx: "el alta completa...
+ * sigue pendiente"), así que aquí tampoco hay un companies/new — solo
+ * listar/editar las que ya existen.
+ *
+ * El vínculo SSO con Reymen (companies.external_org_id) se muestra aquí
+ * pero de SOLO LECTURA — cambiarlo vive a propósito en un solo lugar:
+ * smartcard-link.ts/SmartcardLinkPanel.tsx, desde el detalle de la
+ * Organization en /admin/clients/[id]. admin.reymen.mx's propia pantalla
+ * (setExternalOrgIdAction) edita ese campo con una caja de texto libre para
+ * el organizationId — correcto allá porque es el único panel con el que
+ * cuenta, pero redundante y más riesgoso aquí, donde ya existe un flujo con
+ * validación (no robarle la company a otro cliente, revertir si falla) en
+ * vez de pegar un cuid a mano.
+ */
+
+export interface SmartcardCompanyAdminRow {
+  id: string;
+  name: string;
+  slug: string;
+  industry: string | null;
+  status: string;
+  planName: string | null;
+  linkedOrgId: string | null;
+  linkedOrgName: string | null;
+}
+
+async function attachOrgNames(
+  companies: { id: string; external_org_id: string | null }[]
+): Promise<Map<string, string | null>> {
+  const orgIds = [...new Set(companies.map((c) => c.external_org_id).filter((v): v is string => !!v))];
+  if (!orgIds.length) return new Map();
+  const orgs = await prisma.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } });
+  return new Map(orgs.map((o: { id: string; name: string }) => [o.id, o.name]));
+}
+
+export async function listSmartcardCompaniesAdmin(search?: string): Promise<SmartcardCompanyAdminRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  let query = supabase
+    .from("companies")
+    .select("id, name, slug, industry, status, current_plan_id, external_org_id")
+    .order("created_at", { ascending: false });
+
+  const term = search ? sanitizeSearchTerm(search) : "";
+  if (term) query = query.or(`name.ilike.%${term}%,slug.ilike.%${term}%`);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[smartcard-admin] Error listando companies:", error.message);
+    return null;
+  }
+  if (!data?.length) return [];
+
+  const planIds = [...new Set(data.map((c) => c.current_plan_id as string | null).filter((v): v is string => !!v))];
+  const planNameById = new Map<string, string>();
+  if (planIds.length) {
+    const { data: plans } = await supabase.from("plans").select("id, name").in("id", planIds);
+    for (const p of plans ?? []) planNameById.set(p.id as string, p.name as string);
+  }
+
+  const orgNameByOrgId = await attachOrgNames(
+    data.map((c) => ({ id: c.id as string, external_org_id: c.external_org_id as string | null }))
+  );
+
+  return data.map((c) => ({
+    id: c.id as string,
+    name: c.name as string,
+    slug: c.slug as string,
+    industry: c.industry as string | null,
+    status: c.status as string,
+    planName: c.current_plan_id ? (planNameById.get(c.current_plan_id as string) ?? null) : null,
+    linkedOrgId: c.external_org_id as string | null,
+    linkedOrgName: c.external_org_id ? (orgNameByOrgId.get(c.external_org_id as string) ?? null) : null,
+  }));
+}
+
+export interface SmartcardCompanyAdminDetail {
+  id: string;
+  name: string;
+  slug: string;
+  industry: string | null;
+  status: string;
+  billingEmail: string | null;
+  timezone: string;
+  planName: string | null;
+  linkedOrgId: string | null;
+  linkedOrgName: string | null;
+  createdAt: string;
+}
+
+export async function getSmartcardCompanyAdminDetail(id: string): Promise<SmartcardCompanyAdminDetail | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("companies")
+    .select("id, name, slug, industry, status, billing_email, timezone, current_plan_id, external_org_id, created_at")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[smartcard-admin] Error buscando company:", error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  const [{ data: plan }, orgNameByOrgId] = await Promise.all([
+    data.current_plan_id
+      ? supabase.from("plans").select("name").eq("id", data.current_plan_id as string).maybeSingle()
+      : Promise.resolve({ data: null as { name: string } | null }),
+    attachOrgNames([{ id: data.id as string, external_org_id: data.external_org_id as string | null }]),
+  ]);
+
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    slug: data.slug as string,
+    industry: data.industry as string | null,
+    status: data.status as string,
+    billingEmail: data.billing_email as string | null,
+    timezone: data.timezone as string,
+    planName: plan?.name ?? null,
+    linkedOrgId: data.external_org_id as string | null,
+    linkedOrgName: data.external_org_id ? (orgNameByOrgId.get(data.external_org_id as string) ?? null) : null,
+    createdAt: data.created_at as string,
+  };
+}
+
+export interface SmartcardCompanyAdminInput {
+  name: string;
+  slug: string;
+  industry: string | null;
+  billingEmail: string | null;
+  timezone: string;
+  status: string;
+}
+
+export async function updateSmartcardCompanyAdmin(
+  id: string,
+  input: SmartcardCompanyAdminInput
+): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const name = input.name.trim();
+  const slug = input.slug.trim();
+  if (!name) return { ok: false, error: "El nombre es obligatorio." };
+  if (!slug) return { ok: false, error: "El slug es obligatorio." };
+
+  // external_org_id deliberadamente no se toca aquí — ver el comentario de
+  // esta sección y setExternalOrgIdAction en admin.reymen.mx.
+  const { error } = await supabase
+    .from("companies")
+    .update({
+      name,
+      slug,
+      industry: input.industry?.trim() || null,
+      billing_email: input.billingEmail?.trim() || null,
+      timezone: input.timezone.trim() || "America/Mexico_City",
+      status: input.status,
+    })
+    .eq("id", id);
+
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: "Ese slug ya lo usa otra empresa." };
+    console.error("[smartcard-admin] Error actualizando company:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export interface SmartcardCompanyUserRow {
+  userId: string;
+  email: string | null;
+  roleName: string | null;
+  roleCode: string | null;
+  status: string;
+}
+
+/** Roster de company_users con el correo resuelto vía Supabase Auth — mismo
+ * mecanismo que getSmartcardLinkState (smartcard-link.ts), aquí sin acotar
+ * por organizationId (cualquier company, no solo la ya vinculada a un
+ * cliente de Reymen). */
+export async function listSmartcardCompanyUsersAdmin(companyId: string): Promise<SmartcardCompanyUserRow[]> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return [];
+
+  const { data: rows, error } = await supabase
+    .from("company_users")
+    .select("user_id, status, roles(code, name)")
+    .eq("company_id", companyId);
+
+  if (error) {
+    console.error("[smartcard-admin] Error listando company_users:", error.message);
+    return [];
+  }
+
+  return Promise.all(
+    (rows ?? []).map(async (r) => {
+      const { data } = await supabase.auth.admin.getUserById(r.user_id as string);
+      const role = r.roles as unknown as { code?: string; name?: string } | null;
+      return {
+        userId: r.user_id as string,
+        email: data?.user?.email ?? null,
+        roleName: role?.name ?? null,
+        roleCode: role?.code ?? null,
+        status: r.status as string,
+      };
+    })
+  );
 }

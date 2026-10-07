@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CreditCard, Users } from "lucide-react";
+import { Building2, CreditCard, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/guards";
 import { getServerLang } from "@/lib/i18n-server";
 import { listSmartcardCompanies } from "@/lib/smartcard-link";
@@ -51,12 +51,20 @@ export default async function AdminSmartcardPage() {
         title={t.title}
         description={t.desc}
         actions={
-          <Button asChild variant="outline">
-            <Link href="/admin/smartcard/clients">
-              <Users className="h-4 w-4" />
-              {lang === "en" ? "Clients, cards & profiles" : "Clientes, tarjetas y perfiles"}
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/companies">
+                <Building2 className="h-4 w-4" />
+                {lang === "en" ? "Companies" : "Empresas"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/clients">
+                <Users className="h-4 w-4" />
+                {lang === "en" ? "Clients, cards & profiles" : "Clientes, tarjetas y perfiles"}
+              </Link>
+            </Button>
+          </div>
         }
       />
       {companies === null ? (
@@ -79,7 +87,9 @@ export default async function AdminSmartcardPage() {
                 {companies.map((c) => (
                   <tr key={c.id}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-900">{c.name}</p>
+                      <Link href={`/admin/smartcard/companies/${c.id}`} className="font-medium text-slate-900 hover:underline">
+                        {c.name}
+                      </Link>
                       <p className="text-xs text-slate-400">{c.slug}</p>
                     </td>
                     <td className="px-4 py-3">
