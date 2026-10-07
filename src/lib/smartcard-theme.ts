@@ -58,3 +58,69 @@ export function passesWcagAA(hexA: string, hexB: string, largeOrIcon = false): b
   if (ratio === null) return true;
   return ratio >= (largeOrIcon ? 3 : 4.5);
 }
+
+/**
+ * Whitelist de tokens de `themes.config` — portado de reymen-smartcard's
+ * packages/lib/src/theme-tokens.ts (Fase 10/11 allá). Usado por el editor
+ * completo de temas en /admin/smartcard/settings (a diferencia del "tema
+ * básico" de arriba, acotado a 2 colores — esto es el catálogo real que
+ * theme_id referencia). Son exactamente los mismos 4 themes sembrados en
+ * seed_themes.sql — nada inventado aquí tampoco.
+ */
+export const LAYOUT_OPTIONS = [
+  { value: "minimal", label: "Minimal" },
+  { value: "corporate", label: "Corporate" },
+  { value: "real_estate", label: "Real Estate" },
+] as const;
+
+export const BORDER_RADIUS_OPTIONS = [
+  { value: "sm", label: "Chico" },
+  { value: "md", label: "Mediano" },
+  { value: "lg", label: "Grande" },
+] as const;
+
+export const FONT_OPTIONS = [{ value: "inter", label: "Inter" }] as const;
+
+export interface ThemeConfigFields {
+  layout: string;
+  primaryColor: string;
+  accentColor: string;
+  font: string;
+  borderRadius: string;
+  darkBackground: boolean;
+}
+
+/** Usado para precargar el formulario de edición de un theme — mismos
+ * defaults que el lado de reymen-smartcard cuando un campo falta. */
+export function parseThemeConfig(config: unknown): ThemeConfigFields {
+  const c = (config ?? {}) as Record<string, unknown>;
+  return {
+    layout: typeof c.layout === "string" ? c.layout : "minimal",
+    primaryColor: typeof c.primary_color === "string" ? c.primary_color : "#111111",
+    accentColor: typeof c.accent_color === "string" ? c.accent_color : "#4F46E5",
+    font: typeof c.font === "string" ? c.font : "inter",
+    borderRadius: typeof c.border_radius === "string" ? c.border_radius : "md",
+    darkBackground: c.background === "dark",
+  };
+}
+
+/** Reconstruye el objeto `config` entero a partir de campos controlados —
+ * mismo criterio que buildThemeConfig del lado de reymen-smartcard: nunca
+ * acepta JSON libre, valida cada valor contra su whitelist antes de armar
+ * el objeto. `null` si algo no es válido. */
+export function buildThemeConfig(fields: ThemeConfigFields): Record<string, unknown> | null {
+  if (!LAYOUT_OPTIONS.some((o) => o.value === fields.layout)) return null;
+  if (!FONT_OPTIONS.some((o) => o.value === fields.font)) return null;
+  if (!BORDER_RADIUS_OPTIONS.some((o) => o.value === fields.borderRadius)) return null;
+  if (!HEX_COLOR.test(fields.primaryColor) || !HEX_COLOR.test(fields.accentColor)) return null;
+
+  const config: Record<string, unknown> = {
+    layout: fields.layout,
+    primary_color: fields.primaryColor,
+    accent_color: fields.accentColor,
+    font: fields.font,
+    border_radius: fields.borderRadius,
+  };
+  if (fields.darkBackground) config.background = "dark";
+  return config;
+}

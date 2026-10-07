@@ -1,6 +1,7 @@
 import { getSmartcardAdminClient } from "./smartcard-supabase";
 import { isValidLinkIcon } from "./smartcard-link-icons";
 import { prisma } from "./prisma";
+import { parseThemeConfig, buildThemeConfig, type ThemeConfigFields } from "./smartcard-theme";
 
 /**
  * Acceso de SUPERADMIN/ADMIN a las entidades de SmartCard (clients, cards,
@@ -1297,4 +1298,252 @@ export async function listSmartcardCompanyUsersAdmin(companyId: string): Promise
       };
     })
   );
+}
+
+/**
+ * --- Catálogos (Fase 3): temas, tipos de destino, slugs reservados ---
+ *
+ * Portado de admin.reymen.mx's /settings — ahí los 3 catálogos son
+ * visibles para los 3 roles pero editables solo por SUPERADMIN (misma regla
+ * que las policies de RLS ya aplican, ver el comentario original de esa
+ * pantalla); las Server Actions que envuelven estas funciones aplican el
+ * mismo corte (requireAdmin para ver, SUPER_ADMIN para cualquier escritura).
+ */
+
+// --- Temas ---
+
+export interface SmartcardThemeAdminRow {
+  id: string;
+  name: string;
+  slug: string;
+  fields: ThemeConfigFields;
+  isActive: boolean;
+}
+
+export async function listSmartcardThemesAdmin(): Promise<SmartcardThemeAdminRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("themes").select("id, name, slug, config, is_active").order("name");
+  if (error) {
+    console.error("[smartcard-admin] Error listando themes:", error.message);
+    return null;
+  }
+  return (data ?? []).map((t) => ({
+    id: t.id as string,
+    name: t.name as string,
+    slug: t.slug as string,
+    fields: parseThemeConfig(t.config),
+    isActive: t.is_active as boolean,
+  }));
+}
+
+export async function getSmartcardThemeAdmin(id: string): Promise<SmartcardThemeAdminRow | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("themes").select("id, name, slug, config, is_active").eq("id", id).maybeSingle();
+  if (error) {
+    console.error("[smartcard-admin] Error buscando theme:", error.message);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    slug: data.slug as string,
+    fields: parseThemeConfig(data.config),
+    isActive: data.is_active as boolean,
+  };
+}
+
+export interface SmartcardThemeInput {
+  name: string;
+  slug: string;
+  fields: ThemeConfigFields;
+}
+
+export async function createSmartcardTheme(input: SmartcardThemeInput): Promise<SmartcardAdminResult> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const name = input.name.trim();
+  const slug = input.slug.trim().toLowerCase();
+  if (!name || !slug) return { ok: false, error: "El nombre y el slug son obligatorios." };
+
+  const config = buildThemeConfig(input.fields);
+  if (!config) return { ok: false, error: "La configuración del tema no es válida." };
+
+  const { data, error } = await supabase.from("themes").insert({ name, slug, config }).select("id").single();
+  if (error || !data) {
+    if (error?.code === "23505") return { ok: false, error: "Ese slug ya lo usa otro tema." };
+    console.error("[smartcard-admin] Error creando theme:", error?.message);
+    return { ok: false, error: "No se pudo guardar el tema. Intenta de nuevo." };
+  }
+  return { ok: true, data: { id: data.id as string } };
+}
+
+export async function updateSmartcardTheme(
+  id: string,
+  input: SmartcardThemeInput & { isActive: boolean }
+): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const name = input.name.trim();
+  const slug = input.slug.trim().toLowerCase();
+  if (!name || !slug) return { ok: false, error: "El nombre y el slug son obligatorios." };
+
+  const config = buildThemeConfig(input.fields);
+  if (!config) return { ok: false, error: "La configuración del tema no es válida." };
+
+  const { error } = await supabase.from("themes").update({ name, slug, config, is_active: input.isActive }).eq("id", id);
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: "Ese slug ya lo usa otro tema." };
+    console.error("[smartcard-admin] Error actualizando theme:", error.message);
+    return { ok: false, error: "No se pudo guardar el tema. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+// --- Tipos de destino ---
+
+export interface SmartcardDestinationTypeAdminRow {
+  code: string;
+  label: string;
+  requiresProfile: boolean;
+  requiresUrl: boolean;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export async function listSmartcardDestinationTypesAdmin(): Promise<SmartcardDestinationTypeAdminRow[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("destination_types")
+    .select("code, label, requires_profile, requires_url, sort_order, is_active")
+    .order("sort_order");
+  if (error) {
+    console.error("[smartcard-admin] Error listando destination_types:", error.message);
+    return null;
+  }
+  return (data ?? []).map((d) => ({
+    code: d.code as string,
+    label: d.label as string,
+    requiresProfile: d.requires_profile as boolean,
+    requiresUrl: d.requires_url as boolean,
+    sortOrder: d.sort_order as number,
+    isActive: d.is_active as boolean,
+  }));
+}
+
+const DESTINATION_TYPE_CODE_FORMAT = /^[A-Z0-9_]+$/;
+
+/**
+ * Nota deliberada (igual que admin.reymen.mx): requires_profile/requires_url
+ * de un tipo YA existente no se editan aquí — son los que lee
+ * validate_card_destination() para decidir qué campo exige cada tarjeta que
+ * ya usa ese tipo; cambiarlos con tarjetas existentes podría dejarlas en un
+ * estado que el trigger ya no aceptaría. label/is_active/sort_order sí son
+ * seguros en cualquier momento; para una regla de validación distinta, dar
+ * de alta un tipo nuevo es la vía segura.
+ */
+export async function createSmartcardDestinationType(input: {
+  code: string;
+  label: string;
+  requiresProfile: boolean;
+  requiresUrl: boolean;
+  sortOrder: number;
+}): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+
+  const code = input.code.trim().toUpperCase();
+  const label = input.label.trim();
+  if (!code || !label) return { ok: false, error: "Faltan campos obligatorios." };
+  if (!DESTINATION_TYPE_CODE_FORMAT.test(code)) {
+    return { ok: false, error: "El código debe ser MAYÚSCULAS, números y guion bajo (ej. GOOGLE_REVIEWS)." };
+  }
+
+  const { error } = await supabase.from("destination_types").insert({
+    code,
+    label,
+    requires_profile: input.requiresProfile,
+    requires_url: input.requiresUrl,
+    sort_order: input.sortOrder,
+  });
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: "Ya existe un tipo de destino con ese código." };
+    console.error("[smartcard-admin] Error creando destination_type:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function updateSmartcardDestinationTypeLabel(code: string, label: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const trimmed = label.trim();
+  if (!trimmed) return { ok: false, error: "Faltan campos obligatorios." };
+
+  const { error } = await supabase.from("destination_types").update({ label: trimmed }).eq("code", code);
+  if (error) {
+    console.error("[smartcard-admin] Error actualizando destination_type:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function toggleSmartcardDestinationType(code: string, nextActive: boolean): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("destination_types").update({ is_active: nextActive }).eq("code", code);
+  if (error) {
+    console.error("[smartcard-admin] Error activando/desactivando destination_type:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+// --- Slugs reservados ---
+
+const RESERVED_SLUG_FORMAT = /^[a-z0-9][a-z0-9_.-]*$/;
+
+export async function listSmartcardReservedSlugs(): Promise<string[] | null> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("reserved_slugs").select("slug").order("slug");
+  if (error) {
+    console.error("[smartcard-admin] Error listando reserved_slugs:", error.message);
+    return null;
+  }
+  return (data ?? []).map((r) => r.slug as string);
+}
+
+export async function addSmartcardReservedSlug(slug: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const normalized = slug.trim().toLowerCase();
+  if (!normalized) return { ok: false, error: "Faltan campos obligatorios." };
+  if (!RESERVED_SLUG_FORMAT.test(normalized)) {
+    return { ok: false, error: "Ese slug no es válido: usa minúsculas, números, guiones o puntos." };
+  }
+
+  const { error } = await supabase.from("reserved_slugs").insert({ slug: normalized });
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: "Ese slug ya está en la lista de reservados." };
+    console.error("[smartcard-admin] Error agregando reserved_slug:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
+}
+
+export async function deleteSmartcardReservedSlug(slug: string): Promise<SmartcardAdminResult<null>> {
+  const supabase = getSmartcardAdminClient();
+  if (!supabase) return { ok: false, error: "SmartCard aún no está configurado en este entorno." };
+  const { error } = await supabase.from("reserved_slugs").delete().eq("slug", slug);
+  if (error) {
+    console.error("[smartcard-admin] Error eliminando reserved_slug:", error.message);
+    return { ok: false, error: "No se pudo guardar el cambio. Intenta de nuevo." };
+  }
+  return { ok: true, data: null };
 }

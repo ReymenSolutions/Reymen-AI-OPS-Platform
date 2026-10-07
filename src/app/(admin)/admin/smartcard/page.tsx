@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, CreditCard, Users } from "lucide-react";
+import { Building2, CreditCard, Settings, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/guards";
 import { getServerLang } from "@/lib/i18n-server";
 import { listSmartcardCompanies } from "@/lib/smartcard-link";
@@ -62,6 +62,12 @@ export default async function AdminSmartcardPage() {
               <Link href="/admin/smartcard/clients">
                 <Users className="h-4 w-4" />
                 {lang === "en" ? "Clients, cards & profiles" : "Clientes, tarjetas y perfiles"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/settings">
+                <Settings className="h-4 w-4" />
+                {lang === "en" ? "Settings" : "Ajustes"}
               </Link>
             </Button>
           </div>
