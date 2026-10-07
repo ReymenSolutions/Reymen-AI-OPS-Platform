@@ -323,7 +323,7 @@ export async function updateSmartcardCardDestination(
     if (!type) throw new UserError("Ese tipo de destino no es válido.");
     if (type.requires_profile) {
       throw new UserError(
-        "Para activar un perfil digital en esta tarjeta, usa el botón \"Activar perfil digital\" en vez de este formulario."
+        "Para activar un perfil digital en esta tarjeta, usa el botón Activar perfil digital en vez de este formulario."
       );
     }
 
