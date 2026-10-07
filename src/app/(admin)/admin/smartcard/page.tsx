@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CreditCard } from "lucide-react";
+import { BarChart3, Building2, CreditCard, MessageSquareWarning, Settings, UserCog, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/guards";
 import { getServerLang } from "@/lib/i18n-server";
 import { listSmartcardCompanies } from "@/lib/smartcard-link";
@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const COPY = {
   es: {
@@ -46,7 +47,50 @@ export default async function AdminSmartcardPage() {
 
   return (
     <div>
-      <PageHeader title={t.title} description={t.desc} />
+      <PageHeader
+        title={t.title}
+        description={t.desc}
+        actions={
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/companies">
+                <Building2 className="h-4 w-4" />
+                {lang === "en" ? "Companies" : "Empresas"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/clients">
+                <Users className="h-4 w-4" />
+                {lang === "en" ? "Clients, cards & profiles" : "Clientes, tarjetas y perfiles"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/settings">
+                <Settings className="h-4 w-4" />
+                {lang === "en" ? "Settings" : "Ajustes"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/users">
+                <UserCog className="h-4 w-4" />
+                {lang === "en" ? "Users" : "Usuarios"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/analytics">
+                <BarChart3 className="h-4 w-4" />
+                {lang === "en" ? "Analytics" : "Analítica"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/smartcard/feedback">
+                <MessageSquareWarning className="h-4 w-4" />
+                Feedback
+              </Link>
+            </Button>
+          </div>
+        }
+      />
       {companies === null ? (
         <EmptyState icon={CreditCard} title={t.notConfigured} description={t.notConfiguredDesc} />
       ) : companies.length === 0 ? (
@@ -67,7 +111,9 @@ export default async function AdminSmartcardPage() {
                 {companies.map((c) => (
                   <tr key={c.id}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-900">{c.name}</p>
+                      <Link href={`/admin/smartcard/companies/${c.id}`} className="font-medium text-slate-900 hover:underline">
+                        {c.name}
+                      </Link>
                       <p className="text-xs text-slate-400">{c.slug}</p>
                     </td>
                     <td className="px-4 py-3">

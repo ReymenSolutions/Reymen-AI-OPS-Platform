@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import Link from "next/link";
 import { Loader2, CreditCard, Users, Activity, Pencil, QrCode } from "lucide-react";
 import { toast } from "sonner";
@@ -19,9 +19,11 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { usePreferences } from "@/context/preferences";
+import { SmartcardProfileDialog } from "@/components/portal/SmartcardProfileDialog";
 import {
   inviteSmartcardTeamMember,
   updateSmartcardCardDestination,
+  createSmartcardCardProfile,
   getSmartcardCardQrCode,
 } from "@/actions/portal/smartcard";
 import {
@@ -156,6 +158,13 @@ export function SmartcardPanel({
   const [editUrl, setEditUrl] = useState("");
   const [isPendingCardEdit, startCardEditTransition] = useTransition();
 
+  // Per-card event-type breakdown (2026-10-07, user request) — the data was
+  // already computed server-side (CardStatsEntry.byType, see
+  // getCompanyCardStats) but never surfaced here; the company-wide "Por tipo
+  // de evento" section above was the only breakdown shown. This just adds an
+  // expand/collapse toggle per row reusing that same data, no new query.
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+
   function openEditCard(c: CardStatsEntry) {
     setEditingCard(c);
     setEditType(c.destinationType);
@@ -167,6 +176,28 @@ export function SmartcardPanel({
   function handleSaveCard() {
     if (!editingCard) return;
     startCardEditTransition(async () => {
+      // Switching a card TO "Perfil digital" is a different action than
+      // every other destination (it creates a profiles row, not just a
+      // column update) — see createSmartcardCardProfile's own comment.
+      // editingCard is never already a profile card here: the row's own
+      // "Editar perfil" button opens SmartcardProfileDialog instead of this
+      // dialog for those, so this branch only ever runs on a fresh switch.
+      if (editType === "PROFILE") {
+        const result = await createSmartcardCardProfile(editingCard.cardId);
+        if (!result.success) {
+          toast.error(translateMessage(result.error));
+          return;
+        }
+        toast.success(
+          lang === "es"
+            ? "Perfil digital creado. Complétalo con la info del negocio."
+            : "Digital profile created. Fill it in with the business info."
+        );
+        setEditingCard(null);
+        setEditingProfileId(result.profileId);
+        return;
+      }
+
       const result = await updateSmartcardCardDestination(editingCard.cardId, editType, editUrl);
       if (!result.success) {
         toast.error(translateMessage(result.error));
@@ -176,6 +207,14 @@ export function SmartcardPanel({
       setEditingCard(null);
     });
   }
+
+  // A card whose destination is the rich PROFILE type gets a separate
+  // "Editar perfil" flow (SmartcardProfileDialog) instead of the
+  // destination-type+URL dialog above — that dialog still exists and still
+  // works for simple redirect-only cards (WHATSAPP, MAPS, etc.), it just
+  // can't be used to switch a card INTO or edit the content of a profile
+  // (see updateSmartcardCardDestination's own guard on requiresProfile).
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
 
   const [downloadingQrCardId, setDownloadingQrCardId] = useState<string | null>(null);
 
@@ -328,62 +367,130 @@ export function SmartcardPanel({
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Estado" : "Status"}</th>
                         <th className="py-2 pr-3 text-right font-medium">{lang === "es" ? "Eventos" : "Events"}</th>
                         <th className="py-2 pr-3 font-medium">{lang === "es" ? "Última actividad" : "Last activity"}</th>
+                        <th className="py-2 pr-3 font-medium" />
                         {canEditCards && <th className="py-2 font-medium" />}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {cardStats.cards.map((c) => (
-                        <tr key={c.cardId}>
-                          <td className="py-2 pr-3 font-mono text-xs text-slate-700">{c.cardCode}</td>
-                          <td className="py-2 pr-3 text-slate-600">{c.clientName}</td>
-                          <td className="py-2 pr-3">
-                            <Badge variant="secondary" className="text-xs">
-                              {c.status}
-                            </Badge>
-                          </td>
-                          <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
-                          <td className="py-2 pr-3 text-slate-500">
-                            {c.lastActivityAt
-                              ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                })
-                              : lang === "es"
-                                ? "Sin actividad"
-                                : "No activity"}
-                          </td>
-                          {canEditCards && (
-                            <td className="py-2 text-right">
-                              <div className="flex justify-end gap-1">
+                      {cardStats.cards.map((c) => {
+                        const isProfileCard = c.destinationType === "PROFILE" && !!c.profileId;
+                        const isExpanded = expandedCardId === c.cardId;
+                        const cardByTypeEntries = Object.entries(c.byType).sort((a, b) => b[1] - a[1]);
+                        const cardMaxTypeCount = cardByTypeEntries.length > 0 ? cardByTypeEntries[0][1] : 0;
+                        return (
+                          <Fragment key={c.cardId}>
+                            <tr>
+                              <td className="py-2 pr-3 font-mono text-xs text-slate-700">{c.cardCode}</td>
+                              <td className="py-2 pr-3 text-slate-600">{c.clientName}</td>
+                              <td className="py-2 pr-3">
+                                <Badge variant="secondary" className="text-xs">
+                                  {c.status}
+                                </Badge>
+                              </td>
+                              <td className="py-2 pr-3 text-right font-medium text-slate-700">{c.totalEvents}</td>
+                              <td className="py-2 pr-3 text-slate-500">
+                                {c.lastActivityAt
+                                  ? new Date(c.lastActivityAt).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                    })
+                                  : lang === "es"
+                                    ? "Sin actividad"
+                                    : "No activity"}
+                              </td>
+                              <td className="py-2 pr-3 text-right">
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                  onClick={() => openEditCard(c)}
+                                  disabled={c.totalEvents === 0}
+                                  onClick={() => setExpandedCardId(isExpanded ? null : c.cardId)}
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                  {lang === "es" ? "Editar" : "Edit"}
+                                  {isExpanded
+                                    ? lang === "es"
+                                      ? "Ocultar"
+                                      : "Hide"
+                                    : lang === "es"
+                                      ? "Ver detalle"
+                                      : "View detail"}
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
-                                  disabled={downloadingQrCardId === c.cardId}
-                                  onClick={() => handleDownloadQr(c)}
-                                >
-                                  {downloadingQrCardId === c.cardId ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              </td>
+                              {canEditCards && (
+                                <td className="py-2 text-right">
+                                  <div className="flex justify-end gap-1">
+                                    {isProfileCard ? (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                        onClick={() => setEditingProfileId(c.profileId)}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                        {lang === "es" ? "Editar perfil" : "Edit profile"}
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                        onClick={() => openEditCard(c)}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                        {lang === "es" ? "Editar" : "Edit"}
+                                      </Button>
+                                    )}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-900"
+                                      disabled={downloadingQrCardId === c.cardId}
+                                      onClick={() => handleDownloadQr(c)}
+                                    >
+                                      {downloadingQrCardId === c.cardId ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <QrCode className="h-3.5 w-3.5" />
+                                      )}
+                                      QR
+                                    </Button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={canEditCards ? 6 : 5} className="bg-slate-50 px-3 py-3">
+                                  {cardByTypeEntries.length === 0 ? (
+                                    <p className="text-xs text-slate-500">
+                                      {lang === "es" ? "Sin eventos para esta tarjeta." : "No events for this card."}
+                                    </p>
                                   ) : (
-                                    <QrCode className="h-3.5 w-3.5" />
+                                    <ul className="max-w-md space-y-1.5">
+                                      {cardByTypeEntries.map(([type, count]) => (
+                                        <li key={type} className="flex items-center gap-3 text-xs">
+                                          <span className="w-32 shrink-0 truncate text-slate-600" title={EVENT_TYPE_LABELS[type] ?? type}>
+                                            {EVENT_TYPE_LABELS[type] ?? type}
+                                          </span>
+                                          <span className="h-1.5 flex-1 rounded-full bg-slate-200">
+                                            <span
+                                              className="block h-1.5 rounded-full bg-blue-500"
+                                              style={{
+                                                width: `${cardMaxTypeCount > 0 ? Math.max(4, (count / cardMaxTypeCount) * 100) : 0}%`,
+                                              }}
+                                            />
+                                          </span>
+                                          <span className="w-8 shrink-0 text-right font-medium text-slate-700">{count}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
                                   )}
-                                  QR
-                                </Button>
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -532,12 +639,20 @@ export function SmartcardPanel({
                   <SelectValue placeholder={lang === "es" ? "Selecciona un destino" : "Select a destination"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {destinationTypes.map((d) => (
-                    <SelectItem key={d.code} value={d.code} disabled={d.requiresProfile}>
-                      {d.label}
-                      {d.requiresProfile ? (lang === "es" ? " (próximamente)" : " (coming soon)") : ""}
-                    </SelectItem>
-                  ))}
+                  {destinationTypes.map((d) => {
+                    // "Perfil digital" (PROFILE) is the one requires_profile
+                    // type this dialog actually supports (it creates the
+                    // profile on save, see handleSaveCard) — any OTHER
+                    // hypothetical requires_profile type stays disabled,
+                    // same as before.
+                    const disabled = d.requiresProfile && d.code !== "PROFILE";
+                    return (
+                      <SelectItem key={d.code} value={d.code} disabled={disabled}>
+                        {d.label}
+                        {disabled ? (lang === "es" ? " (próximamente)" : " (coming soon)") : ""}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -554,6 +669,14 @@ export function SmartcardPanel({
                 />
               </div>
             )}
+
+            {editSelectedTypeInfo?.code === "PROFILE" && (
+              <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                {lang === "es"
+                  ? "Se crea un perfil digital nuevo para este cliente. Después de guardar se abre el editor para completarlo (foto, bio, redes, enlaces)."
+                  : "This creates a new digital profile for this client. After saving, the editor opens so you can fill it in (photo, bio, socials, links)."}
+              </p>
+            )}
           </div>
 
           <DialogFooter>
@@ -562,11 +685,23 @@ export function SmartcardPanel({
             </Button>
             <Button onClick={handleSaveCard} disabled={isPendingCardEdit || !editType}>
               {isPendingCardEdit && <Loader2 className="h-4 w-4 animate-spin" />}
-              {lang === "es" ? "Guardar" : "Save"}
+              {editType === "PROFILE"
+                ? lang === "es"
+                  ? "Activar perfil digital"
+                  : "Activate digital profile"
+                : lang === "es"
+                  ? "Guardar"
+                  : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SmartcardProfileDialog
+        profileId={editingProfileId}
+        onOpenChange={(open) => !open && setEditingProfileId(null)}
+        lang={lang}
+      />
     </main>
   );
 }
