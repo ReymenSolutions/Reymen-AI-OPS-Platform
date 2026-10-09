@@ -8,7 +8,7 @@ export default async function RootPage() {
   if (!session) return redirect("/login");
 
   if (isAdmin(session.user.role)) {
-    return redirect("/admin/dashboard");
+    return redirect("/admin/home");
   }
 
   return redirect("/portal/home");

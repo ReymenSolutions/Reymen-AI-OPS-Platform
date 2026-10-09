@@ -304,7 +304,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
     setUserMenuOpen(false);
     try {
       await stopImpersonation();
-      window.location.href = "/admin/dashboard";
+      window.location.href = "/admin/home";
     } catch {
       toast.error(t.error);
     }

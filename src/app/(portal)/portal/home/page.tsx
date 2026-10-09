@@ -10,6 +10,7 @@ import { getEnabledModules } from "@/lib/modules";
 import { getOnboardingStatus } from "@/lib/onboarding";
 import { getFoodLowStockItems, getFoodSalesSummary } from "@/lib/food";
 import { dayPartIn, firstNameOf, shortcutsFor, type HomeShortcut } from "@/lib/portal-home";
+import { ShortcutGrid } from "@/components/shared/ShortcutGrid";
 import { formatMoney } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -210,27 +211,12 @@ export default async function PortalHomePage() {
         <h2 id="home-do" className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           {t.doTitle}
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {shortcutsFor(modules).map((s) => {
-            const Icon = ICONS[s.icon] ?? Bot;
+        <ShortcutGrid
+          items={shortcutsFor(modules).map((s) => {
             const [title, hint] = t.shortcuts[s.key] ?? [s.key, ""];
-            return (
-              <Link
-                key={s.key}
-                href={s.href}
-                className="group flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:border-brand-300 hover:shadow-sm"
-              >
-                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-600 group-hover:bg-brand-100">
-                  <Icon className="h-6 w-6" />
-                </span>
-                <span>
-                  <span className="block font-semibold text-slate-900">{title}</span>
-                  <span className="block text-sm text-slate-500">{hint}</span>
-                </span>
-              </Link>
-            );
+            return { key: s.key, href: s.href, icon: ICONS[s.icon] ?? Bot, title, hint };
           })}
-        </div>
+        />
       </section>
 
       <p className="text-center">
