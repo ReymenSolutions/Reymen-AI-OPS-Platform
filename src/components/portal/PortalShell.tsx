@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+import { NavigationProgress } from "@/components/shared/NavigationProgress";
 import { ScrollMemory } from "@/components/shared/ScrollMemory";
 import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { useState } from "react";
@@ -37,6 +39,9 @@ export function PortalShell({ orgName, orgLogoUrl, enabledModules, pendingConver
         <TopBar onMenuClick={() => setMobileOpen(true)} />
         <main className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain p-4 sm:p-6">
           <ScrollMemory />
+          <Suspense fallback={null}>
+            <NavigationProgress />
+          </Suspense>
           <PullToRefresh>{children}</PullToRefresh>
         </main>
       </div>

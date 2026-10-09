@@ -326,3 +326,45 @@ body {
 .dark .bg-slate-800 {
   background-color: #1e293b;
 }
+
+/* Respuesta al toque: todo lo que se puede presionar se hunde y se oscurece
+   un poco mientras se mantiene el clic/dedo, para saber que sí se registró.
+   Con .no-press se desactiva en un elemento puntual. */
+a[href]:not(.no-press),
+button:not(:disabled, .no-press),
+[role="button"]:not(.no-press),
+summary,
+label[for] {
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--color-brand-600, #2563eb) 18%, transparent);
+  transition:
+    transform 120ms ease,
+    filter 120ms ease,
+    box-shadow 120ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
+}
+a[href]:not(.no-press):active,
+button:not(:disabled, .no-press):active,
+[role="button"]:not(.no-press):active,
+summary:active {
+  transform: scale(0.97);
+  filter: brightness(0.93);
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-brand-600, #2563eb) 8%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  a[href]:not(.no-press):active,
+  button:not(:disabled, .no-press):active,
+  [role="button"]:not(.no-press):active,
+  summary:active {
+    transform: none;
+  }
+}
+
+/* Barra de avance al cambiar de pantalla (NavigationProgress). */
+@keyframes nav-progress {
+  0% { transform: scaleX(0.05); }
+  60% { transform: scaleX(0.7); }
+  100% { transform: scaleX(0.92); }
+}
