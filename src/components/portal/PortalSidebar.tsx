@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, Calendar, FileText, LogOut, Bot, Upload, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
+  Home, LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, Calendar, FileText, LogOut, Bot, Upload, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -23,6 +23,7 @@ interface NavItem {
 function useNavItems() {
   const { t } = usePreferences();
   return {
+    home: t.home,
     dashboard: t.dashboard,
     onboarding: t.onboarding,
     leads: t.leads,
@@ -49,21 +50,42 @@ function useNavItems() {
 // covers sibling routes folded into this item's own PortalSectionTabs (see
 // src/lib/portal-nav-tabs.ts) — e.g. visiting /portal/prompts should still
 // highlight the "WhatsApp AI" sidebar entry, not leave nothing active.
-const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule; alsoActiveFor?: string[] }[] = [
-  { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard },
-  { href: "/portal/onboarding", key: "onboarding", icon: Rocket },
-  { href: "/portal/leads", key: "leads", icon: Users, module: "CRM" },
-  { href: "/portal/pipeline", key: "pipeline", icon: GitBranch, module: "CRM" },
-  { href: "/portal/automations", key: "automations", icon: Zap, module: "AUTOMATIONS", alsoActiveFor: ["/portal/templates"] },
-  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, module: "AI_WHATSAPP", alsoActiveFor: ["/portal/knowledge-base", "/portal/prompts", "/portal/ai-lab"] },
-  { href: "/portal/conversations", key: "conversations", icon: MessageSquare, module: "AI_WHATSAPP" },
-  { href: "/portal/appointments", key: "appointments", icon: Calendar },
-  { href: "/portal/food", key: "food", icon: UtensilsCrossed, module: "FOOD_OPS" },
-  { href: "/portal/reports", key: "reports", icon: BarChart3 },
-  { href: "/portal/smartcard", key: "smartcard", icon: CreditCard, module: "NFC_QR" },
-  { href: "/portal/requests", key: "requests", icon: FileText },
-  { href: "/portal/settings", key: "settings", icon: Settings },
+// Menú por secciones, en el orden en que un negocio piensa su día: lo suyo
+// (negocio), sus clientes, cómo se comunica, cómo le va y su cuenta. Una
+// sección sin entradas visibles (módulos no contratados) no se dibuja.
+type NavSectionKey = "main" | "business" | "customers" | "communication" | "results" | "account";
+
+const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; section: NavSectionKey; module?: PlatformModule; alsoActiveFor?: string[] }[] = [
+  { href: "/portal/home", key: "home", icon: Home, section: "main" },
+
+  { href: "/portal/food", key: "food", icon: UtensilsCrossed, section: "business", module: "FOOD_OPS" },
+  { href: "/portal/smartcard", key: "smartcard", icon: CreditCard, section: "business", module: "NFC_QR" },
+
+  { href: "/portal/leads", key: "leads", icon: Users, section: "customers", module: "CRM" },
+  { href: "/portal/pipeline", key: "pipeline", icon: GitBranch, section: "customers", module: "CRM" },
+  { href: "/portal/appointments", key: "appointments", icon: Calendar, section: "customers" },
+
+  { href: "/portal/conversations", key: "conversations", icon: MessageSquare, section: "communication", module: "AI_WHATSAPP" },
+  { href: "/portal/whatsapp", key: "whatsapp", icon: Bot, section: "communication", module: "AI_WHATSAPP", alsoActiveFor: ["/portal/knowledge-base", "/portal/prompts", "/portal/ai-lab"] },
+  { href: "/portal/automations", key: "automations", icon: Zap, section: "communication", module: "AUTOMATIONS", alsoActiveFor: ["/portal/templates"] },
+
+  { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard, section: "results" },
+  { href: "/portal/reports", key: "reports", icon: BarChart3, section: "results" },
+
+  { href: "/portal/onboarding", key: "onboarding", icon: Rocket, section: "account" },
+  { href: "/portal/requests", key: "requests", icon: FileText, section: "account" },
+  { href: "/portal/settings", key: "settings", icon: Settings, section: "account" },
 ];
+
+const SECTION_TITLES: Record<NavSectionKey, { es: string; en: string } | null> = {
+  main: null,
+  business: { es: "Mi negocio", en: "My business" },
+  customers: { es: "Clientes", en: "Customers" },
+  communication: { es: "Comunicación", en: "Communication" },
+  results: { es: "Resultados", en: "Results" },
+  account: { es: "Mi cuenta", en: "My account" },
+};
+const SECTION_ORDER: NavSectionKey[] = ["main", "business", "customers", "communication", "results", "account"];
 
 interface PortalSidebarProps {
   orgName: string;
@@ -145,30 +167,44 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {visibleNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href) || (item.alsoActiveFor?.some((p) => pathname.startsWith(p)) ?? false);
+        <nav className="flex-1 overflow-y-auto p-3">
+          {SECTION_ORDER.map((section) => {
+            const items = visibleNavItems.filter((item) => item.section === section);
+            if (items.length === 0) return null;
+            const title = SECTION_TITLES[section];
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onMobileClose}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "sidebar-nav-active bg-white text-brand-700"
-                    : "sidebar-nav-inactive text-brand-100 hover:bg-white/10 hover:text-white"
+              <div key={section} className={cn("space-y-1", section !== "main" && "pt-3")}>
+                {title && (
+                  <p className="sidebar-subtitle px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-brand-200/70">
+                    {lang === "en" ? title.en : title.es}
+                  </p>
                 )}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0" />
-                <span className="flex-1">{labels[item.key]}</span>
-                {item.key === "conversations" && pendingConversations > 0 && (
-                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-amber-950">
-                    {pendingConversations > 99 ? "99+" : pendingConversations}
-                  </span>
-                )}
-              </Link>
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname.startsWith(item.href) || (item.alsoActiveFor?.some((p) => pathname.startsWith(p)) ?? false);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={onMobileClose}
+                      className={cn(
+                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "sidebar-nav-active bg-white text-brand-700"
+                          : "sidebar-nav-inactive text-brand-100 hover:bg-white/10 hover:text-white"
+                      )}
+                    >
+                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      <span className="flex-1">{labels[item.key]}</span>
+                      {item.key === "conversations" && pendingConversations > 0 && (
+                        <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-amber-950">
+                          {pendingConversations > 99 ? "99+" : pendingConversations}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>

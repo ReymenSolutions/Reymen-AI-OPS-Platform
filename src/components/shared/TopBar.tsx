@@ -293,7 +293,7 @@ export function TopBar({ title, onMenuClick }: TopBarProps) {
     setImpersonateLoadingId(userId);
     try {
       await startImpersonation(userId);
-      window.location.href = "/portal/dashboard";
+      window.location.href = "/portal/home";
     } catch (e) {
       toast.error(getErrorMessage(e, t.impersonateError));
       setImpersonateLoadingId(null);
