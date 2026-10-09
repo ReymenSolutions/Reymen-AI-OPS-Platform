@@ -66,8 +66,13 @@ test.describe("leads pagination and server-side search", () => {
     await expect(page.locator("table tbody tr")).toHaveCount(50);
     await expect(page.getByText(/Página 1 de 2/)).toBeVisible();
 
-    await page.click('button:has-text("Siguiente")');
-    await page.waitForURL(/page=2/);
+    // El botón puede pintarse antes de que la página termine de cargar su
+    // código (en CI es lento): si el clic cae antes, no navega. Se reintenta
+    // el clic hasta que la URL cambie.
+    await expect(async () => {
+      await page.click('button:has-text("Siguiente")');
+      await page.waitForURL(/page=2/, { timeout: 5_000 });
+    }).toPass({ timeout: 25_000 });
     await expect(page.locator("table tbody tr")).toHaveCount(12);
 
     await page.click('button:has-text("Anterior")');
