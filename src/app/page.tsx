@@ -11,5 +11,5 @@ export default async function RootPage() {
     return redirect("/admin/dashboard");
   }
 
-  return redirect("/portal/dashboard");
+  return redirect("/portal/home");
 }

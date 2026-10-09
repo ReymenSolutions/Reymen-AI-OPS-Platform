@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, Calendar, FileText, LogOut, Bot, Upload, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
+  Home, LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, Calendar, FileText, LogOut, Bot, Upload, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -23,6 +23,7 @@ interface NavItem {
 function useNavItems() {
   const { t } = usePreferences();
   return {
+    home: t.home,
     dashboard: t.dashboard,
     onboarding: t.onboarding,
     leads: t.leads,
@@ -50,6 +51,7 @@ function useNavItems() {
 // src/lib/portal-nav-tabs.ts) — e.g. visiting /portal/prompts should still
 // highlight the "WhatsApp AI" sidebar entry, not leave nothing active.
 const NAV_ITEMS: { href: string; key: keyof ReturnType<typeof useNavItems>; icon: React.ElementType; module?: PlatformModule; alsoActiveFor?: string[] }[] = [
+  { href: "/portal/home", key: "home", icon: Home },
   { href: "/portal/dashboard", key: "dashboard", icon: LayoutDashboard },
   { href: "/portal/onboarding", key: "onboarding", icon: Rocket },
   { href: "/portal/leads", key: "leads", icon: Users, module: "CRM" },

@@ -5,6 +5,7 @@ export type Lang = "es" | "en";
 export const strings = {
   es: {
     // ── Navigation ───────────────────────────────────────────
+    home: "Inicio",
     dashboard: "Dashboard",
     leads: "Leads",
     pipeline: "Pipeline",
@@ -546,6 +547,7 @@ export const strings = {
   },
   en: {
     // ── Navigation ───────────────────────────────────────────
+    home: "Home",
     dashboard: "Dashboard",
     leads: "Leads",
     pipeline: "Pipeline",

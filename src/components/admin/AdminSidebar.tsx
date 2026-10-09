@@ -1,11 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, LogOut, AlertTriangle, Layers, Shield, Code, Upload, Webhook, Package, UserCog, X, CreditCard,
+  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, LogOut, AlertTriangle, Layers, Shield, Code, Upload, Webhook, Package, UserCog, X, CreditCard, ShieldCheck, ChevronDown,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -44,8 +44,11 @@ export function AdminSidebar({
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [currentLogoUrl, setCurrentLogoUrl] = useState(initialImageUrl);
 
-  const navItems = [
-    { href: "/admin/dashboard", label: t.dashboard, icon: LayoutDashboard },
+  // Lo general (Dashboard, Configuración) va suelto; todo lo que es solo de
+  // administración de la plataforma cuelga de la rama "Admin".
+  const dashboardItem = { href: "/admin/dashboard", label: t.dashboard, icon: LayoutDashboard };
+  const settingsItem = { href: "/admin/settings", label: t.settings, icon: Settings };
+  const adminItems = [
     { href: "/admin/clients", label: t.adminNavClients, icon: Users },
     { href: "/admin/users", label: t.adminNavUsers, icon: UserCog },
     { href: "/admin/automations", label: t.automations, icon: Zap },
@@ -58,8 +61,33 @@ export function AdminSidebar({
     { href: "/admin/audit", label: t.adminNavAudit, icon: Shield },
     { href: "/admin/webhooks", label: t.adminNavWebhooks, icon: Webhook },
     { href: "/admin/api-docs", label: "API Docs", icon: Code },
-    { href: "/admin/settings", label: t.settings, icon: Settings },
   ];
+  const adminActive = adminItems.some((item) => pathname.startsWith(item.href));
+
+  // Abierta por defecto; si el usuario la cierra se recuerda en este navegador.
+  const [adminOpen, setAdminOpen] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("reymen-admin-menu") === "closed") setAdminOpen(false);
+    } catch {
+      /* sin almacenamiento: queda abierta */
+    }
+  }, []);
+  function toggleAdmin() {
+    setAdminOpen((open) => {
+      try {
+        localStorage.setItem("reymen-admin-menu", open ? "closed" : "open");
+      } catch {
+        /* ignore */
+      }
+      return !open;
+    });
+  }
+  const itemClass = (active: boolean) =>
+    cn(
+      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+      active ? "sidebar-nav-active bg-white text-brand-700" : "sidebar-nav-inactive text-brand-100 hover:bg-white/10 hover:text-white"
+    );
 
 
 
@@ -146,26 +174,45 @@ export function AdminSidebar({
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onMobileClose}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "sidebar-nav-active bg-white text-brand-700"
-                    : "sidebar-nav-inactive text-brand-100 hover:bg-white/10 hover:text-white"
-                )}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0" />
-                {item.label}
-              </Link>
-            );
-          })}
+          {[dashboardItem].map((item) => (
+            <Link key={item.href} href={item.href} onClick={onMobileClose} className={itemClass(pathname.startsWith(item.href))}>
+              <item.icon className="h-4 w-4 flex-shrink-0" />
+              {item.label}
+            </Link>
+          ))}
+
+          {/* Rama madre "Admin" */}
+          <div>
+            <button
+              type="button"
+              onClick={toggleAdmin}
+              aria-expanded={adminOpen}
+              aria-controls="admin-menu-group"
+              className={cn(
+                "sidebar-nav-inactive flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:bg-white/10 hover:text-white",
+                adminActive ? "text-white" : "text-brand-100"
+              )}
+            >
+              <ShieldCheck className="h-4 w-4 flex-shrink-0" />
+              <span className="flex-1 text-left">Admin</span>
+              <ChevronDown className={cn("h-4 w-4 flex-shrink-0 transition-transform", adminOpen ? "" : "-rotate-90")} />
+            </button>
+            {adminOpen && (
+              <div id="admin-menu-group" className="ml-5 mt-1 space-y-1 border-l border-white/15 pl-2">
+                {adminItems.map((item) => (
+                  <Link key={item.href} href={item.href} onClick={onMobileClose} className={itemClass(pathname.startsWith(item.href))}>
+                    <item.icon className="h-4 w-4 flex-shrink-0" />
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Link href={settingsItem.href} onClick={onMobileClose} className={itemClass(pathname.startsWith(settingsItem.href))}>
+            <settingsItem.icon className="h-4 w-4 flex-shrink-0" />
+            {settingsItem.label}
+          </Link>
         </nav>
 
         {/* Footer */}
