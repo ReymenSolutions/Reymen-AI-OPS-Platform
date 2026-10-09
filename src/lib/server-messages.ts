@@ -158,7 +158,7 @@ const EN: Record<string, string> = {
   "Nota no encontrada": "Note not found",
   "Oportunidad no encontrada": "Opportunity not found",
   "Paquete no encontrado": "Package not found",
-  "Para activar Reymen POS primero activa REYMEN Ops Food": "To enable Reymen POS, enable REYMEN Ops Food first",
+  "Para activar Reymen POS primero activa Reymen Foods": "To enable Reymen POS, enable Reymen Foods first",
   "Para activar un perfil digital en esta tarjeta, usa el botón Activar perfil digital en vez de este formulario.":
     "To activate a digital profile on this card, use the Activate digital profile button instead of this form.",
   "Pega el JSON del workflow": "Paste the workflow JSON",

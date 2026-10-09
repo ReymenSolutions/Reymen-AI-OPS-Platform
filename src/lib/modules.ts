@@ -19,7 +19,7 @@ export const MODULE_LABEL: Record<PlatformModule, string> = {
   AUTOMATIONS: "Automatizaciones",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
-  FOOD_OPS: "REYMEN Ops Food",
+  FOOD_OPS: "Reymen Foods",
   REYMEN_POS: "Reymen POS",
 };
 
@@ -29,7 +29,7 @@ const MODULE_LABEL_EN: Record<PlatformModule, string> = {
   AUTOMATIONS: "Automations",
   NFC_QR: "Smart Cards NFC/QR",
   MARKETING_ADS: "Marketing / Ads",
-  FOOD_OPS: "REYMEN Ops Food",
+  FOOD_OPS: "Reymen Foods",
   REYMEN_POS: "Reymen POS",
 };
 

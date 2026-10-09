@@ -25,7 +25,7 @@ export default async function SmartcardUsersPage() {
   if (!session || !isAdmin(session.user.role) || session.user.role !== "SUPER_ADMIN") {
     return (
       <div>
-        <PageHeader title="SmartCard · Usuarios" />
+        <PageHeader title="Administradores" />
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
           Solo un super admin puede ver la gestión de usuarios administrativos de SmartCard.
         </p>
@@ -38,7 +38,7 @@ export default async function SmartcardUsersPage() {
   return (
     <div>
       <PageHeader
-        title="SmartCard · Usuarios"
+        title="Administradores"
         description="Staff con acceso al panel de SmartCard (admin.reymen.mx) — invitaciones, roles y accesos."
         actions={
           <Button asChild>

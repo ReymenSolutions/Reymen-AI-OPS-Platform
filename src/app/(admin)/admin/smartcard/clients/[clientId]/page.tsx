@@ -34,12 +34,12 @@ export default async function SmartcardClientDetailPage({
   return (
     <div>
       <Link href="/admin/smartcard/clients" className="mb-4 inline-block text-sm text-slate-500 hover:underline">
-        ← Volver a clientes
+        ← Volver a titulares
       </Link>
 
       <PageHeader
         title={client.name}
-        description={client.deletedAt ? "Este cliente está dado de baja." : undefined}
+        description={client.deletedAt ? "Este titular está dado de baja." : undefined}
         actions={
           client.deletedAt ? (
             <Badge variant="outline" className="border-slate-300 text-slate-500">

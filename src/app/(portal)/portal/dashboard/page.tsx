@@ -171,7 +171,7 @@ export default async function PortalDashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-900">
-                    {lang === "es" ? "Food — ventas de hoy" : "Food — today's sales"}
+                    {lang === "es" ? "Foods — ventas de hoy" : "Foods — today's sales"}
                   </p>
                   <p className="text-xs text-slate-400">
                     {formatMoney(foodSummary.today.gross)}

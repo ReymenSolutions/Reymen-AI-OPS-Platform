@@ -26,7 +26,7 @@ export default async function SmartcardSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Ajustes de SmartCard" description="Temas, tipos de destino y slugs reservados — catálogos compartidos por todas las tarjetas y perfiles." />
+      <PageHeader title="Ajustes" description="Temas, tipos de destino y slugs reservados — catálogos compartidos por todas las tarjetas y perfiles." />
 
       {!canEdit && (
         <p className="mb-6 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">

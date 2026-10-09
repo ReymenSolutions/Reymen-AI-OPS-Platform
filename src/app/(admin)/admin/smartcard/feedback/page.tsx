@@ -29,7 +29,7 @@ export default async function SmartcardFeedbackPage() {
   return (
     <div>
       <PageHeader
-        title="SmartCard · Feedback"
+        title="Feedback"
         description="Reportes de problemas, desde el perfil público de un cliente o desde un panel admin."
       />
 
