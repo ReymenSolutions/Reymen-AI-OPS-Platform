@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, LogOut, AlertTriangle, Layers, Shield, Code, Upload, Webhook, Package, UserCog, X, CreditCard, ShieldCheck, ChevronDown,
+  Home, LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, LogOut, AlertTriangle, Layers, Shield, Code, Upload, Webhook, Package, UserCog, X, CreditCard, ShieldCheck, ChevronDown,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,7 @@ export function AdminSidebar({
 
   // Lo general (Dashboard, Configuración) va suelto; todo lo que es solo de
   // administración de la plataforma cuelga de la rama "Admin".
+  const homeItem = { href: "/admin/home", label: t.home, icon: Home };
   const dashboardItem = { href: "/admin/dashboard", label: t.dashboard, icon: LayoutDashboard };
   const settingsItem = { href: "/admin/settings", label: t.settings, icon: Settings };
   const adminItems = [
@@ -174,7 +175,7 @@ export function AdminSidebar({
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {[dashboardItem].map((item) => (
+          {[homeItem, dashboardItem].map((item) => (
             <Link key={item.href} href={item.href} onClick={onMobileClose} className={itemClass(pathname.startsWith(item.href))}>
               <item.icon className="h-4 w-4 flex-shrink-0" />
               {item.label}
