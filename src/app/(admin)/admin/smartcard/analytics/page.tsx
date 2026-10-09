@@ -50,7 +50,7 @@ export default async function SmartcardAnalyticsPage({
   return (
     <div>
       <PageHeader
-        title="SmartCard · Analítica"
+        title="Analítica"
         description="Escaneos y clics registrados en las tarjetas y perfiles de SmartCard. No incluye eventos marcados como bot."
       />
 
@@ -93,7 +93,7 @@ export default async function SmartcardAnalyticsPage({
                 defaultValue={client_id ?? ""}
                 className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-brand-500"
               >
-                <option value="">Todos los clientes</option>
+                <option value="">Todos los titulares</option>
                 {data.clients.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}

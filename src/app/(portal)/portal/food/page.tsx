@@ -162,7 +162,7 @@ export default async function FoodOverviewPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-300">{f.welcome}</p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">REYMEN Ops Food</h1>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">Reymen Foods</h1>
             <p className="mt-1 text-sm text-brand-200">{org?.name ?? f.restaurantPanel}</p>
           </div>
           <div className="flex flex-col items-start gap-3 sm:items-end">

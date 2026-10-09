@@ -9,7 +9,7 @@ export default async function NewSmartcardClientPage() {
 
   return (
     <div>
-      <PageHeader title="SmartCard · Nuevo cliente" />
+      <PageHeader title="Nuevo titular" />
       <SmartcardClientForm companies={companies} />
     </div>
   );

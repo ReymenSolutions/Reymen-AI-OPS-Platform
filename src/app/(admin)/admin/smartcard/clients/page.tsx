@@ -28,13 +28,13 @@ export default async function SmartcardClientsPage({
   return (
     <div>
       <PageHeader
-        title="SmartCard · Clientes"
-        description="Negocios dados de alta en SmartCard — de aquí cuelgan sus tarjetas y perfiles digitales."
+        title="Titulares"
+        description="El negocio o la persona a nombre de quien están las tarjetas y perfiles digitales. No son los clientes de Reymen: esos viven en Admin → Clientes."
         actions={
           <Button asChild>
             <Link href="/admin/smartcard/clients/new">
               <Plus className="h-4 w-4" />
-              Nuevo cliente
+              Nuevo titular
             </Link>
           </Button>
         }
@@ -56,19 +56,19 @@ export default async function SmartcardClientsPage({
         <EmptyState
           icon={Users}
           title="SmartCard no está configurado en este servidor"
-          description="Faltan SMARTCARD_SUPABASE_URL y SMARTCARD_SUPABASE_SERVICE_ROLE_KEY en el .env."
+          description="Faltan SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en el .env."
         />
       )}
 
       {clients?.length === 0 && (
         <EmptyState
           icon={Users}
-          title={q ? `Sin resultados para "${q}".` : "Todavía no hay clientes."}
+          title={q ? `Sin resultados para "${q}".` : "Todavía no hay titulares."}
           description={q ? undefined : "Da de alta el primero para empezar a emitir tarjetas."}
           action={
             !q ? (
               <Button asChild size="sm">
-                <Link href="/admin/smartcard/clients/new">Nuevo cliente</Link>
+                <Link href="/admin/smartcard/clients/new">Nuevo titular</Link>
               </Button>
             ) : undefined
           }

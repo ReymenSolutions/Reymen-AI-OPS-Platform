@@ -28,7 +28,7 @@ export async function setOrganizationModule(
 
   // Reymen POS manda sus ventas al módulo Food: sin Food no tendría dónde caer.
   if (module === "REYMEN_POS" && status === "ACTIVE" && !(await hasModule(orgId, "FOOD_OPS"))) {
-    throw new UserError("Para activar Reymen POS primero activa REYMEN Ops Food");
+    throw new UserError("Para activar Reymen POS primero activa Reymen Foods");
   }
 
   const timestamps: { suspendedAt?: Date | null; cancelledAt?: Date | null } = {};
