@@ -1,11 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Home, LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, Calendar, FileText, LogOut, Bot, Upload, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
+  ChevronDown, Home, LayoutDashboard, Users, Zap, BarChart3, Settings, MessageSquare, Calendar, FileText, LogOut, Bot, Upload, GitBranch, Rocket, UtensilsCrossed, CreditCard, X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import type { PlatformModule } from "@prisma/client";
@@ -105,6 +105,35 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
   const labels = useNavItems();
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.module || enabledModules.includes(item.module));
 
+  // Secciones cerradas por el usuario; se recuerdan en este navegador. Al
+  // entrar a una pantalla, su sección se abre sola.
+  const [closedSections, setClosedSections] = useState<NavSectionKey[]>([]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("reymen-portal-menu-closed") ?? "[]");
+      if (Array.isArray(saved)) setClosedSections(saved.filter((k): k is NavSectionKey => SECTION_ORDER.includes(k)));
+    } catch {
+      /* sin almacenamiento: todo abierto */
+    }
+  }, []);
+  const activeSection = NAV_ITEMS.find(
+    (item) => visibleNavItems.includes(item) && (pathname.startsWith(item.href) || (item.alsoActiveFor?.some((p) => pathname.startsWith(p)) ?? false))
+  )?.section;
+  useEffect(() => {
+    if (activeSection) setClosedSections((closed) => (closed.includes(activeSection) ? closed.filter((k) => k !== activeSection) : closed));
+  }, [pathname, activeSection]);
+  function toggleSection(section: NavSectionKey) {
+    setClosedSections((closed) => {
+      const next = closed.includes(section) ? closed.filter((k) => k !== section) : [...closed, section];
+      try {
+        localStorage.setItem("reymen-portal-menu-closed", JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [currentLogoUrl, setCurrentLogoUrl] = useState(initialLogoUrl);
 
@@ -172,16 +201,26 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
             const items = visibleNavItems.filter((item) => item.section === section);
             if (items.length === 0) return null;
             const title = SECTION_TITLES[section];
+            const isItemActive = (item: (typeof items)[number]) =>
+              pathname.startsWith(item.href) || (item.alsoActiveFor?.some((p) => pathname.startsWith(p)) ?? false);
+            const open = !title || !closedSections.includes(section);
             return (
               <div key={section} className={cn("space-y-1", section !== "main" && "pt-3")}>
                 {title && (
-                  <p className="sidebar-subtitle px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-brand-200/70">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(section)}
+                    aria-expanded={open}
+                    aria-controls={`menu-section-${section}`}
+                    className="sidebar-subtitle flex w-full items-center justify-between rounded-md px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-200/70 transition-colors hover:bg-white/5 hover:text-white"
+                  >
                     {lang === "en" ? title.en : title.es}
-                  </p>
+                    <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open ? "" : "-rotate-90")} />
+                  </button>
                 )}
-                {items.map((item) => {
+                {open && <div id={`menu-section-${section}`} className="space-y-1">{items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = pathname.startsWith(item.href) || (item.alsoActiveFor?.some((p) => pathname.startsWith(p)) ?? false);
+                  const isActive = isItemActive(item);
                   return (
                     <Link
                       key={item.href}
@@ -203,7 +242,7 @@ export function PortalSidebar({ orgName, orgLogoUrl: initialLogoUrl, enabledModu
                       )}
                     </Link>
                   );
-                })}
+                })}</div>}
               </div>
             );
           })}
